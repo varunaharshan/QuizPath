@@ -1,0 +1,82 @@
+@AGENTS.md
+
+# QuizPath
+
+Grade 10/11 Science MCQ learning platform. See `docs/mvp-product-spec.md` for the full
+product spec this build follows.
+
+## Single-tenant MVP
+
+This is a **single-tenant** application — one platform, one subject ("Science"), no
+organizations/schools/tutors as first-class tenants yet. There is deliberately **no
+row-level security, no `tenant_id`/`org_id` column, and no per-tenant scoping** anywhere in
+the schema or query layer. Every authenticated student sees the same global content
+(`subjects` → `modules` → `sub_topics` → `mcqs`). Don't add multi-tenant plumbing until
+there's an actual second tenant to justify it.
+
+That said, the schema is shaped so a future multi-tenant marketplace (multiple schools,
+tutors publishing their own content, org-scoped rosters) can be layered on **without a
+rewrite**:
+- Content tables (`subjects`, `modules`, `sub_topics`, `content_items`, `mcqs`) are already
+  separate from student/attempt data — adding an `org_id` or `owner_id` column to the
+  content tables later is additive, not structural.
+- `student_profiles` is already split from `users`, so a future `org_memberships` join
+  table can sit alongside it without touching identity.
+- IDs are UUIDs everywhere, so merging data across environments/tenants later doesn't hit
+  collisions.
+- `quiz_attempts` / `quiz_attempt_answers` / `mastery_scores` key off `student_id`, not off
+  any tenant-scoped id, so per-tenant partitioning can be added via a join rather than a
+  column rewrite.
+
+## Stack choices
+
+**Frontend + API: Next.js (App Router, TypeScript), API routes only — no separate backend
+service.** For a single-tenant MVP with one developer and a 4-week timeline, running a
+second service (NestJS/FastAPI) would mean a second deployment target, a second auth
+integration, and CORS to manage, for no real benefit yet — everything the API needs
+(Postgres access, Clerk session) is directly reachable from Next.js Route Handlers and
+Server Components/Actions in the same process. Revisit this only if the API needs to be
+consumed by something other than this web app (e.g. a mobile app) or needs to scale
+independently of the frontend.
+
+**Database: Postgres + Drizzle ORM** (not Prisma). Drizzle was the intended pick going in,
+but it also turned out to be the pragmatic one in this environment: Prisma's CLI needs to
+download a native query-engine binary on `postinstall`, and that download doesn't route
+through this environment's egress proxy correctly (its `getProxyAgent` helper exists but
+was never wired into the actual fetch call — a bug in the installed Prisma version — so
+the download hits the network directly and gets reset). Drizzle is plain TypeScript over
+`pg` with no native binary, so it isn't exposed to that problem, and for a schema this size
+its lighter-weight, closer-to-SQL style is a good match anyway. Schema lives in
+`src/db/schema.ts`, migrations/pushes run via `drizzle-kit` (see `package.json` `db:*`
+scripts).
+
+**Auth: Clerk**, Google as the only enabled social connection (configured in the Clerk
+Dashboard, not in code — "add Facebook later" is a dashboard toggle, not new integration
+work, which is the whole point of using a managed provider here). Session handling is via
+`src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; same mechanism) calling
+`clerkMiddleware()` and protecting every route except `/sign-in` and the Clerk webhook.
+First-login provisioning happens two ways, both idempotent on `users.auth_provider_id`:
+1. Lazily, in `getOrCreateAppUser()` (`src/lib/current-app-user.ts`), on the first
+   authenticated request — this is what actually drives the flow in this session, since
+   there's no public URL for Clerk's webhook to reach in local dev.
+2. Via `/api/webhooks/clerk` (svix-verified `user.created`/`user.updated`), as a backstop
+   for production so the `users` row exists even if the very first click after signup
+   somehow doesn't hit the app.
+
+`student_profiles` is created via the onboarding grade-selection screen
+(`src/app/onboarding`), not automatically — a user isn't a "student" with a grade until
+they've picked one.
+
+## Feature flags
+
+`PAYWALL_ENABLED` (`src/lib/config.ts`, backed by the `PAYWALL_ENABLED` env var) defaults to
+`false`. The `subscriptions` table exists in the schema but nothing reads or writes it yet —
+no Stripe integration in this phase. When the paywall work starts, entitlement checks should
+gate on this flag rather than on the mere existence of a `subscriptions` row, so flipping it
+on later is a config change, not a code change.
+
+## What's NOT built yet
+
+Quiz-taking flow (serving MCQs, submitting answers, scoring, mastery recalculation),
+Stripe/Billing, and Facebook login are explicitly out of scope for this phase — see
+`docs/mvp-product-spec.md` section 9 for the week-by-week plan.

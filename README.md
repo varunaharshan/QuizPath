@@ -1,0 +1,50 @@
+# QuizPath
+
+Grade 10/11 Science quiz platform — MVP foundation. See `docs/mvp-product-spec.md` for the
+product spec and `CLAUDE.md` for stack choices and architecture notes.
+
+## Prerequisites
+
+- Node.js 20+
+- A Postgres 16 database
+- A [Clerk](https://clerk.com) application with **Google** enabled as the only social
+  connection (User & Authentication → Social Connections in the Clerk Dashboard), and
+  email/password disabled
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env.local   # fill in DATABASE_URL and Clerk keys
+npm run db:push              # create tables from src/db/schema.ts
+npm run db:seed              # seed the placeholder Science taxonomy (Grade 10 & 11)
+npm run dev
+```
+
+Open http://localhost:3000 — you'll be redirected to sign in with Google, then asked to
+pick a grade, then land on the (currently empty) dashboard.
+
+### Clerk webhook (optional for local dev)
+
+`/api/webhooks/clerk` keeps the `users` table in sync with Clerk as a backstop; the app also
+upserts the user lazily on first request, so the webhook isn't required for the local flow
+to work. To wire it up (e.g. via the Clerk Dashboard + a tunnel like ngrok), point a
+`user.created`/`user.updated` webhook at that route and set `CLERK_WEBHOOK_SIGNING_SECRET`.
+
+## Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` / `npm run start` | Production build / start |
+| `npm run lint` | ESLint |
+| `npm run db:push` | Push `src/db/schema.ts` to Postgres (dev) |
+| `npm run db:generate` / `db:migrate` | Generate & apply versioned SQL migrations |
+| `npm run db:seed` | Seed the placeholder Science taxonomy |
+| `npm run db:studio` | Drizzle Studio (browse the DB) |
+
+## Feature flags
+
+`PAYWALL_ENABLED` (env var, default `false`) gates the not-yet-built subscription
+entitlement checks. The `subscriptions` table exists in the schema but is unused until that
+work starts.
