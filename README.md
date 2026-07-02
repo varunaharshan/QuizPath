@@ -22,7 +22,18 @@ npm run dev
 ```
 
 Open http://localhost:3000 — you'll be redirected to sign in with Google, then asked to
-pick a grade, then land on the (currently empty) dashboard.
+pick a grade, then land on the dashboard, where "Take a quiz" leads to the sub-topic
+picker and quiz-taking flow (spec section 5).
+
+### Running tests
+
+Integration tests run against a separate `quizpath_test` database so they never touch dev
+data:
+
+```bash
+createdb -U quizpath quizpath_test   # one-time
+npm test                             # pushes the schema onto it, then runs vitest
+```
 
 ### Clerk webhook (optional for local dev)
 
@@ -40,8 +51,9 @@ to work. To wire it up (e.g. via the Clerk Dashboard + a tunnel like ngrok), poi
 | `npm run lint` | ESLint |
 | `npm run db:push` | Push `src/db/schema.ts` to Postgres (dev) |
 | `npm run db:generate` / `db:migrate` | Generate & apply versioned SQL migrations |
-| `npm run db:seed` | Seed the placeholder Science taxonomy |
+| `npm run db:seed` | Seed the placeholder Science taxonomy + placeholder MCQs |
 | `npm run db:studio` | Drizzle Studio (browse the DB) |
+| `npm test` | Run the vitest integration suite against `quizpath_test` |
 
 ## Feature flags
 

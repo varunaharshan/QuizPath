@@ -75,8 +75,39 @@ no Stripe integration in this phase. When the paywall work starts, entitlement c
 gate on this flag rather than on the mere existence of a `subscriptions` row, so flipping it
 on later is a config change, not a code change.
 
+## Quiz-taking flow
+
+`src/lib/quiz.ts` holds the actual business logic (listing sub-topics, serving a quiz,
+grading + persisting an attempt, recalculating mastery) as plain functions, independent of
+any route — both the UI pages and `GET /api/sub-topics/[subTopicId]/quiz` call into the same
+functions rather than the pages fetching from their own API route over HTTP. That route
+handler exists as a standalone, directly-testable "quiz-serving endpoint" (per spec section
+5) for API completeness/future clients, even though the server-rendered quiz page doesn't
+need to call it over the network to render itself.
+
+- Quiz length is capped at `QUIZ_LENGTH = 10` (`src/lib/quiz.ts`); sub-topics with fewer
+  published MCQs just serve everything they have.
+- Grading always re-fetches the answer key server-side from `mcqs.correct_option` — the
+  client only ever sees `options`, never `correct_option`.
+- Mastery is the **most recent attempt's score** for that sub-topic (not a rolling
+  average) — simplest rules-based reading of spec section 5 for MVP. Thresholds: `< 60` =
+  `needs_work`, `60–79` = `in_progress` (not called out explicitly in the spec's two-bucket
+  example; added as a third tier so 60-79% isn't mislabeled as "needs work"), `>= 80` =
+  `mastered`.
+- The quiz submit flow is a single Server Action + native HTML form (radios marked
+  `required` for native "answer everything" validation) — no client-side JS/state needed,
+  so there's no separate quiz Client Component.
+- Placeholder MCQs (`src/db/seed.ts`, 10 questions under Grade 10 → "Types of Chemical
+  Reactions") are prefixed `[PLACEHOLDER TEST CONTENT]` so they're never mistaken for
+  reviewed content — see spec section 7 for the real review process.
+- Integration coverage: `tests/quiz-flow.test.ts` (vitest) runs the full select
+  sub-topic → serve quiz → submit → persisted attempt/answers/mastery loop against a
+  dedicated `quizpath_test` database (schema pushed by `tests/global-setup.ts`); `npm test`
+  runs it.
+
 ## What's NOT built yet
 
-Quiz-taking flow (serving MCQs, submitting answers, scoring, mastery recalculation),
-Stripe/Billing, and Facebook login are explicitly out of scope for this phase — see
+The dashboard's "progress by sub-topic" and "completed quizzes" sections render real data
+(they already queried `mastery_scores` / `quiz_attempts` directly), but per-question review
+after a quiz, Stripe/Billing, and Facebook login are still out of scope — see
 `docs/mvp-product-spec.md` section 9 for the week-by-week plan.

@@ -1,16 +1,21 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { masteryScores, modules, quizAttempts, subTopics } from "@/db/schema";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
+import { masteryLabelForScore } from "@/lib/quiz";
 
-function masteryLabel(score: string | null): "Not started" | "Needs work" | "Mastered" {
+const MASTERY_DISPLAY = {
+  needs_work: "Needs work",
+  in_progress: "In progress",
+  mastered: "Mastered",
+} as const;
+
+function masteryLabel(score: string | null): string {
   if (score === null) return "Not started";
-  const value = Number(score);
-  if (value >= 80) return "Mastered";
-  if (value < 60) return "Needs work";
-  return "Needs work";
+  return MASTERY_DISPLAY[masteryLabelForScore(Number(score))];
 }
 
 export default async function DashboardPage() {
@@ -59,7 +64,15 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">Grade {profile.grade} · Science</p>
         </div>
-        <UserButton />
+        <div className="flex items-center gap-4">
+          <Link
+            href="/quiz"
+            className="rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-[#383838] dark:hover:bg-[#ccc]"
+          >
+            Take a quiz
+          </Link>
+          <UserButton />
+        </div>
       </header>
 
       <section>
@@ -69,7 +82,11 @@ export default async function DashboardPage() {
             <p>You have a quiz in progress.</p>
           ) : (
             <p className="text-zinc-500 dark:text-zinc-400">
-              No quiz in progress. Pick a sub-topic below to get started.
+              No quiz in progress.{" "}
+              <Link href="/quiz" className="underline">
+                Pick a sub-topic
+              </Link>{" "}
+              to get started.
             </p>
           )}
         </div>
