@@ -50,6 +50,19 @@ its lighter-weight, closer-to-SQL style is a good match anyway. Schema lives in
 `src/db/schema.ts`, migrations/pushes run via `drizzle-kit` (see `package.json` `db:*`
 scripts).
 
+`src/db/index.ts` (the actual `pg` `Pool` + Drizzle client) is guarded with `import
+"server-only"` so any accidental import from a Client Component or edge runtime fails at
+build time with a clear message instead of a cryptic bundler error. `next.config.ts` also
+marks `pg` as a `serverExternalPackages` entry — `pg` conditionally `require()`s optional
+native bindings (`pg-native`, `pg-cloudflare`) that most installs don't have, and letting
+Next's Turbopack dev bundler try to eagerly resolve those as external chunks is what causes
+an `ERR_MODULE_NOT_FOUND` on a `pg-*` package; externalizing `pg` keeps it on plain Node
+`require`, which already guards those with try/catch. Because `server-only` only no-ops
+under the `"react-server"` export condition (how Next's own bundler marks genuine server
+code), standalone scripts that import `@/db` outside of Next need that condition set
+explicitly: `db:seed` runs via `cross-env NODE_OPTIONS=--conditions=react-server`, and
+`vitest.config.ts` sets `resolve.conditions` / `ssr.resolve.externalConditions` to the same.
+
 **Auth: Clerk**, Google as the only enabled social connection (configured in the Clerk
 Dashboard, not in code — "add Facebook later" is a dashboard toggle, not new integration
 work, which is the whole point of using a managed provider here). Session handling is via

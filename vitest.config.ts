@@ -23,5 +23,18 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // src/db/index.ts is guarded with `server-only`, which resolves to a
+    // no-op only under the "react-server" export condition (how Next.js's
+    // own bundler marks genuine server code). Vitest runs tests through
+    // Vite's SSR pipeline, which resolves node_modules packages like
+    // `server-only` as externalized deps using `ssr.resolve.externalConditions`
+    // rather than the plain `resolve.conditions` above — both need setting.
+    conditions: ["react-server"],
+  },
+  ssr: {
+    resolve: {
+      conditions: ["react-server"],
+      externalConditions: ["react-server"],
+    },
   },
 });
