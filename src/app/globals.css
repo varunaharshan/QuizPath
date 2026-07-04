@@ -39,6 +39,8 @@
   --color-warn-bg: #fbf1e0;
   --color-progress: #1e56a0;
   --color-progress-bg: #eaf1fa;
+  --color-teal: #0e7c86;
+  --color-teal-bg: #e1f3f5;
 }
 
 @media (prefers-color-scheme: dark) {

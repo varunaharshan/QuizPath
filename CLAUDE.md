@@ -309,33 +309,48 @@ navigation pattern for the same two grades:
    A Grade 11 student can view Grade 10 progress if they've been practicing those papers —
    same free-browsing rule as Practice, not a separate one.
 2. `/progress/grade/[grade]` — pick a subject, identical to Practice's subject step.
-3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown: stat cards (quizzes
-   completed, average score, topics mastered X of Y), a "topics that need work" callout
-   (`needs_work`-labeled sub-topics only, not `not_started` ones — those just haven't been
-   tried yet, which is a different state), and the full mastery-by-topic bar list. Each weak
-   topic's "Practice" button links straight to `/quiz/[subTopicId]` — the existing sub-topic
-   quiz route already pools every published MCQ tagged with that `sub_topic_id` regardless of
-   which paper (if any) it also belongs to, and logs the resulting attempt with `paper_id`
-   null, so this needed no new quiz-serving mechanism, just linking to what already existed.
+3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown, rebuilt to match a
+   student-provided mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
+   - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total
+     correct answers (green), average score (amber). These are fixed category colors per the
+     mockup, not dynamic per the score value — a new `--color-teal`/`--color-teal-bg` token
+     was added to `globals.css` since the palette didn't have one yet. There's deliberately no
+     "topics mastered" card anymore — removed per the mockup.
+   - **One "Mastery by topic" table**, not a separate "needs work" callout plus a bars list —
+     every sub-topic for this grade+subject appears as a row, in syllabus order (module
+     sortOrder, then sub-topic sortOrder — *not* sorted by score), with columns for #, Topic, a
+     Progress bar, Questions, Correct, Score, and a Practice button on *every* row (including
+     already-mastered topics, not gated to weak ones). Score shows `—` rather than `0%` when
+     `questionsAnswered` is 0 (not started, not "scored zero"). Each row's Practice button
+     links straight to `/quiz/[subTopicId]` — the existing sub-topic quiz route already pools
+     every published MCQ tagged with that `sub_topic_id` regardless of which paper (if any) it
+     also belongs to, and logs the resulting attempt with `paper_id` null, so this needed no
+     new quiz-serving mechanism, just linking to what already existed.
 
-**No cross-grade blending anywhere in this tab** — `getProgressStats(studentId, grade,
-subjectId)` (`src/lib/dashboard.ts`) takes both `grade` and `subjectId` and scopes every
-number to that exact pair; there's no combined/overall "readiness" figure across grades. This
-fixed a latent scoping gap along the way: `getProgressStats`'s `quizzesCompleted`/
-`averageScore` previously queried *all* of a student's completed attempts with no grade filter
-at all (unlike its own `subTopicBars`, which was already grade-scoped) — now both halves use
-the same grade+subject join shape as `getCompletedQuizzes`/`getContinueSubTopic`. The empty
-state ("You haven't tried any Grade N Science papers yet") is driven specifically by
+**No cross-grade blending anywhere in this tab, and the KPI cards are cumulative, not
+per-attempt averages** — `getProgressStats(studentId, grade, subjectId)` (`src/lib/dashboard.ts`)
+takes both `grade` and `subjectId` and scopes every number to that exact pair; there's no
+combined/overall "readiness" figure across grades. The KPI cards' `totalQuestionsAnswered` /
+`totalCorrectAnswers` / `averageScore` are cumulative counts across every completed attempt
+belonging to this grade+subject (via the sub-topic's module, or the paper's own grade/subject)
+— `averageScore` is total correct ÷ total questions, deliberately *not* an average of each
+attempt's own percentage (an earlier version of this function did exactly that, which would
+weight a 2-question attempt the same as a 40-question one — fixed alongside this redesign).
+The empty state ("You haven't tried any Grade N Science papers yet") is driven specifically by
 `quizzesCompleted === 0`, not by an absence of sub-topics — a grade+subject can have topics
 listed as `not_started` while still showing the empty state, if literally nothing has been
 attempted there yet.
 
-`getSubTopicStatusesForGrade` gained an optional third `subjectId` parameter (and now also
-returns `questionsAnswered` per topic, straight from `mastery_scores.questions_answered`) —
-optional because every *other* caller (dashboard, practice, the sidebar's practice-count
-badge) intentionally wants "every subject for this grade," since Science is the only subject
-today and that badge is meant to be grade-wide, not subject-scoped. The Progress tab is the
-one caller that narrows it.
+Each topic row's `questionsAnswered`/`correctCount` in `getProgressStats` is computed **live**
+from `quiz_attempt_answers` (the same source of truth `recalculateMasteryForSubTopic` writes
+from) rather than read out of the `mastery_scores` cache — this table needs an exact raw
+"Correct" count alongside the percentage, and re-deriving an integer count from an
+already-rounded stored percentage risks an off-by-one in the displayed math. This is separate
+from `getSubTopicStatusesForGrade`, which still reads the `mastery_scores` cache directly (fine
+for its callers, which only need the percentage) and gained an optional third `subjectId`
+parameter — optional because every *other* caller (dashboard, practice, the sidebar's
+practice-count badge) intentionally wants "every subject for this grade," since Science is the
+only subject today and that badge is meant to be grade-wide, not subject-scoped.
 
 `src/components/practice-breadcrumb.tsx` was renamed to `src/components/step-breadcrumb.tsx`
 (component renamed `PracticeBreadcrumb` → `StepBreadcrumb`) since it's now shared by both
@@ -343,10 +358,13 @@ Practice's and Progress's Grade/Subject steps — it never had any Practice-spec
 a misleading name once a second feature started using it.
 
 Integration coverage: `tests/progress.test.ts` — own-grade progress, a different grade the
-student has practiced (mirroring Practice's cross-grade browsing), the empty state for a
-grade+subject with zero attempts (while topics still exist and list as `not_started`), and
-the weak-topics list scoped to one grade+subject only (proven by seeding a same-grade topic
-under a *different* subject and confirming it never appears).
+student has practiced (mirroring Practice's cross-grade browsing), the KPI cards' cumulative
+math versus a deliberately-wrong per-attempt average (a 2-question and a 10-question attempt
+whose naive average would differ meaningfully from the correct cumulative ratio), the topic
+table listing every topic in syllabus order — including a mastered one, proving it isn't
+filtered to weak topics only, and proving the order isn't score-sorted — the empty state for a
+grade+subject with zero attempts (with the untouched topic's score `null`, not `0`), and topics
+never bleeding in from a different subject at the same grade.
 
 ## What's NOT built yet
 

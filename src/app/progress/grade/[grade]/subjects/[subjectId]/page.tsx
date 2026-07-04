@@ -18,11 +18,12 @@ const BAR_COLOR: Record<SubTopicStatusLabel, string> = {
   not_started: "bg-app-surface-muted",
 };
 
-function confidenceNote(score: number | null, questionsAnswered: number): string {
-  if (score === null) return "Not started";
-  const questionWord = questionsAnswered === 1 ? "question" : "questions";
-  return `${score}% · ${questionsAnswered} ${questionWord} answered`;
-}
+const SCORE_TEXT_COLOR: Record<SubTopicStatusLabel, string> = {
+  mastered: "text-mastered",
+  in_progress: "text-progress",
+  needs_work: "text-warn",
+  not_started: "text-ink-muted",
+};
 
 export default async function ProgressTopicsPage({
   params,
@@ -56,7 +57,6 @@ export default async function ProgressTopicsPage({
   ]);
 
   const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
-  const weakTopics = stats.subTopicBars.filter((bar) => bar.label === "needs_work");
 
   return (
     <AppShell
@@ -84,81 +84,82 @@ export default async function ProgressTopicsPage({
         </div>
       ) : (
         <>
-          <div className="mb-4.5 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
-            <div className="rounded-[10px] border border-app-border bg-white p-4">
-              <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
+          <div className="mb-4.5 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
+            <div className="rounded-[10px] border border-app-border border-t-[3px] border-t-progress bg-white p-4">
+              <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
                 Quizzes completed
               </p>
-              <p className="m-0 text-[22px] font-bold text-navy-900">{stats.quizzesCompleted}</p>
+              <p className="m-0 text-[24px] font-bold text-progress">{stats.quizzesCompleted}</p>
             </div>
-            <div className="rounded-[10px] border border-app-border bg-white p-4">
-              <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
+            <div className="rounded-[10px] border border-app-border border-t-[3px] border-t-teal bg-white p-4">
+              <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
+                Total questions answered
+              </p>
+              <p className="m-0 text-[24px] font-bold text-teal">{stats.totalQuestionsAnswered}</p>
+            </div>
+            <div className="rounded-[10px] border border-app-border border-t-[3px] border-t-mastered bg-white p-4">
+              <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
+                Total correct answers
+              </p>
+              <p className="m-0 text-[24px] font-bold text-mastered">{stats.totalCorrectAnswers}</p>
+            </div>
+            <div className="rounded-[10px] border border-app-border border-t-[3px] border-t-warn bg-white p-4">
+              <p className="m-0 mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
                 Average score
               </p>
-              <p className="m-0 text-[22px] font-bold text-navy-900">
+              <p className="m-0 text-[24px] font-bold text-warn">
                 {stats.averageScore === null ? "—" : `${Math.round(stats.averageScore)}%`}
               </p>
             </div>
-            <div className="rounded-[10px] border border-app-border bg-white p-4">
-              <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
-                Topics mastered
-              </p>
-              <p className="m-0 text-[22px] font-bold text-navy-900">
-                {stats.masteredCount} of {stats.totalSubTopics}
-              </p>
-            </div>
           </div>
-
-          {weakTopics.length > 0 && (
-            <div className="mb-4.5 overflow-hidden rounded-[10px] border border-warn bg-warn-bg">
-              <div className="border-b border-warn px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
-                Topics that need work
-              </div>
-              <div>
-                {weakTopics.map((topic) => (
-                  <div
-                    key={topic.id}
-                    className="flex items-center gap-3.5 border-b border-warn px-4.5 py-3.5 last:border-b-0"
-                  >
-                    <div className="flex-1">
-                      <p className="m-0 text-sm font-semibold">{topic.name}</p>
-                      <p className="m-0 mt-0.5 text-[12.5px] text-ink-secondary">
-                        {confidenceNote(topic.score, topic.questionsAnswered)}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/quiz/${topic.id}`}
-                      className="rounded-md border border-app-border bg-white px-4.5 py-2 text-[13px] font-semibold hover:bg-app-surface-muted"
-                    >
-                      Practice
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
             <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
               Mastery by topic
             </div>
-            <div className="p-4">
-              {stats.subTopicBars.map((bar) => (
-                <div key={bar.id} className="mb-2.5 flex items-center gap-3 last:mb-0">
-                  <div className="w-[170px] shrink-0 truncate text-[12.5px] text-ink-secondary">
-                    {bar.name}
-                  </div>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-app-surface-muted">
-                    <div
-                      className={`h-full rounded-full ${BAR_COLOR[bar.label]}`}
-                      style={{ width: `${bar.score ?? 0}%` }}
-                    />
-                  </div>
-                  <div className="w-[150px] shrink-0 text-right text-[12.5px] font-bold">
-                    {confidenceNote(bar.score, bar.questionsAnswered)}
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr className="bg-app-surface-muted text-left text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
+                    <th className="px-3.5 py-2.5">#</th>
+                    <th className="px-3.5 py-2.5">Topic</th>
+                    <th className="px-3.5 py-2.5">Progress</th>
+                    <th className="px-3.5 py-2.5 text-right">Questions</th>
+                    <th className="px-3.5 py-2.5 text-right">Correct</th>
+                    <th className="px-3.5 py-2.5 text-right">Score</th>
+                    <th className="px-3.5 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.topics.map((topic, index) => (
+                    <tr key={topic.id} className="border-b border-app-border last:border-b-0">
+                      <td className="px-3.5 py-2.5 font-semibold text-ink-muted">{index + 1}</td>
+                      <td className="px-3.5 py-2.5 min-w-[180px] font-semibold">{topic.name}</td>
+                      <td className="px-3.5 py-2.5">
+                        <div className="h-[7px] w-40 overflow-hidden rounded-full bg-app-surface-muted">
+                          <div
+                            className={`h-full rounded-full ${BAR_COLOR[topic.label]}`}
+                            style={{ width: `${topic.score ?? 0}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right text-ink-secondary">{topic.questionsAnswered}</td>
+                      <td className="px-3.5 py-2.5 text-right text-ink-secondary">{topic.correctCount}</td>
+                      <td className={`px-3.5 py-2.5 text-right font-bold ${SCORE_TEXT_COLOR[topic.label]}`}>
+                        {topic.score === null ? "—" : `${topic.score}%`}
+                      </td>
+                      <td className="px-3.5 py-2.5 text-right">
+                        <Link
+                          href={`/quiz/${topic.id}`}
+                          className="rounded-md border border-app-border bg-white px-3.5 py-1.5 text-[12.5px] font-semibold hover:bg-app-surface-muted"
+                        >
+                          Practice
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </>

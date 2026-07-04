@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QuizPath — Progress mockup</title>
+<style>
+  :root {
+    --navy: #13294B;
+    --navy-light: #1E3A66;
+    --gold: #F2A900;
+    --bg: #F4F5F7;
+    --surface: #FFFFFF;
+    --surface-muted: #EEF0F3;
+    --border: #DFE2E8;
+    --text-primary: #1A1D23;
+    --text-secondary: #5C6270;
+    --text-muted: #9AA0AC;
+    --green-bg: #E6F4EA;
+    --green-text: #1E7E34;
+    --amber-bg: #FBF0DF;
+    --amber-text: #B67F16;
+    --blue-accent: #1E56A0;
+    --blue-accent-bg: #EAF1FA;
+    --teal-text: #0E7C86;
+    --teal-bg: #E1F3F5;
+    --violet-text: #5B4EA8;
+    --violet-bg: #ECEAF7;
+    --radius: 6px;
+    --radius-lg: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+  }
+
+  .topbar {
+    background: var(--navy);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    height: 52px;
+  }
+  .topbar .brand { color: #fff; font-weight: 700; font-size: 15px; margin-right: 28px; }
+  .topbar .toptab {
+    display: flex; align-items: center; gap: 7px;
+    color: rgba(255,255,255,0.65); font-size: 13.5px; font-weight: 500;
+    padding: 0 4px; height: 52px; margin-right: 20px; cursor: pointer;
+    border-bottom: 3px solid transparent;
+  }
+  .topbar .toptab.active { color: #fff; border-bottom: 3px solid var(--gold); }
+  .topbar .toptab.active .toptab-icon { color: var(--gold); }
+  .topbar-spacer { flex: 1; }
+  .topbar .avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--gold); color: var(--navy);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12.5px;
+  }
+  .gold-strip { height: 3px; background: var(--gold); }
+
+  .contextbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  }
+  .contextbar .title { font-size: 16px; font-weight: 700; color: var(--navy); }
+  .contextbar .dot { color: var(--text-muted); }
+  .contextbar .sub { font-size: 13px; color: var(--text-secondary); }
+  .pill {
+    font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .pill-green { background: var(--green-bg); color: var(--green-text); }
+  .pill-gray { background: var(--surface-muted); color: var(--text-secondary); }
+
+  .app { display: flex; }
+  .sidebar {
+    width: 210px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: 18px 10px; flex-shrink: 0; min-height: calc(100vh - 92px);
+  }
+  .nav-section-label {
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em; margin: 14px 10px 6px;
+  }
+  .nav-section-label:first-child { margin-top: 4px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    font-size: 13.5px; color: var(--text-secondary); cursor: pointer;
+    border-left: 3px solid transparent; margin-bottom: 1px;
+  }
+  .nav-item:hover { background: var(--surface-muted); }
+  .nav-item.active {
+    border-left: 3px solid var(--blue-accent); background: var(--blue-accent-bg);
+    color: var(--blue-accent); font-weight: 600;
+  }
+  .nav-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+
+  .main { flex: 1; padding: 24px 28px; max-width: 980px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  .breadcrumb { font-size: 13px; color: var(--text-secondary); margin: 0 0 6px; }
+  .breadcrumb b { color: var(--text-primary); }
+  h1.page-title { font-size: 20px; font-weight: 700; margin: 0 0 18px; color: var(--navy); }
+
+  .kpi-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  .kpi-card {
+    background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--navy);
+    border-radius: var(--radius-lg); padding: 14px 16px;
+  }
+  .kpi-card p.label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--text-secondary); margin: 0 0 8px;
+  }
+  .kpi-card p.value { font-size: 24px; font-weight: 700; margin: 0; color: var(--navy); }
+  .kpi-card.c-blue { border-top-color: var(--blue-accent); }
+  .kpi-card.c-blue p.value { color: var(--blue-accent); }
+  .kpi-card.c-teal { border-top-color: var(--teal-text); }
+  .kpi-card.c-teal p.value { color: var(--teal-text); }
+  .kpi-card.c-green { border-top-color: var(--green-text); }
+  .kpi-card.c-green p.value { color: var(--green-text); }
+  .kpi-card.c-amber { border-top-color: var(--amber-text); }
+  .kpi-card.c-amber p.value { color: var(--amber-text); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    margin-bottom: 18px; overflow: hidden;
+  }
+  .card-header {
+    padding: 13px 18px; border-bottom: 1px solid var(--border);
+    font-size: 13.5px; font-weight: 700; color: var(--navy);
+  }
+
+  .topic-table { width: 100%; border-collapse: collapse; }
+  .topic-table th {
+    text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--text-secondary); background: var(--surface-muted);
+    padding: 9px 14px; border-bottom: 1px solid var(--border);
+  }
+  .topic-table td {
+    padding: 11px 14px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  .topic-table tr:last-child td { border-bottom: none; }
+  .topic-table td.idx { color: var(--text-muted); width: 30px; font-weight: 600; }
+  .topic-table td.name { font-weight: 600; min-width: 180px; }
+  .topic-table td.progress-cell { width: 160px; }
+  .topic-table td.num { text-align: right; color: var(--text-secondary); width: 70px; }
+  .topic-table td.pct { text-align: right; font-weight: 700; width: 60px; }
+  .topic-table td.action { text-align: right; width: 90px; }
+
+  .bar-track { height: 7px; background: var(--surface-muted); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+
+  .btn {
+    border: none; background: var(--navy); color: #fff; font-size: 12.5px; font-weight: 600;
+    padding: 6px 14px; border-radius: var(--radius); cursor: pointer;
+  }
+  .btn:hover { background: var(--navy-light); }
+  .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text-primary); }
+  .btn-secondary:hover { background: var(--surface-muted); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--navy); color: #fff; font-size: 13px; padding: 10px 18px;
+    border-radius: var(--radius); opacity: 0; transition: all 0.25s ease; pointer-events: none;
+    z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="brand">QuizPath</span>
+  <div class="toptab active"><span class="toptab-icon">&#9635;</span> Learn</div>
+  <div class="toptab"><span class="toptab-icon">&#9881;</span> Settings</div>
+  <div class="topbar-spacer"></div>
+  <div class="avatar">P</div>
+</div>
+<div class="gold-strip"></div>
+
+<div class="contextbar">
+  <span class="title">Priya Fernando</span>
+  <span class="dot">&middot;</span>
+  <span class="sub">Grade 10 &middot; Science</span>
+  <span class="pill pill-gray">Free tier</span>
+  <span class="pill pill-green">&#10003; Active learner</span>
+</div>
+
+<div class="app">
+
+  <div class="sidebar">
+    <p class="nav-section-label">Overview</p>
+    <div class="nav-item"><span class="nav-icon">&#8962;</span> Dashboard</div>
+    <p class="nav-section-label">Learning</p>
+    <div class="nav-item"><span class="nav-icon">&#9998;</span> Practice</div>
+    <div class="nav-item active"><span class="nav-icon">&#9776;</span> Progress</div>
+    <p class="nav-section-label">Account</p>
+    <div class="nav-item"><span class="nav-icon">&#9673;</span> Profile</div>
+  </div>
+
+  <div class="main">
+    <p class="breadcrumb">Grade 10 &rsaquo; <b>Science</b></p>
+    <h1 class="page-title">Science</h1>
+
+    <div class="kpi-grid">
+      <div class="kpi-card c-blue">
+        <p class="label">Quizzes completed</p>
+        <p class="value">5</p>
+      </div>
+      <div class="kpi-card c-teal">
+        <p class="label">Total questions answered</p>
+        <p class="value">160</p>
+      </div>
+      <div class="kpi-card c-green">
+        <p class="label">Total correct answers</p>
+        <p class="value">100</p>
+      </div>
+      <div class="kpi-card c-amber">
+        <p class="label">Average score</p>
+        <p class="value">46%</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Mastery by topic</div>
+      <table class="topic-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Topic</th>
+            <th>Progress</th>
+            <th style="text-align: right;">Questions</th>
+            <th style="text-align: right;">Correct</th>
+            <th style="text-align: right;">Score</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="topic-rows">
+          <!-- rows inserted by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Starting a practice quiz for this topic&hellip;</div>
+
+<script>
+  const topics = [
+    { name: "Types of Chemical Reactions", questions: 10, correct: 3 },
+    { name: "Balancing Equations", questions: 0, correct: 0 },
+    { name: "Oxidation and Reduction", questions: 0, correct: 0 },
+    { name: "Chemical basis of life", questions: 2, correct: 0 },
+    { name: "Nutrition", questions: 0, correct: 0 },
+    { name: "Respiration", questions: 0, correct: 0 },
+    { name: "Circulation and Excretion", questions: 0, correct: 0 },
+    { name: "Electric Current and Circuits", questions: 0, correct: 0 },
+    { name: "Ohm's Law", questions: 0, correct: 0 },
+    { name: "Heating Effects of Current", questions: 148, correct: 97 },
+  ];
+
+  function scoreColor(pct, answered) {
+    if (!answered) return { bar: "var(--text-muted)", text: "var(--text-muted)" };
+    if (pct >= 80) return { bar: "var(--green-text)", text: "var(--green-text)" };
+    if (pct < 60) return { bar: "var(--amber-text)", text: "var(--amber-text)" };
+    return { bar: "var(--blue-accent)", text: "var(--blue-accent)" };
+  }
+
+  const rowsEl = document.getElementById("topic-rows");
+  topics.forEach((t, i) => {
+    const pct = t.questions > 0 ? Math.round((t.correct / t.questions) * 100) : 0;
+    const colors = scoreColor(pct, t.questions);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="idx">${i + 1}</td>
+      <td class="name">${t.name}</td>
+      <td class="progress-cell">
+        <div class="bar-track"><div class="bar-fill" style="width: ${pct}%; background: ${colors.bar};"></div></div>
+      </td>
+      <td class="num">${t.questions}</td>
+      <td class="num">${t.correct}</td>
+      <td class="pct" style="color: ${colors.text};">${t.questions > 0 ? pct + "%" : "&mdash;"}</td>
+      <td class="action"><button class="btn btn-secondary" onclick="practiceTopic('${t.name}')">Practice</button></td>
+    `;
+    rowsEl.appendChild(tr);
+  });
+
+  function practiceTopic(name) {
+    const toast = document.getElementById("toast");
+    toast.textContent = "Starting a practice quiz for \"" + name + "\"\u2026";
+    toast.classList.add("show");
+    setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+</script>
+
+</body>
+</html>

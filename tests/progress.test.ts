@@ -6,20 +6,27 @@ import { mcqs, modules, subjects, subTopics, users } from "@/db/schema";
 import { submitQuizAttempt } from "@/lib/quiz";
 import { getProgressStats, getSubTopicStatusesForGrade } from "@/lib/dashboard";
 
-// Confirms the Progress tab's Grade + Subject scoping: a student can view
-// progress for their own grade or a different one they've practiced (same
-// free-browsing rule as Practice), each grade's numbers are never blended
-// with another grade's, and topic-level results never leak in from a
-// different subject either.
-describe("Progress tab: Grade + Subject scoping", () => {
+// Confirms the Progress tab's Grade + Subject scoping and the KPI/topic-table
+// math: a student can view progress for their own grade or a different one
+// they've practiced (same free-browsing rule as Practice), each grade's
+// numbers are never blended with another grade's, topic-level results never
+// leak in from a different subject, the KPI cards are cumulative counts (not
+// an average of each attempt's own percentage), and the topic table lists
+// every topic in syllabus order rather than only the weak ones or sorted by
+// score.
+describe("Progress tab: Grade + Subject scoping and KPI math", () => {
   const runId = randomUUID().slice(0, 8);
   let subjectAId: string;
   let subjectBId: string;
   let studentId: string;
 
-  // Subject A, Grade 10: one weak topic, one mastered topic.
-  let subTopicA1Id: string; // needs_work, 50%
-  let subTopicA2Id: string; // mastered, 100%
+  // Subject A, Grade 10: three topics in syllabus order (sortOrder 0/1/2)
+  // whose scores are deliberately NOT monotonic with that order, so a test
+  // asserting "returned in sortOrder" can't accidentally pass because it
+  // also happens to match a score-sorted order.
+  let subTopicXId: string; // sortOrder 0, 1/2 correct -> 50% (needs_work)
+  let subTopicYId: string; // sortOrder 1, 9/10 correct -> 90% (mastered)
+  let subTopicZId: string; // sortOrder 2, 0/3 correct -> 0% (needs_work)
   // Subject A, Grade 11: the student's own profile grade.
   let subTopicA3Id: string; // needs_work, 50%
   // Subject B, Grade 10: must never appear in Subject A's Grade 10 view.
@@ -57,16 +64,21 @@ describe("Progress tab: Grade + Subject scoping", () => {
       .values({ subjectId: subjectBId, grade: "11", name: `B11 Module ${runId}`, sortOrder: 0 })
       .returning();
 
-    const [subTopicA1] = await db
+    const [subTopicX] = await db
       .insert(subTopics)
-      .values({ moduleId: moduleA10.id, name: `A1 Weak Topic ${runId}`, sortOrder: 0 })
+      .values({ moduleId: moduleA10.id, name: `X Topic ${runId}`, sortOrder: 0 })
       .returning();
-    subTopicA1Id = subTopicA1.id;
-    const [subTopicA2] = await db
+    subTopicXId = subTopicX.id;
+    const [subTopicY] = await db
       .insert(subTopics)
-      .values({ moduleId: moduleA10.id, name: `A2 Mastered Topic ${runId}`, sortOrder: 1 })
+      .values({ moduleId: moduleA10.id, name: `Y Topic ${runId}`, sortOrder: 1 })
       .returning();
-    subTopicA2Id = subTopicA2.id;
+    subTopicYId = subTopicY.id;
+    const [subTopicZ] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleA10.id, name: `Z Topic ${runId}`, sortOrder: 2 })
+      .returning();
+    subTopicZId = subTopicZ.id;
     const [subTopicA3] = await db
       .insert(subTopics)
       .values({ moduleId: moduleA11.id, name: `A3 Grade11 Topic ${runId}`, sortOrder: 0 })
@@ -99,8 +111,9 @@ describe("Progress tab: Grade + Subject scoping", () => {
       return rows.map((r) => r.id);
     }
 
-    const a1Mcqs = await makeMcqs(subTopicA1Id, 2);
-    const a2Mcqs = await makeMcqs(subTopicA2Id, 2);
+    const xMcqs = await makeMcqs(subTopicXId, 2);
+    const yMcqs = await makeMcqs(subTopicYId, 10);
+    const zMcqs = await makeMcqs(subTopicZId, 3);
     const a3Mcqs = await makeMcqs(subTopicA3Id, 2);
     const b1Mcqs = await makeMcqs(subTopicB1Id, 1);
     await makeMcqs(subTopicB2Id, 1); // never attempted
@@ -111,17 +124,23 @@ describe("Progress tab: Grade + Subject scoping", () => {
       .returning();
     studentId = student.id;
 
-    // A1: 1 of 2 correct -> 50% (needs_work).
+    // X: 1 of 2 correct -> 50% (needs_work).
     await submitQuizAttempt({
       studentId,
-      subTopicId: subTopicA1Id,
-      answers: { [a1Mcqs[0]]: 0, [a1Mcqs[1]]: 1 },
+      subTopicId: subTopicXId,
+      answers: { [xMcqs[0]]: 0, [xMcqs[1]]: 1 },
     });
-    // A2: 2 of 2 correct -> 100% (mastered).
+    // Y: 9 of 10 correct -> 90% (mastered).
     await submitQuizAttempt({
       studentId,
-      subTopicId: subTopicA2Id,
-      answers: { [a2Mcqs[0]]: 0, [a2Mcqs[1]]: 0 },
+      subTopicId: subTopicYId,
+      answers: Object.fromEntries(yMcqs.map((id, i) => [id, i === 9 ? 1 : 0])),
+    });
+    // Z: 0 of 3 correct -> 0% (needs_work).
+    await submitQuizAttempt({
+      studentId,
+      subTopicId: subTopicZId,
+      answers: Object.fromEntries(zMcqs.map((id) => [id, 1])),
     });
     // A3 (Grade 11, the student's own profile grade): 1 of 2 -> 50% (needs_work).
     await submitQuizAttempt({
@@ -149,54 +168,60 @@ describe("Progress tab: Grade + Subject scoping", () => {
     const stats = await getProgressStats(studentId, "11", subjectAId);
 
     expect(stats.quizzesCompleted).toBe(1);
+    expect(stats.totalQuestionsAnswered).toBe(2);
+    expect(stats.totalCorrectAnswers).toBe(1);
     expect(stats.averageScore).toBeCloseTo(50, 1);
-    expect(stats.masteredCount).toBe(0);
-    expect(stats.totalSubTopics).toBe(1);
-    expect(stats.subTopicBars).toHaveLength(1);
-    expect(stats.subTopicBars[0].id).toBe(subTopicA3Id);
-    expect(stats.subTopicBars[0].label).toBe("needs_work");
-    expect(stats.subTopicBars[0].questionsAnswered).toBe(2);
+    expect(stats.topics).toHaveLength(1);
+    expect(stats.topics[0].id).toBe(subTopicA3Id);
+    expect(stats.topics[0].label).toBe("needs_work");
+    expect(stats.topics[0].questionsAnswered).toBe(2);
+    expect(stats.topics[0].correctCount).toBe(1);
   });
 
-  it("shows progress for a different grade (10) the student has practiced, mirroring Practice's cross-grade browsing", async () => {
+  it("computes KPI cards as cumulative totals, not an average of each attempt's own percentage", async () => {
     const stats = await getProgressStats(studentId, "10", subjectAId);
 
-    expect(stats.quizzesCompleted).toBe(2);
-    expect(stats.averageScore).toBeCloseTo(75, 1); // (50 + 100) / 2
-    expect(stats.masteredCount).toBe(1);
-    expect(stats.totalSubTopics).toBe(2);
+    // X: 1/2, Y: 9/10, Z: 0/3 -> cumulative 10 correct of 15 total = 66.67%.
+    // A naive per-attempt average of (50 + 90 + 0) / 3 = 46.67% would be wrong
+    // — it weights Z's 3-question attempt the same as Y's 10-question one.
+    expect(stats.quizzesCompleted).toBe(3);
+    expect(stats.totalQuestionsAnswered).toBe(15);
+    expect(stats.totalCorrectAnswers).toBe(10);
+    expect(stats.averageScore).toBeCloseTo(66.67, 1);
+  });
 
-    const barIds = stats.subTopicBars.map((b) => b.id).sort();
-    expect(barIds).toEqual([subTopicA1Id, subTopicA2Id].sort());
+  it("lists every topic for the grade+subject in syllabus order, including the mastered one — not just weak topics, not sorted by score", async () => {
+    const stats = await getProgressStats(studentId, "10", subjectAId);
+
+    // All 3 topics present (Y is mastered at 90% — a "weak topics only" view
+    // would have dropped it).
+    expect(stats.topics.map((t) => t.id)).toEqual([subTopicXId, subTopicYId, subTopicZId]);
+    expect(stats.topics.map((t) => t.label)).toEqual(["needs_work", "mastered", "needs_work"]);
   });
 
   it("never bleeds in topics from a different subject at the same grade", async () => {
     const stats = await getProgressStats(studentId, "10", subjectAId);
-    expect(stats.subTopicBars.some((b) => b.id === subTopicB1Id)).toBe(false);
+    expect(stats.topics.some((t) => t.id === subTopicB1Id)).toBe(false);
 
     // Confirmed independently via the underlying status query too.
     const statuses = await getSubTopicStatusesForGrade(studentId, "10", subjectAId);
     expect(statuses.some((s) => s.id === subTopicB1Id)).toBe(false);
   });
 
-  it("weak-topics (needs_work) list reflects only the selected Grade + Subject", async () => {
-    const grade10SubjectA = await getProgressStats(studentId, "10", subjectAId);
-    const weakGrade10SubjectA = grade10SubjectA.subTopicBars.filter((b) => b.label === "needs_work");
-    expect(weakGrade10SubjectA.map((b) => b.id)).toEqual([subTopicA1Id]);
-
-    const grade11SubjectA = await getProgressStats(studentId, "11", subjectAId);
-    const weakGrade11SubjectA = grade11SubjectA.subTopicBars.filter((b) => b.label === "needs_work");
-    expect(weakGrade11SubjectA.map((b) => b.id)).toEqual([subTopicA3Id]);
-  });
-
-  it("reports zero attempts for a Grade + Subject the student hasn't touched (empty state)", async () => {
+  it("reports zero attempts for a Grade + Subject the student hasn't touched (empty state), with the untouched topic scored null not 0", async () => {
     const stats = await getProgressStats(studentId, "11", subjectBId);
     expect(stats.quizzesCompleted).toBe(0);
+    expect(stats.totalQuestionsAnswered).toBe(0);
+    expect(stats.totalCorrectAnswers).toBe(0);
     expect(stats.averageScore).toBeNull();
-    // The sub-topic still exists (and is listed as not_started) — the empty
-    // state is driven by zero attempts, not by zero topics existing.
-    expect(stats.totalSubTopics).toBe(1);
-    expect(stats.subTopicBars[0].id).toBe(subTopicB2Id);
-    expect(stats.subTopicBars[0].label).toBe("not_started");
+    // The sub-topic still exists (and is listed as not_started, score null,
+    // not 0%) — the empty state is driven by zero attempts, not by zero
+    // topics existing.
+    expect(stats.topics).toHaveLength(1);
+    expect(stats.topics[0].id).toBe(subTopicB2Id);
+    expect(stats.topics[0].label).toBe("not_started");
+    expect(stats.topics[0].score).toBeNull();
+    expect(stats.topics[0].questionsAnswered).toBe(0);
+    expect(stats.topics[0].correctCount).toBe(0);
   });
 });

@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   masteryScores,
+  mcqs,
   modules,
   papers,
   quizAttemptAnswers,
@@ -208,36 +209,100 @@ export async function getCompletedQuizzes(
   });
 }
 
+export type TopicProgress = {
+  id: string;
+  name: string;
+  questionsAnswered: number;
+  correctCount: number;
+  score: number | null; // null (not 0) when questionsAnswered is 0 — "not started", not "0%".
+  label: SubTopicStatusLabel;
+};
+
 export type ProgressStats = {
   quizzesCompleted: number;
+  totalQuestionsAnswered: number;
+  totalCorrectAnswers: number;
   averageScore: number | null;
-  masteredCount: number;
-  totalSubTopics: number;
-  subTopicBars: {
-    id: string;
-    name: string;
-    score: number | null;
-    label: SubTopicStatusLabel;
-    questionsAnswered: number;
-  }[];
+  // Every sub-topic for this grade+subject, in syllabus order (module
+  // sortOrder, then sub-topic sortOrder) — not sorted by weakness. The
+  // Progress tab's single "Mastery by topic" table renders this list as-is.
+  topics: TopicProgress[];
 };
 
 // Powers the Progress tab's per-Grade+Subject topic breakdown. Deliberately
 // scoped to one grade *and* one subject at a time — there's no cross-grade
 // "exam readiness" aggregation or blended score here; a student viewing
 // Grade 11 progress sees only Grade 11 numbers, never combined with Grade 10.
-// `quizzesCompleted`/`averageScore` only count attempts that actually belong
-// to this grade+subject (via the sub-topic's module, or the paper's own
-// grade/subject), same join shape as getCompletedQuizzes/getContinueSubTopic.
+//
+// The 4 KPI cards are cumulative counts across every completed attempt that
+// belongs to this grade+subject (via the sub-topic's module, or the paper's
+// own grade/subject) — `averageScore` is total correct ÷ total questions
+// answered, deliberately NOT an average of each attempt's own percentage
+// (that would weight a 2-question attempt the same as a 40-question one,
+// double-counting the smaller sample).
+//
+// Each topic's questionsAnswered/correctCount is computed live from
+// quiz_attempt_answers (the same source of truth
+// recalculateMasteryForSubTopic writes from), rather than read out of the
+// mastery_scores cache — this table needs an exact raw "Correct" count
+// alongside the percentage, and re-deriving an integer count from a
+// already-rounded stored percentage risks an off-by-one in the displayed
+// math.
 export async function getProgressStats(
   studentId: string,
   grade: "10" | "11",
   subjectId: string,
 ): Promise<ProgressStats> {
-  const statuses = await getSubTopicStatusesForGrade(studentId, grade, subjectId);
+  const gradeModules = await db.query.modules.findMany({
+    where: and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)),
+    orderBy: modules.sortOrder,
+    with: { subTopics: { orderBy: subTopics.sortOrder } },
+  });
+  const orderedSubTopics = gradeModules.flatMap((m) => m.subTopics);
+  const subTopicIds = orderedSubTopics.map((s) => s.id);
+
+  const topicAnswerRows = subTopicIds.length
+    ? await db
+        .select({ subTopicId: mcqs.subTopicId, isCorrect: quizAttemptAnswers.isCorrect })
+        .from(quizAttemptAnswers)
+        .innerJoin(mcqs, eq(mcqs.id, quizAttemptAnswers.mcqId))
+        .innerJoin(quizAttempts, eq(quizAttempts.id, quizAttemptAnswers.quizAttemptId))
+        .where(
+          and(
+            eq(quizAttempts.studentId, studentId),
+            isNotNull(quizAttempts.completedAt),
+            inArray(mcqs.subTopicId, subTopicIds),
+          ),
+        )
+    : [];
+
+  const countsBySubTopic = new Map<string, { questionsAnswered: number; correctCount: number }>();
+  for (const row of topicAnswerRows) {
+    if (!row.subTopicId) continue;
+    const counts = countsBySubTopic.get(row.subTopicId) ?? { questionsAnswered: 0, correctCount: 0 };
+    counts.questionsAnswered += 1;
+    if (row.isCorrect) counts.correctCount += 1;
+    countsBySubTopic.set(row.subTopicId, counts);
+  }
+
+  const topics: TopicProgress[] = orderedSubTopics.map((subTopic) => {
+    const counts = countsBySubTopic.get(subTopic.id) ?? { questionsAnswered: 0, correctCount: 0 };
+    const score =
+      counts.questionsAnswered === 0
+        ? null
+        : Math.round((counts.correctCount / counts.questionsAnswered) * 10000) / 100;
+    return {
+      id: subTopic.id,
+      name: subTopic.name,
+      questionsAnswered: counts.questionsAnswered,
+      correctCount: counts.correctCount,
+      score,
+      label: score === null ? "not_started" : masteryLabelForScore(score),
+    };
+  });
 
   const attempts = await db
-    .select({ score: quizAttempts.score })
+    .select({ id: quizAttempts.id })
     .from(quizAttempts)
     .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
     .leftJoin(modules, eq(modules.id, subTopics.moduleId))
@@ -254,24 +319,25 @@ export async function getProgressStats(
     );
 
   const quizzesCompleted = attempts.length;
-  const averageScore =
-    quizzesCompleted === 0
-      ? null
-      : attempts.reduce((sum, a) => sum + Number(a.score ?? 0), 0) / quizzesCompleted;
+  let totalQuestionsAnswered = 0;
+  let totalCorrectAnswers = 0;
 
-  return {
-    quizzesCompleted,
-    averageScore,
-    masteredCount: statuses.filter((s) => s.label === "mastered").length,
-    totalSubTopics: statuses.length,
-    subTopicBars: statuses.map((s) => ({
-      id: s.id,
-      name: s.name,
-      score: s.score,
-      label: s.label,
-      questionsAnswered: s.questionsAnswered,
-    })),
-  };
+  if (quizzesCompleted > 0) {
+    const attemptIds = attempts.map((a) => a.id);
+    const allAnswers = await db
+      .select({ isCorrect: quizAttemptAnswers.isCorrect })
+      .from(quizAttemptAnswers)
+      .where(inArray(quizAttemptAnswers.quizAttemptId, attemptIds));
+    totalQuestionsAnswered = allAnswers.length;
+    totalCorrectAnswers = allAnswers.filter((a) => a.isCorrect).length;
+  }
+
+  const averageScore =
+    totalQuestionsAnswered === 0
+      ? null
+      : Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 10000) / 100;
+
+  return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
 }
 
 // A rough subject-matter icon per module, purely cosmetic (matches a
