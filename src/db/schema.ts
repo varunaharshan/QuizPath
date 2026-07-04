@@ -31,6 +31,10 @@ export const users = pgTable("users", {
   // conceptual users table but required to implement it.
   authProviderId: text("auth_provider_id").notNull().unique(),
   email: varchar("email", { length: 320 }).notNull().unique(),
+  // Display name from the auth provider's profile (e.g. Clerk's Google
+  // first/last name). Nullable since it's just for display, never an
+  // identity key.
+  name: varchar("name", { length: 200 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   status: userStatusEnum("status").notNull().default("active"),
 });

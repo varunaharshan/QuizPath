@@ -1,13 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  masteryScores,
-  mcqs,
-  modules,
-  quizAttemptAnswers,
-  quizAttempts,
-  subTopics,
-} from "@/db/schema";
+import { masteryScores, mcqs, quizAttemptAnswers, quizAttempts, subTopics } from "@/db/schema";
 
 // MVP quiz length. Sub-topics with fewer published MCQs than this just serve
 // everything they have.
@@ -22,22 +15,6 @@ export function masteryLabelForScore(score: number): MasteryLabel {
   if (score < 60) return "needs_work";
   if (score >= 80) return "mastered";
   return "in_progress";
-}
-
-export type ModuleWithSubTopics = {
-  id: string;
-  name: string;
-  subTopics: { id: string; name: string }[];
-};
-
-export async function getSubTopicsForGrade(grade: "10" | "11"): Promise<ModuleWithSubTopics[]> {
-  return db.query.modules.findMany({
-    where: eq(modules.grade, grade),
-    orderBy: modules.sortOrder,
-    with: {
-      subTopics: { orderBy: subTopics.sortOrder },
-    },
-  });
 }
 
 export type QuizQuestion = {

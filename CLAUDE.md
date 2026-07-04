@@ -146,9 +146,44 @@ The layout/color structure (split-screen navy marketing panel + white sign-in fo
 adapted from a reference screenshot of a different product's login page; the copy was
 rewritten from scratch for QuizPath rather than reused.
 
+## App shell (dashboard, practice, progress, profile)
+
+The authenticated app (everything past sign-in) was rebuilt from a student-provided HTML/CSS
+mockup: a navy top bar (QuizPath brand, "Learn"/"Settings" tabs, gold active-tab underline,
+`<UserButton>` avatar), a context bar (name, grade, "Free tier" / "Active learner" pills),
+and a persistent sidebar (Dashboard, Practice, Progress, Profile). This is a **second, fixed
+light theme** distinct from the navy marketing pages — new tokens for it
+(`--color-app-bg`, `--color-ink*`, `--color-mastered`/`--color-warn`/`--color-progress` +
+their `-bg` variants) live alongside the brand palette in `globals.css`. Neither theme
+adapts to OS dark mode; they're both intentionally fixed.
+
+- `src/components/app-shell.tsx` is a plain Server Component (no client JS needed) — each
+  page passes an `active` nav key and a few precomputed display values (name, grade,
+  practice count, active-learner flag) as props, rather than the shell fetching its own
+  data or needing `usePathname()`.
+- `src/lib/dashboard.ts` holds the read queries the shell/pages need:
+  `getSubTopicStatusesForGrade` (mastery status per sub-topic, backs the dashboard's
+  progress card, the practice list, the sidebar's practice-count badge, and the progress
+  bar chart), `getContinueSubTopic`, `getCompletedQuizzes` (derives real correct/total
+  per attempt from `quiz_attempt_answers` rather than reverse-engineering it from the
+  stored percentage), and `getProgressStats`.
+- **Deviation from the mockup**: its "Continue where you left off" / "Resume" affordance
+  implies mid-quiz progress tracking ("6 of 10 questions done"), which this app doesn't
+  have — the quiz is a single-page submit-everything-at-once flow (see "Quiz-taking flow"
+  above), so there's no partial attempt state to resume. "Continue" here means "your most
+  recently attempted sub-topic," with a "Retake" action, not a literal resume. The
+  Practice list's buttons are uniformly "Start" (never attempted) or "Retake" (attempted at
+  any mastery level) for the same reason — no special "Resume" primary-button treatment
+  in that list, only on the dashboard's continue card.
+- `/profile` added a `users.name` column (populated from Clerk's profile — `fullName`,
+  falling back to `firstName`/`lastName` — on first login) so there's a real display name
+  for the context bar and profile screen; previously only `email` existed. Grade is
+  editable there via a `updateGrade` Server Action mirroring onboarding's `setGrade`.
+- Module icons on the dashboard/practice list are a cosmetic keyword-matched emoji
+  (`iconForModule` in `src/lib/dashboard.ts`), purely decorative, matching the mockup.
+
 ## What's NOT built yet
 
-The dashboard's "progress by sub-topic" and "completed quizzes" sections render real data
-(they already queried `mastery_scores` / `quiz_attempts` directly), but per-question review
-after a quiz, Stripe/Billing, and Facebook login are still out of scope — see
-`docs/mvp-product-spec.md` section 9 for the week-by-week plan.
+Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
+scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Resumable
+(partial-progress) quizzes aren't built either — see the app-shell note above.

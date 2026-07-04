@@ -23,8 +23,9 @@ npm run dev
 
 Open http://localhost:3000 — the landing page doubles as the sign-in screen (marketing
 panel + "Continue with Google" side by side); after Google auth you'll land on onboarding
-(pick a grade) then the dashboard, where "Take a quiz" leads to the sub-topic picker and
-quiz-taking flow (spec section 5).
+(pick a grade) then the dashboard. The app shell has four sections: Dashboard, Practice
+(sub-topic picker + quiz-taking flow, spec section 5), Progress (stats + mastery bar
+chart), and Profile (account details, editable grade).
 
 ### Running tests
 

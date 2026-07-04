@@ -12,7 +12,8 @@ import {
   subTopics,
   users,
 } from "@/db/schema";
-import { getQuizForSubTopic, getSubTopicsForGrade, submitQuizAttempt } from "@/lib/quiz";
+import { getQuizForSubTopic, submitQuizAttempt } from "@/lib/quiz";
+import { getSubTopicStatusesForGrade } from "@/lib/dashboard";
 
 describe("quiz-taking flow", () => {
   const runId = randomUUID().slice(0, 8);
@@ -97,10 +98,11 @@ describe("quiz-taking flow", () => {
   });
 
   it("lists the sub-topic under the student's grade (select sub-topic step)", async () => {
-    const gradeModules = await getSubTopicsForGrade("10");
-    const testModule = gradeModules.find((m) => m.id === moduleId);
-    expect(testModule).toBeDefined();
-    expect(testModule!.subTopics.map((s) => s.id)).toContain(subTopicId);
+    const statuses = await getSubTopicStatusesForGrade(studentId, "10");
+    const testStatus = statuses.find((s) => s.id === subTopicId);
+    expect(testStatus).toBeDefined();
+    expect(testStatus!.moduleName).toBe(`Test Module ${runId}`);
+    expect(testStatus!.label).toBe("not_started");
   });
 
   it("serves only published MCQs, without leaking the answer key (quiz-serving step)", async () => {

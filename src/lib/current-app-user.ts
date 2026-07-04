@@ -18,6 +18,9 @@ export async function getOrCreateAppUser(): Promise<AppUser | null> {
   const email = clerkUser.primaryEmailAddress?.emailAddress ?? clerkUser.emailAddresses[0]?.emailAddress;
   if (!email) return null;
 
+  const joinedName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ");
+  const name = clerkUser.fullName || joinedName || null;
+
   const existing = await db.query.users.findFirst({
     where: eq(users.authProviderId, clerkUser.id),
   });
@@ -25,8 +28,8 @@ export async function getOrCreateAppUser(): Promise<AppUser | null> {
 
   const [created] = await db
     .insert(users)
-    .values({ authProviderId: clerkUser.id, email })
-    .onConflictDoUpdate({ target: users.authProviderId, set: { email } })
+    .values({ authProviderId: clerkUser.id, email, name })
+    .onConflictDoUpdate({ target: users.authProviderId, set: { email, name } })
     .returning();
 
   return created;

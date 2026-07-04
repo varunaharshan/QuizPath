@@ -21,6 +21,23 @@
   --color-gold-400: #f8cd5c;
   --color-gold-500: #f0b429;
   --color-gold-600: #d99a1b;
+
+  /* App shell palette — the authenticated dashboard/practice/progress/profile
+     screens, a fixed light theme (not adaptive to OS dark mode), matching a
+     reference mockup. */
+  --color-app-bg: #f4f5f7;
+  --color-app-surface-muted: #eef0f3;
+  --color-app-border: #dfe2e8;
+
+  --color-ink: #1a1d23;
+  --color-ink-secondary: #5c6270;
+  --color-ink-muted: #9aa0ac;
+
+  --color-mastered: #1e7e34;
+  --color-mastered-bg: #e6f4ea;
+  --color-warn: #b67f16;
+  --color-progress: #1e56a0;
+  --color-progress-bg: #eaf1fa;
 }
 
 @media (prefers-color-scheme: dark) {
