@@ -183,39 +183,75 @@ adapts to OS dark mode; they're both intentionally fixed.
   practice count, active-learner flag) as props, rather than the shell fetching its own
   data or needing `usePathname()`.
 - `src/lib/dashboard.ts` holds the read queries the shell/pages need:
-  `getSubTopicStatusesForGrade` (mastery status per sub-topic, backs the dashboard's
-  progress card, the practice list, the sidebar's practice-count badge, and the progress
-  bar chart), `getContinueSubTopic`, `getCompletedQuizzes` (derives real correct/total
-  per attempt from `quiz_attempt_answers` rather than reverse-engineering it from the
-  stored percentage), and `getProgressStats`.
-- `getContinueSubTopic(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })`
-  are both scoped to a specific grade (via the attempt's sub-topic's module, or the
-  attempt's paper) — the Dashboard passes the student's own `profile.grade`, so an attempt
-  from browsing a *different* grade's papers in Practice never leaks into "Continue where
-  you left off" or the "Completed quizzes" history, keeping the Dashboard focused on the
-  student's actual curriculum. `grade` on `getCompletedQuizzes` is optional and defaults to
-  unfiltered — every other page only needs `completedQuizzes.length > 0` for the "Active
-  learner" pill, an overall-activity signal that intentionally isn't grade-scoped. Since
-  `quiz_attempts` status resolution (`ensurePaperAttemptStarted`, `getPapersForSubject`) is
-  keyed purely off `paper_id`/`student_id` with no grade check at all, Practice's own
-  Start/Resume/Retake state is unaffected by any of this and works identically no matter
-  which grade's papers are being browsed — covered by a dedicated test in
-  `tests/paper-flow.test.ts`. `tests/dashboard.test.ts` covers the Dashboard-side scoping.
-- **Deviation from the mockup**: its "Continue where you left off" / "Resume" affordance
-  implies mid-quiz progress tracking ("6 of 10 questions done"), which this app doesn't
-  have — the quiz is a single-page submit-everything-at-once flow (see "Quiz-taking flow"
-  above), so there's no partial attempt state to resume. "Continue" here means "your most
-  recently attempted sub-topic," with a "Retake" action, not a literal resume. The
-  Practice list's buttons are uniformly "Start" (never attempted) or "Retake" (attempted at
-  any mastery level) for the same reason — no special "Resume" primary-button treatment
-  in that list, only on the dashboard's continue card.
+  `getSubTopicStatusesForGrade` (mastery status per sub-topic, backs the practice list, the
+  sidebar's practice-count badge, and the Progress tab), `getContinueAttempt`,
+  `getCompletedQuizzes` (derives real correct/total per attempt from `quiz_attempt_answers`
+  rather than reverse-engineering it from the stored percentage), `getProgressStats`, and
+  `rankRecommendedPracticeTopics`.
+- `getContinueAttempt(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })` are
+  both scoped to a specific grade (via the attempt's sub-topic's module, or the attempt's
+  paper) — the Dashboard passes the student's own `profile.grade`, so an attempt from
+  browsing a *different* grade's papers in Practice never leaks into "Continue where you
+  left off" or "Recent activity," keeping the Dashboard focused on the student's actual
+  curriculum. `grade` on `getCompletedQuizzes` is optional and defaults to unfiltered — every
+  other page only needs `completedQuizzes.length > 0` for the "Active learner" pill, an
+  overall-activity signal that intentionally isn't grade-scoped. Since `quiz_attempts` status
+  resolution (`ensurePaperAttemptStarted`, `getPapersForSubject`) is keyed purely off
+  `paper_id`/`student_id` with no grade check at all, Practice's own Start/Resume/Retake state
+  is unaffected by any of this and works identically no matter which grade's papers are being
+  browsed — covered by a dedicated test in `tests/paper-flow.test.ts`.
+  `tests/dashboard.test.ts` covers the Dashboard-side scoping.
 - `/profile` added a `users.name` column (populated from Clerk's profile — `fullName`,
   falling back to `firstName`/`lastName` — on first login) so there's a real display name
   for the context bar and profile screen; previously only `email` existed. Grade and medium
   are editable there via `updateProfile` (`src/app/profile/actions.ts`), which validates
   and updates both, mirroring onboarding's combined `completeOnboarding` action.
-- Module icons on the dashboard/practice list are a cosmetic keyword-matched emoji
-  (`iconForModule` in `src/lib/dashboard.ts`), purely decorative, matching the mockup.
+- Module icons on the practice list are a cosmetic keyword-matched emoji (`iconForModule` in
+  `src/lib/dashboard.ts`), purely decorative.
+
+Dashboard was rebuilt to match a second student-provided mockup
+(`docs/dashboard-mockup-reference.html`), reframed as a fast "where do I stand and what's
+next" glance rather than a page that duplicates the full topic table/history Progress now
+owns. Four sections, top to bottom:
+1. **Continue where you left off** — `getContinueAttempt(studentId, grade)` finds the
+   student's most recently *started but not yet completed* attempt, written generally over
+   both paper and sub-topic attempts (a left join + `or(module.grade, paper.grade)`) rather
+   than hardcoded to "paper only," even though only papers can actually produce an incomplete
+   row today — the sub-topic quiz flow is a single atomic insert-at-submit (see
+   "Quiz-taking flow" above), so it structurally can never be "in progress." This keeps the
+   query correct if/when partial-progress tracking is ever added for sub-topic quizzes too;
+   `tests/dashboard.test.ts` exercises that branch by inserting a raw incomplete sub-topic row
+   directly; since the public API can't produce one.
+   - **Deviation from the mockup**: it depicts granular per-question progress ("24 of 40
+     questions done", a proportional bar) for an in-progress paper. Neither quiz flow persists
+     individual answers until the whole form is submitted — there is no partial-progress data
+     to report, the same architectural gap already documented for the *previous* version of
+     this card (which showed "Retake" on a completed sub-topic instead of a real resume).
+     `getContinueAttempt` always returns `questionsDone: 0` for a genuinely incomplete attempt
+     (truthful, not fabricated), and the Dashboard renders an accordingly-empty progress bar
+     rather than inventing a number. A paper's `name` is its title; its `source` line prefers
+     the paper's own `source` column (e.g. "Colombo District") falling back to a capitalized
+     `paper_type` label; a topic-practice attempt's `source` is the literal string
+     "Practice quiz" (there's no historical paper to name).
+2. **Your snapshot** — the exact same 4 KPI cards as the Progress tab (`getProgressStats`,
+   reused as-is), scoped to the student's own `profile.grade` and the one subject
+   (`getPracticeSubjects()[0]`, since Science is the only subject — see "Single-tenant MVP").
+   "View full progress →" links to `/progress/grade/[grade]/subjects/[subjectId]` for that
+   exact grade+subject.
+3. **Recommended practice** — the top 2 weakest topics via `rankRecommendedPracticeTopics`, a
+   pure function (no DB access, directly unit-tested) over `ProgressStats.topics`: topics in
+   the 40-59% range rank first (closest to crossing the 60% "needs work" threshold, so
+   ranked by score descending — 59% before 40%), then topics below 40% (ascending — most
+   urgent first), then `not_started` topics last (no evidence they specifically need remedial
+   work, just that they haven't been tried) — `mastered`/`in_progress` topics are excluded
+   entirely. "See all topics →" links to the same Progress destination as the snapshot card.
+4. **Recent activity** — the last 3 completed attempts via `getCompletedQuizzes(studentId, {
+   grade, limit: 3 })`, most recent first, covering both papers and topic-practice quizzes.
+   `CompletedQuiz` gained a `type: "paper" | "topic_practice"` field so the page can prefix
+   topic-practice rows with "Practice: " (papers just show their own title) — formatting
+   stays in the page, not baked into the `title` string itself. "View all →" points at the
+   same Progress destination too: there's no dedicated full-history view yet, a known gap
+   rather than a new page built for it this pass.
 
 ## Medium and papers
 
@@ -274,7 +310,7 @@ Routing: `/quiz/grade/[grade]`, `/quiz/grade/[grade]/subjects/[subjectId]`, and
 ahead of their dynamic ones, rather than putting a second dynamic segment directly under
 `/quiz/`, because Next.js doesn't allow two different dynamic segment names at the same path
 position — `/quiz/[subTopicId]` (untouched, still used by the Dashboard's
-continue-card/progress-by-sub-topic Retake links) already occupies that slot. `/quiz/papers/
+Recommended-practice/Progress's per-topic Practice links) already occupies that slot. `/quiz/papers/
 [paperId]` deliberately stays a *sibling* of `/quiz/grade/...` rather than nesting under it
 (e.g. not `/quiz/grade/[grade]/subjects/[subjectId]/papers/[paperId]`) — a paper's own `grade`
 and `subjectId` are intrinsic to the paper row itself (now returned by `getQuizForPaper`, used

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   masteryScores,
@@ -66,64 +66,109 @@ export async function getSubTopicStatusesForGrade(
   return statuses;
 }
 
-export type ContinueSubTopic = {
-  subTopicId: string;
-  subTopicName: string;
-  moduleName: string;
-  score: number;
-  label: MasteryLabel;
+export type ContinueAttempt = {
+  type: "paper" | "topic_practice";
+  // The paper's id (for a paper attempt) or the sub-topic's id (for a
+  // topic-practice attempt) — whichever the Resume button should link to.
+  id: string;
+  name: string;
+  source: string;
+  totalQuestions: number;
+  questionsDone: number;
 };
 
-// The student's most recently completed attempt for their own grade,
-// regardless of how it scored — there's no partial/mid-quiz progress
-// tracking in this MVP (the quiz is a single-page submit), so "continue"
-// means "pick this sub-topic back up," not "resume this exact attempt."
-export async function getContinueSubTopic(
+// The student's most recently *started but not yet completed* attempt for
+// their own grade — genuinely resumable, unlike the old version of this card
+// (which showed the last completed sub-topic quiz with a "Retake" action,
+// since the sub-topic flow has no partial-progress state at all). Written
+// generally over both paper and sub-topic attempts rather than hardcoding
+// "paper only", even though only papers can actually produce an incomplete
+// row today — the sub-topic quiz flow is a single atomic insert-at-submit
+// (see "Quiz-taking flow" in CLAUDE.md), so it can never be "in progress."
+// This keeps the query correct if/when partial-progress tracking is ever
+// added for sub-topic quizzes too.
+//
+// `questionsDone` is always 0: neither quiz flow persists individual answers
+// until the whole form is submitted, so there's no real per-question
+// progress to report for a genuinely incomplete attempt — a deviation from
+// a mockup that depicted granular "24 of 40 done" tracking, in the same
+// spirit as the earlier documented deviation for the old version of this
+// card (see the app-shell note below).
+export async function getContinueAttempt(
   studentId: string,
   grade: "10" | "11",
-): Promise<ContinueSubTopic | null> {
-  // Only ever considers sub-topic attempts — paper attempts (subTopicId
-  // null) are a separate flow not reconciled into this card yet. Scoped to
-  // the student's own grade (via the sub-topic's module) so an attempt from
-  // browsing another grade's content in Practice never surfaces here —
-  // this card is specifically "continue your curriculum," not "everything
-  // you've ever attempted."
-  const [lastAttempt] = await db
-    .select({ subTopicId: quizAttempts.subTopicId, score: quizAttempts.score })
+): Promise<ContinueAttempt | null> {
+  const [incomplete] = await db
+    .select({
+      subTopicId: quizAttempts.subTopicId,
+      paperId: quizAttempts.paperId,
+    })
     .from(quizAttempts)
-    .innerJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
-    .innerJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
     .where(
       and(
         eq(quizAttempts.studentId, studentId),
-        isNotNull(quizAttempts.completedAt),
-        isNotNull(quizAttempts.subTopicId),
-        eq(modules.grade, grade),
+        isNull(quizAttempts.completedAt),
+        or(eq(modules.grade, grade), eq(papers.grade, grade)),
       ),
     )
-    .orderBy(desc(quizAttempts.completedAt))
+    .orderBy(desc(quizAttempts.startedAt))
     .limit(1);
-  if (!lastAttempt || !lastAttempt.subTopicId) return null;
+  if (!incomplete) return null;
 
-  const subTopic = await db.query.subTopics.findFirst({
-    where: eq(subTopics.id, lastAttempt.subTopicId),
-    with: { module: true },
-  });
-  if (!subTopic) return null;
+  if (incomplete.paperId) {
+    const paper = await db.query.papers.findFirst({ where: eq(papers.id, incomplete.paperId) });
+    if (!paper) return null;
 
-  const score = Number(lastAttempt.score ?? 0);
-  return {
-    subTopicId: subTopic.id,
-    subTopicName: subTopic.name,
-    moduleName: subTopic.module.name,
-    score,
-    label: masteryLabelForScore(score),
-  };
+    const questions = await db
+      .select({ id: mcqs.id })
+      .from(mcqs)
+      .where(and(eq(mcqs.paperId, paper.id), eq(mcqs.status, "published")));
+
+    return {
+      type: "paper",
+      id: paper.id,
+      name: paper.title,
+      source: paper.source ?? `${paper.paperType.charAt(0).toUpperCase()}${paper.paperType.slice(1)} paper`,
+      totalQuestions: questions.length,
+      questionsDone: 0,
+    };
+  }
+
+  // Structurally unreachable today (see comment above) — the sub-topic flow
+  // never leaves an incomplete row — but implemented for completeness.
+  if (incomplete.subTopicId) {
+    const subTopic = await db.query.subTopics.findFirst({ where: eq(subTopics.id, incomplete.subTopicId) });
+    if (!subTopic) return null;
+
+    const questions = await db
+      .select({ id: mcqs.id })
+      .from(mcqs)
+      .where(and(eq(mcqs.subTopicId, subTopic.id), eq(mcqs.status, "published")));
+
+    return {
+      type: "topic_practice",
+      id: subTopic.id,
+      name: subTopic.name,
+      source: "Practice quiz",
+      totalQuestions: questions.length,
+      questionsDone: 0,
+    };
+  }
+
+  return null;
 }
 
 export type CompletedQuiz = {
   attemptId: string;
   title: string;
+  // Lets callers label a row by its source (e.g. Dashboard's "Recent
+  // activity" prefixes topic-practice rows with "Practice: ", papers just
+  // show their own title) — formatting stays in the page, not baked into
+  // `title` itself.
+  type: "paper" | "topic_practice";
   completedAt: Date;
   correctCount: number;
   total: number;
@@ -202,6 +247,7 @@ export async function getCompletedQuizzes(
     return {
       attemptId: attempt.id,
       title,
+      type: attempt.subTopicId ? "topic_practice" : "paper",
       completedAt: attempt.completedAt!,
       correctCount: counts.correct,
       total: counts.total,
@@ -338,6 +384,37 @@ export async function getProgressStats(
       : Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 10000) / 100;
 
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
+}
+
+// Ranks topics for the Dashboard's "Recommended practice" card: topics
+// closest to crossing the 60% "needs work" threshold from below (40-59%)
+// come first, since they're closest to being fixed; topics further below
+// that (<40%) fall back to lowest-score-first (most urgent); topics with
+// zero questions answered rank last — there's no evidence yet that they
+// specifically need remedial practice, just that they haven't been tried.
+// Already-`in_progress`/`mastered` topics are excluded entirely (they're not
+// in need of recommended work). A pure function over already-fetched
+// `ProgressStats.topics`, independent of any particular grade/subject query,
+// so it's directly testable without a database.
+export function rankRecommendedPracticeTopics(topics: TopicProgress[], limit = 2): TopicProgress[] {
+  const candidates = topics.filter((t) => t.label === "needs_work" || t.label === "not_started");
+
+  const tierOf = (t: TopicProgress): 0 | 1 | 2 => {
+    if (t.score === null) return 2; // not started -> last
+    if (t.score >= 40) return 0; // 40-59% -> closest to crossing 60%, first
+    return 1; // <40% -> lowest-score-first fallback tier
+  };
+
+  const ranked = [...candidates].sort((a, b) => {
+    const tierA = tierOf(a);
+    const tierB = tierOf(b);
+    if (tierA !== tierB) return tierA - tierB;
+    if (tierA === 0) return (b.score ?? 0) - (a.score ?? 0); // 40-59%: descending, closest-to-60 first
+    if (tierA === 1) return (a.score ?? 0) - (b.score ?? 0); // <40%: ascending, most urgent first
+    return 0; // not started: stable order among themselves
+  });
+
+  return ranked.slice(0, limit);
 }
 
 // A rough subject-matter icon per module, purely cosmetic (matches a
