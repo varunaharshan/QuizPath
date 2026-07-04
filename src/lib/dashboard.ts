@@ -18,17 +18,24 @@ export type SubTopicStatus = {
   moduleName: string;
   score: number | null;
   label: SubTopicStatusLabel;
+  questionsAnswered: number;
 };
 
-// One row per sub-topic for the student's grade, joined with their mastery
-// score if they've attempted it. Backs the dashboard's progress card, the
-// practice list, the sidebar's practice count, and the progress bar chart.
+// One row per sub-topic for the student's grade (optionally narrowed to one
+// subject), joined with their mastery score if they've attempted it. Backs
+// the dashboard's progress card, the practice list, the sidebar's practice
+// count, and the Progress tab's topic breakdown. `subjectId` is optional —
+// every existing caller wants "every subject for this grade" (there's only
+// Science today, but the practice-count badge etc. are deliberately
+// grade-wide, not subject-scoped); the Progress tab is the one caller that
+// narrows to a specific subject.
 export async function getSubTopicStatusesForGrade(
   studentId: string,
   grade: "10" | "11",
+  subjectId?: string,
 ): Promise<SubTopicStatus[]> {
   const gradeModules = await db.query.modules.findMany({
-    where: eq(modules.grade, grade),
+    where: subjectId ? and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)) : eq(modules.grade, grade),
     orderBy: modules.sortOrder,
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
@@ -37,18 +44,21 @@ export async function getSubTopicStatusesForGrade(
     .select()
     .from(masteryScores)
     .where(eq(masteryScores.studentId, studentId));
-  const scoreBySubTopic = new Map(scores.map((s) => [s.subTopicId, Number(s.score)]));
+  const scoreBySubTopic = new Map(
+    scores.map((s) => [s.subTopicId, { score: Number(s.score), questionsAnswered: s.questionsAnswered }]),
+  );
 
   const statuses: SubTopicStatus[] = [];
   for (const gradeModule of gradeModules) {
     for (const subTopic of gradeModule.subTopics) {
-      const score = scoreBySubTopic.get(subTopic.id) ?? null;
+      const mastery = scoreBySubTopic.get(subTopic.id);
       statuses.push({
         id: subTopic.id,
         name: subTopic.name,
         moduleName: gradeModule.name,
-        score,
-        label: score === null ? "not_started" : masteryLabelForScore(score),
+        score: mastery?.score ?? null,
+        label: mastery ? masteryLabelForScore(mastery.score) : "not_started",
+        questionsAnswered: mastery?.questionsAnswered ?? 0,
       });
     }
   }
@@ -203,19 +213,45 @@ export type ProgressStats = {
   averageScore: number | null;
   masteredCount: number;
   totalSubTopics: number;
-  subTopicBars: { name: string; score: number | null; label: SubTopicStatusLabel }[];
+  subTopicBars: {
+    id: string;
+    name: string;
+    score: number | null;
+    label: SubTopicStatusLabel;
+    questionsAnswered: number;
+  }[];
 };
 
+// Powers the Progress tab's per-Grade+Subject topic breakdown. Deliberately
+// scoped to one grade *and* one subject at a time — there's no cross-grade
+// "exam readiness" aggregation or blended score here; a student viewing
+// Grade 11 progress sees only Grade 11 numbers, never combined with Grade 10.
+// `quizzesCompleted`/`averageScore` only count attempts that actually belong
+// to this grade+subject (via the sub-topic's module, or the paper's own
+// grade/subject), same join shape as getCompletedQuizzes/getContinueSubTopic.
 export async function getProgressStats(
   studentId: string,
   grade: "10" | "11",
+  subjectId: string,
 ): Promise<ProgressStats> {
-  const statuses = await getSubTopicStatusesForGrade(studentId, grade);
+  const statuses = await getSubTopicStatusesForGrade(studentId, grade, subjectId);
 
   const attempts = await db
     .select({ score: quizAttempts.score })
     .from(quizAttempts)
-    .where(and(eq(quizAttempts.studentId, studentId), isNotNull(quizAttempts.completedAt)));
+    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        or(
+          and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)),
+          and(eq(papers.grade, grade), eq(papers.subjectId, subjectId)),
+        ),
+      ),
+    );
 
   const quizzesCompleted = attempts.length;
   const averageScore =
@@ -228,7 +264,13 @@ export async function getProgressStats(
     averageScore,
     masteredCount: statuses.filter((s) => s.label === "mastered").length,
     totalSubTopics: statuses.length,
-    subTopicBars: statuses.map((s) => ({ name: s.name, score: s.score, label: s.label })),
+    subTopicBars: statuses.map((s) => ({
+      id: s.id,
+      name: s.name,
+      score: s.score,
+      label: s.label,
+      questionsAnswered: s.questionsAnswered,
+    })),
   };
 }
 

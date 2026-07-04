@@ -4,7 +4,7 @@ import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
 import { getPapersForSubject, getSubjectById, isValidGrade, type PaperListItem } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
-import { PracticeBreadcrumb } from "@/components/practice-breadcrumb";
+import { StepBreadcrumb } from "@/components/step-breadcrumb";
 
 const SECTIONS: { key: keyof Awaited<ReturnType<typeof getPapersForSubject>>; label: string }[] = [
   { key: "provincial", label: "Provincial papers" },
@@ -64,7 +64,7 @@ export default async function SubjectPapersPage({
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <PracticeBreadcrumb
+      <StepBreadcrumb
         items={[{ label: `Grade ${grade}`, href: `/quiz/grade/${grade}` }, { label: subject.name }]}
       />
       <h1 className="mt-2 mb-4 text-lg font-bold text-navy-900">{subject.name}</h1>

@@ -299,12 +299,61 @@ sharing a `gradeAnswers` helper. Two behavioral differences from the sub-topic f
   (a paper's tagged questions plus a direct sub-topic quiz all combining into one running
   total) is covered separately in `tests/mastery.test.ts`.
 
+## Progress tab
+
+Progress uses the **exact same Grade → Subject → ... shape as Practice**, not a different
+navigation pattern for the same two grades:
+1. `/progress` — pick a grade, identical UI/copy pattern to Practice's own grade picker
+   (`src/app/quiz/page.tsx`): the student's own `profile.grade` is highlighted "Your grade"
+   but either card is a real link, and picking one never writes to `student_profiles.grade`.
+   A Grade 11 student can view Grade 10 progress if they've been practicing those papers —
+   same free-browsing rule as Practice, not a separate one.
+2. `/progress/grade/[grade]` — pick a subject, identical to Practice's subject step.
+3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown: stat cards (quizzes
+   completed, average score, topics mastered X of Y), a "topics that need work" callout
+   (`needs_work`-labeled sub-topics only, not `not_started` ones — those just haven't been
+   tried yet, which is a different state), and the full mastery-by-topic bar list. Each weak
+   topic's "Practice" button links straight to `/quiz/[subTopicId]` — the existing sub-topic
+   quiz route already pools every published MCQ tagged with that `sub_topic_id` regardless of
+   which paper (if any) it also belongs to, and logs the resulting attempt with `paper_id`
+   null, so this needed no new quiz-serving mechanism, just linking to what already existed.
+
+**No cross-grade blending anywhere in this tab** — `getProgressStats(studentId, grade,
+subjectId)` (`src/lib/dashboard.ts`) takes both `grade` and `subjectId` and scopes every
+number to that exact pair; there's no combined/overall "readiness" figure across grades. This
+fixed a latent scoping gap along the way: `getProgressStats`'s `quizzesCompleted`/
+`averageScore` previously queried *all* of a student's completed attempts with no grade filter
+at all (unlike its own `subTopicBars`, which was already grade-scoped) — now both halves use
+the same grade+subject join shape as `getCompletedQuizzes`/`getContinueSubTopic`. The empty
+state ("You haven't tried any Grade N Science papers yet") is driven specifically by
+`quizzesCompleted === 0`, not by an absence of sub-topics — a grade+subject can have topics
+listed as `not_started` while still showing the empty state, if literally nothing has been
+attempted there yet.
+
+`getSubTopicStatusesForGrade` gained an optional third `subjectId` parameter (and now also
+returns `questionsAnswered` per topic, straight from `mastery_scores.questions_answered`) —
+optional because every *other* caller (dashboard, practice, the sidebar's practice-count
+badge) intentionally wants "every subject for this grade," since Science is the only subject
+today and that badge is meant to be grade-wide, not subject-scoped. The Progress tab is the
+one caller that narrows it.
+
+`src/components/practice-breadcrumb.tsx` was renamed to `src/components/step-breadcrumb.tsx`
+(component renamed `PracticeBreadcrumb` → `StepBreadcrumb`) since it's now shared by both
+Practice's and Progress's Grade/Subject steps — it never had any Practice-specific logic, just
+a misleading name once a second feature started using it.
+
+Integration coverage: `tests/progress.test.ts` — own-grade progress, a different grade the
+student has practiced (mirroring Practice's cross-grade browsing), the empty state for a
+grade+subject with zero attempts (while topics still exist and list as `not_started`), and
+the weak-topics list scoped to one grade+subject only (proven by seeding a same-grade topic
+under a *different* subject and confirming it never appears).
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
 scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Resumable
 (partial-progress) quizzes for the **sub-topic** flow aren't built either — see the app-shell
 note above; papers now have real start/resume, see "Medium and papers" above. The Dashboard's
-"progress by sub-topic" section still only reads `mastery_scores` as before — it already
-benefits from the cumulative fix (same table, same query shape), but showing the new
-`questions_answered` confidence count anywhere in the UI is Progress-tab work, not done yet.
+own "progress by sub-topic" card is still grade-only (not subject-scoped) and shows a plain
+percentage with no questions-answered confidence note — the Progress tab is the one place that
+now surfaces the fuller Grade+Subject+confidence view.

@@ -1034,10 +1034,17 @@ async function seedDevTestData(subjectId: string) {
     }),
   );
 
-  await db.insert(masteryScores).values({ studentId: student.id, subTopicId: subTopicTarget.id, score: "70.00" });
+  await db.insert(masteryScores).values({
+    studentId: student.id,
+    subTopicId: subTopicTarget.id,
+    score: "70.00",
+    questionsAnswered: subTopicMcqs.length,
+  });
 
-  // Paper quiz attempt: all correct (100%). Paper attempts never touch
-  // mastery_scores — see CLAUDE.md "Medium and papers".
+  // Paper quiz attempt: all correct (100%). This particular placeholder
+  // paper's generic filler MCQs aren't tagged with a sub_topic_id, so it
+  // doesn't feed mastery_scores — see CLAUDE.md "Quiz-taking flow" for the
+  // cumulative model that would apply if they were.
   const paperMcqs = await db
     .select({ id: mcqs.id, correctOption: mcqs.correctOption })
     .from(mcqs)

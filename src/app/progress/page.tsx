@@ -1,21 +1,16 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import {
-  getCompletedQuizzes,
-  getProgressStats,
-  getSubTopicStatusesForGrade,
-  type SubTopicStatusLabel,
-} from "@/lib/dashboard";
+import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 
-const BAR_COLOR: Record<SubTopicStatusLabel, string> = {
-  mastered: "bg-mastered",
-  in_progress: "bg-progress",
-  needs_work: "bg-warn",
-  not_started: "bg-app-surface-muted",
-};
+const GRADES = ["10", "11"] as const;
 
-export default async function ProgressPage() {
+// Progress mirrors Practice's own Grade -> Subject -> ... flow exactly (same
+// step order, same "Your grade" default emphasis, same free-browsing-choice
+// rule) rather than inventing a different navigation shape for the same two
+// grades — see src/app/quiz/page.tsx.
+export default async function ProgressGradePage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -26,8 +21,7 @@ export default async function ProgressPage() {
     redirect("/onboarding");
   }
 
-  const [stats, statuses, completedQuizzes] = await Promise.all([
-    getProgressStats(appUser.id, profile.grade),
+  const [statuses, completedQuizzes] = await Promise.all([
     getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
   ]);
@@ -42,54 +36,37 @@ export default async function ProgressPage() {
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <div className="mb-4.5 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
-        <div className="rounded-[10px] border border-app-border bg-white p-4">
-          <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
-            Quizzes completed
-          </p>
-          <p className="m-0 text-[22px] font-bold text-navy-900">{stats.quizzesCompleted}</p>
-        </div>
-        <div className="rounded-[10px] border border-app-border bg-white p-4">
-          <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
-            Average score
-          </p>
-          <p className="m-0 text-[22px] font-bold text-navy-900">
-            {stats.averageScore === null ? "—" : `${Math.round(stats.averageScore)}%`}
-          </p>
-        </div>
-        <div className="rounded-[10px] border border-app-border bg-white p-4">
-          <p className="m-0 mb-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">
-            Sub-topics mastered
-          </p>
-          <p className="m-0 text-[22px] font-bold text-navy-900">
-            {stats.masteredCount} of {stats.totalSubTopics}
-          </p>
-        </div>
-      </div>
-
       <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
         <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
-          Mastery by sub-topic
+          Choose a grade to view progress
         </div>
-        <div className="p-4">
-          {stats.subTopicBars.map((bar) => (
-            <div key={bar.name} className="mb-2.5 flex items-center gap-3 last:mb-0">
-              <div className="w-[170px] shrink-0 truncate text-[12.5px] text-ink-secondary">
-                {bar.name}
-              </div>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-app-surface-muted">
-                <div
-                  className={`h-full rounded-full ${BAR_COLOR[bar.label]}`}
-                  style={{ width: `${bar.score ?? 0}%` }}
-                />
-              </div>
-              <div className="w-9 shrink-0 text-right text-[12.5px] font-bold">
-                {bar.score === null ? "—" : `${bar.score}%`}
-              </div>
-            </div>
-          ))}
-        </div>
+        {GRADES.map((grade) => {
+          const isOwnGrade = grade === profile.grade;
+          return (
+            <Link
+              key={grade}
+              href={`/progress/grade/${grade}`}
+              className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5 text-sm font-semibold last:border-b-0 hover:bg-app-surface-muted"
+            >
+              <span className="flex items-center gap-2.5">
+                Grade {grade}
+                {isOwnGrade && (
+                  <span className="rounded-full bg-progress-bg px-2.5 py-0.5 text-[11px] font-semibold text-progress">
+                    Your grade
+                  </span>
+                )}
+              </span>
+              <span aria-hidden className="text-ink-secondary">
+                →
+              </span>
+            </Link>
+          );
+        })}
       </div>
+      <p className="mt-3 text-[12.5px] text-ink-secondary">
+        Viewing a different grade here is just for browsing progress — it won&apos;t change your
+        profile grade.
+      </p>
     </AppShell>
   );
 }
