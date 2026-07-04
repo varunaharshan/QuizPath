@@ -1,6 +1,8 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { masteryScores, mcqs, papers, quizAttemptAnswers, quizAttempts, subTopics } from "@/db/schema";
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // MVP quiz length. Sub-topics with fewer published MCQs than this just serve
 // everything they have.
@@ -75,6 +77,47 @@ function gradeAnswers(
   return { gradedAnswers, correctCount, total, score, masteryLabel: masteryLabelForScore(score) };
 }
 
+// Mastery for a sub-topic is a running cumulative ratio — total correct
+// answers ever given on MCQs tagged with this sub_topic_id, over total
+// questions ever answered for it — recalculated in full from
+// quiz_attempt_answers on every attempt, rather than incrementally updated
+// or overwritten with just the latest attempt's score. This is what lets
+// provincial/district/school paper questions (any paper MCQ can also be
+// tagged with a sub_topic_id) and ordinary sub-topic-quiz questions all
+// contribute to the same running total for that sub-topic, regardless of
+// which attempt or paper they came from. Doing a full re-aggregation (as
+// opposed to storing running correct/total counters and incrementing them)
+// means there's nothing to drift out of sync — it's always derived fresh
+// from the source-of-truth answer log.
+async function recalculateMasteryForSubTopic(tx: Tx, studentId: string, subTopicId: string): Promise<void> {
+  const answers = await tx
+    .select({ isCorrect: quizAttemptAnswers.isCorrect })
+    .from(quizAttemptAnswers)
+    .innerJoin(mcqs, eq(mcqs.id, quizAttemptAnswers.mcqId))
+    .innerJoin(quizAttempts, eq(quizAttempts.id, quizAttemptAnswers.quizAttemptId))
+    .where(
+      and(
+        eq(mcqs.subTopicId, subTopicId),
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+      ),
+    );
+
+  const questionsAnswered = answers.length;
+  const correctCount = answers.filter((a) => a.isCorrect).length;
+  const score = questionsAnswered === 0 ? 0 : Math.round((correctCount / questionsAnswered) * 10000) / 100;
+  const scoreStr = score.toFixed(2);
+  const now = new Date();
+
+  await tx
+    .insert(masteryScores)
+    .values({ studentId, subTopicId, score: scoreStr, questionsAnswered, lastUpdated: now })
+    .onConflictDoUpdate({
+      target: [masteryScores.studentId, masteryScores.subTopicId],
+      set: { score: scoreStr, questionsAnswered, lastUpdated: now },
+    });
+}
+
 // Grades server-side against the real answer key (never trusts a
 // "correct"/"incorrect" flag from the client), logs the attempt + per-question
 // answers, and recalculates mastery for the sub-topic in one transaction.
@@ -129,16 +172,7 @@ export async function submitQuizAttempt(params: {
       })),
     );
 
-    // Mastery is simply the most recent attempt's score for that sub-topic —
-    // simplest rules-based reading of "recalculated after the attempt" for
-    // MVP; no historical averaging.
-    await tx
-      .insert(masteryScores)
-      .values({ studentId, subTopicId, score: scoreStr, lastUpdated: now })
-      .onConflictDoUpdate({
-        target: [masteryScores.studentId, masteryScores.subTopicId],
-        set: { score: scoreStr, lastUpdated: now },
-      });
+    await recalculateMasteryForSubTopic(tx, studentId, subTopicId);
 
     return attempt.id;
   });
@@ -198,8 +232,11 @@ export async function ensurePaperAttemptStarted(
 
 // Grades and completes the student's in-progress attempt for this paper
 // (started by ensurePaperAttemptStarted) — updates that same row rather than
-// inserting a new one. Never touches mastery_scores: paper attempts aren't
-// reconciled into sub-topic mastery tracking (a separate follow-up).
+// inserting a new one. Any of the paper's questions that are also tagged
+// with a sub_topic_id (per the schema's "tag both where sensible" design)
+// feed into that sub-topic's cumulative mastery, same as an ordinary
+// sub-topic quiz would — a paper can cover several sub-topics at once, so
+// every distinct one touched gets recalculated.
 export async function submitPaperQuizAttempt(params: {
   studentId: string;
   paperId: string;
@@ -209,7 +246,7 @@ export async function submitPaperQuizAttempt(params: {
   const mcqIds = Object.keys(answers);
 
   const questionBank = await db
-    .select({ id: mcqs.id, correctOption: mcqs.correctOption })
+    .select({ id: mcqs.id, correctOption: mcqs.correctOption, subTopicId: mcqs.subTopicId })
     .from(mcqs)
     .where(
       and(
@@ -230,6 +267,10 @@ export async function submitPaperQuizAttempt(params: {
   const now = new Date();
   const scoreStr = score.toFixed(2);
 
+  const touchedSubTopicIds = [...new Set(questionBank.map((q) => q.subTopicId))].filter(
+    (id): id is string => id !== null,
+  );
+
   const attemptId = await ensurePaperAttemptStarted(studentId, paperId);
 
   await db.transaction(async (tx) => {
@@ -246,6 +287,10 @@ export async function submitPaperQuizAttempt(params: {
         isCorrect: a.isCorrect,
       })),
     );
+
+    for (const subTopicId of touchedSubTopicIds) {
+      await recalculateMasteryForSubTopic(tx, studentId, subTopicId);
+    }
   });
 
   return { attemptId, score, correctCount, total, masteryLabel };

@@ -176,6 +176,12 @@ export const masteryScores = pgTable(
       .notNull()
       .references(() => subTopics.id, { onDelete: "cascade" }),
     score: numeric("score", { precision: 5, scale: 2 }).notNull().default("0"),
+    // Cumulative denominator behind `score` — total questions ever answered
+    // for this sub-topic across every attempt (sub-topic quizzes and any
+    // paper questions tagged with this sub_topic_id), so the UI can show
+    // confidence (e.g. "52% (based on 6 questions)") rather than presenting
+    // a thin sample as equally reliable as a large one.
+    questionsAnswered: integer("questions_answered").notNull().default(0),
     lastUpdated: timestamp("last_updated", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.studentId, table.subTopicId] })],

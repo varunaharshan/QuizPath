@@ -110,11 +110,25 @@ need to call it over the network to render itself.
   published MCQs just serve everything they have.
 - Grading always re-fetches the answer key server-side from `mcqs.correct_option` — the
   client only ever sees `options`, never `correct_option`.
-- Mastery is the **most recent attempt's score** for that sub-topic (not a rolling
-  average) — simplest rules-based reading of spec section 5 for MVP. Thresholds: `< 60` =
-  `needs_work`, `60–79` = `in_progress` (not called out explicitly in the spec's two-bucket
-  example; added as a third tier so 60-79% isn't mislabeled as "needs work"), `>= 80` =
-  `mastered`.
+- Mastery is a **cumulative running ratio** for that sub-topic — total correct answers ever
+  given on MCQs tagged with that `sub_topic_id`, over total questions ever answered for it,
+  recalculated in full from `quiz_attempt_answers` on every attempt (`recalculateMasteryForSubTopic`
+  in `src/lib/quiz.ts`). Deliberately a from-scratch re-aggregation each time rather than
+  incrementing stored counters — there's nothing to drift out of sync, since it's always
+  derived fresh from the source-of-truth answer log. This is a correction from an earlier pass
+  that overwrote mastery with just the latest attempt's score (no historical weight at all);
+  the cumulative model also means any paper MCQ tagged with a `sub_topic_id` (provincial,
+  district, or school) feeds the same running total as an ordinary sub-topic quiz — a paper
+  can touch several sub-topics at once, so `submitPaperQuizAttempt` recalculates every distinct
+  one among its questions. `mastery_scores.questions_answered` stores the denominator
+  alongside `score`, so the UI can show confidence (e.g. "52% (based on 6 questions)") instead
+  of presenting a thin sample as equally reliable as a large one — not yet wired into any page,
+  since that's Progress-tab work. Thresholds on the resulting score: `< 60` = `needs_work`,
+  `60–79` = `in_progress` (not called out explicitly in the spec's two-bucket example; added as
+  a third tier so 60-79% isn't mislabeled as "needs work"), `>= 80` = `mastered`. Note this
+  threshold function (`masteryLabelForScore`) is also used to label a single attempt's own
+  score for immediate post-submit feedback (e.g. "you scored 100% on this attempt") — that
+  per-attempt label is unrelated to, and unaffected by, the cumulative mastery_scores value.
 - The quiz submit flow is a single Server Action + native HTML form (radios marked
   `required` for native "answer everything" validation) — no client-side JS/state needed,
   so there's no separate quiz Client Component.
@@ -279,15 +293,18 @@ sharing a `gradeAnswers` helper. Two behavioral differences from the sub-topic f
   in-progress (`completed_at IS NULL`) `quiz_attempts` row, so the paper shows "Resume" if
   left mid-attempt. Submitting `UPDATE`s that same row rather than inserting a new one;
   retaking an already-completed paper starts a fresh row instead of reusing the finished one.
-  Paper attempts never touch `mastery_scores` — mastery stays a sub-topic-only concept this
-  pass (see "What's NOT built yet").
-- Integration coverage: `tests/paper-flow.test.ts`.
+  Paper attempts DO feed `mastery_scores` now, but only for whichever of their questions are
+  also tagged with a `sub_topic_id` — see "Quiz-taking flow" above for the cumulative model.
+- Integration coverage: `tests/paper-flow.test.ts`; the cross-flow cumulative mastery behavior
+  (a paper's tagged questions plus a direct sub-topic quiz all combining into one running
+  total) is covered separately in `tests/mastery.test.ts`.
 
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
 scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Resumable
 (partial-progress) quizzes for the **sub-topic** flow aren't built either — see the app-shell
-note above; papers now have real start/resume, see "Medium and papers" above. Reconciling
-paper attempts into sub-topic mastery/progress isn't built either — the Dashboard's
-"progress by sub-topic" section is deliberately untouched this pass.
+note above; papers now have real start/resume, see "Medium and papers" above. The Dashboard's
+"progress by sub-topic" section still only reads `mastery_scores` as before — it already
+benefits from the cumulative fix (same table, same query shape), but showing the new
+`questions_answered` confidence count anywhere in the UI is Progress-tab work, not done yet.

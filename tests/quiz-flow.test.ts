@@ -152,25 +152,30 @@ describe("quiz-taking flow", () => {
     expect(mastery).toBeDefined();
     expect(mastery!.studentId).toBe(studentId);
     expect(Number(mastery!.score)).toBeCloseTo(66.67, 1);
+    expect(mastery!.questionsAnswered).toBe(3);
   });
 
-  it("recalculates mastery to 'mastered' on a later 3/3 attempt (upsert, not a duplicate row)", async () => {
+  it("combines a later 3/3 attempt into the running cumulative mastery (not an overwrite)", async () => {
     const [q1, q2, q3] = mcqIds;
     const result = await submitQuizAttempt({
       studentId,
       subTopicId,
-      answers: { [q1]: 1, [q2]: 1, [q3]: 2 }, // all correct -> 100%
+      answers: { [q1]: 1, [q2]: 1, [q3]: 2 }, // all correct -> 100% for this attempt
     });
 
+    // This attempt's own score is a clean 100%...
     expect(result.score).toBe(100);
     expect(result.masteryLabel).toBe("mastered");
 
+    // ...but cumulative mastery combines it with the earlier 2/3 attempt:
+    // 5 correct of 6 total answered, not just this attempt's 100%.
     const masteryRows = await db
       .select()
       .from(masteryScores)
       .where(eq(masteryScores.subTopicId, subTopicId));
     expect(masteryRows).toHaveLength(1);
-    expect(Number(masteryRows[0].score)).toBe(100);
+    expect(masteryRows[0].questionsAnswered).toBe(6);
+    expect(Number(masteryRows[0].score)).toBeCloseTo(83.33, 1);
 
     const allAttempts = await db
       .select()
