@@ -21,9 +21,9 @@ npm run db:seed              # seed the placeholder Science taxonomy (Grade 10 &
 npm run dev
 ```
 
-Open http://localhost:3000 — you'll be redirected to sign in with Google, then asked to
-pick a grade, then land on the dashboard, where "Take a quiz" leads to the sub-topic
-picker and quiz-taking flow (spec section 5).
+Open http://localhost:3000 — you'll land on the public marketing page; "Sign in with
+Google" leads to `/sign-in`, then onboarding (pick a grade), then the dashboard, where
+"Take a quiz" leads to the sub-topic picker and quiz-taking flow (spec section 5).
 
 ### Running tests
 

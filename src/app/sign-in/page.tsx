@@ -1,5 +1,5 @@
-import { SignIn } from "@clerk/nextjs";
 import { BrandPanel } from "@/components/brand-panel";
+import { GoogleSignInButton } from "@/components/google-sign-in-button";
 import { Logo } from "@/components/logo";
 
 export default function SignInPage() {
@@ -21,14 +21,10 @@ export default function SignInPage() {
           <p className="mt-1 text-zinc-500">Sign in to access your quiz dashboard</p>
 
           <div className="mt-8">
-            <SignIn
-              appearance={{
-                variables: {
-                  colorPrimary: "#14294c",
-                  borderRadius: "0.75rem",
-                },
-              }}
-            />
+            <GoogleSignInButton />
+            <p className="mt-4 text-center text-xs text-zinc-400">
+              Google is the only supported sign-in method for QuizPath.
+            </p>
           </div>
         </div>
       </div>

@@ -127,10 +127,18 @@ Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`
 (`src/app/page.tsx`) and the sign-in page (`src/app/sign-in`), which share a
 `<BrandPanel>` component (`src/components/brand-panel.tsx`) — the landing page renders it
 full-width with a "Sign in with Google" CTA, the sign-in page renders it as the left half
-of a split screen (hidden below the `lg` breakpoint) next to Clerk's `<SignIn>` themed via
-`appearance.variables.colorPrimary` to match. The dashboard/quiz pages still use the
-original neutral zinc styling — retrofitting them to the new palette wasn't in scope for
-this pass.
+of a split screen (hidden below the `lg` breakpoint). The dashboard/quiz pages still use
+the original neutral zinc styling — retrofitting them to the new palette wasn't in scope
+for this pass.
+
+Sign-in is a custom flow (`src/components/google-sign-in-button.tsx`), not Clerk's
+prebuilt `<SignIn>` widget — an explicit "Continue with Google" button (standard Google
+logo, `useSignIn` from `@clerk/nextjs/legacy`, since the default `@clerk/nextjs` export in
+this Clerk version is a newer signal-based API without `authenticateWithRedirect`) so
+there's no ambiguity that Google is the only sign-in method, plus a line of text saying so
+directly. `src/app/sign-in/sso-callback/page.tsx` (`<AuthenticateWithRedirectCallback>`)
+completes the OAuth redirect Clerk needs, then forwards to `/` (`redirectUrlComplete`),
+which is where the onboarding-vs-dashboard branch already lives.
 
 The layout/color structure (split-screen navy marketing panel + white sign-in form) was
 adapted from a reference screenshot of a different product's login page; the copy was
