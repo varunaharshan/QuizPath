@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   masteryScores,
   modules,
+  papers,
   quizAttemptAnswers,
   quizAttempts,
   subTopics,
@@ -67,11 +68,17 @@ export type ContinueSubTopic = {
 // quiz is a single-page submit), so "continue" means "pick this sub-topic
 // back up," not "resume this exact attempt."
 export async function getContinueSubTopic(studentId: string): Promise<ContinueSubTopic | null> {
+  // Only ever considers sub-topic attempts — paper attempts (subTopicId
+  // null) are a separate flow not reconciled into this card yet.
   const lastAttempt = await db.query.quizAttempts.findFirst({
-    where: and(eq(quizAttempts.studentId, studentId), isNotNull(quizAttempts.completedAt)),
+    where: and(
+      eq(quizAttempts.studentId, studentId),
+      isNotNull(quizAttempts.completedAt),
+      isNotNull(quizAttempts.subTopicId),
+    ),
     orderBy: desc(quizAttempts.completedAt),
   });
-  if (!lastAttempt) return null;
+  if (!lastAttempt || !lastAttempt.subTopicId) return null;
 
   const subTopic = await db.query.subTopics.findFirst({
     where: eq(subTopics.id, lastAttempt.subTopicId),
@@ -91,12 +98,14 @@ export async function getContinueSubTopic(studentId: string): Promise<ContinueSu
 
 export type CompletedQuiz = {
   attemptId: string;
-  subTopicName: string;
+  title: string;
   completedAt: Date;
   correctCount: number;
   total: number;
 };
 
+// Every completed attempt, sub-topic or paper — resolves whichever title
+// applies rather than reconciling the two into one tracking model.
 export async function getCompletedQuizzes(
   studentId: string,
   limit = 20,
@@ -105,6 +114,7 @@ export async function getCompletedQuizzes(
     .select({
       id: quizAttempts.id,
       subTopicId: quizAttempts.subTopicId,
+      paperId: quizAttempts.paperId,
       completedAt: quizAttempts.completedAt,
     })
     .from(quizAttempts)
@@ -131,18 +141,26 @@ export async function getCompletedQuizzes(
     countsByAttempt.set(answer.quizAttemptId, counts);
   }
 
-  const subTopicIds = [...new Set(attempts.map((a) => a.subTopicId))];
-  const subTopicRows = await db
-    .select({ id: subTopics.id, name: subTopics.name })
-    .from(subTopics)
-    .where(inArray(subTopics.id, subTopicIds));
+  const subTopicIds = [...new Set(attempts.map((a) => a.subTopicId).filter((id) => id !== null))];
+  const subTopicRows = subTopicIds.length
+    ? await db.select({ id: subTopics.id, name: subTopics.name }).from(subTopics).where(inArray(subTopics.id, subTopicIds))
+    : [];
   const subTopicNameById = new Map(subTopicRows.map((s) => [s.id, s.name]));
+
+  const paperIds = [...new Set(attempts.map((a) => a.paperId).filter((id) => id !== null))];
+  const paperRows = paperIds.length
+    ? await db.select({ id: papers.id, title: papers.title }).from(papers).where(inArray(papers.id, paperIds))
+    : [];
+  const paperTitleById = new Map(paperRows.map((p) => [p.id, p.title]));
 
   return attempts.map((attempt) => {
     const counts = countsByAttempt.get(attempt.id) ?? { correct: 0, total: 0 };
+    const title = attempt.subTopicId
+      ? (subTopicNameById.get(attempt.subTopicId) ?? "Unknown sub-topic")
+      : (paperTitleById.get(attempt.paperId!) ?? "Unknown paper");
     return {
       attemptId: attempt.id,
-      subTopicName: subTopicNameById.get(attempt.subTopicId) ?? "Unknown sub-topic",
+      title,
       completedAt: attempt.completedAt!,
       correctCount: counts.correct,
       total: counts.total,

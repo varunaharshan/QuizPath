@@ -77,9 +77,9 @@ idempotent on `users.auth_provider_id`:
    for production so the `users` row exists even if the very first click after signup
    somehow doesn't hit the app.
 
-`student_profiles` is created via the onboarding grade-selection screen
-(`src/app/onboarding`), not automatically — a user isn't a "student" with a grade until
-they've picked one.
+`student_profiles` is created via the onboarding screen (`src/app/onboarding`), not
+automatically — a user isn't a "student" with a grade (and medium — see "Medium and
+papers" below) until they've completed it.
 
 ## Feature flags
 
@@ -177,13 +177,70 @@ adapts to OS dark mode; they're both intentionally fixed.
   in that list, only on the dashboard's continue card.
 - `/profile` added a `users.name` column (populated from Clerk's profile — `fullName`,
   falling back to `firstName`/`lastName` — on first login) so there's a real display name
-  for the context bar and profile screen; previously only `email` existed. Grade is
-  editable there via a `updateGrade` Server Action mirroring onboarding's `setGrade`.
+  for the context bar and profile screen; previously only `email` existed. Grade and medium
+  are editable there via `updateProfile` (`src/app/profile/actions.ts`), which validates
+  and updates both, mirroring onboarding's combined `completeOnboarding` action.
 - Module icons on the dashboard/practice list are a cosmetic keyword-matched emoji
   (`iconForModule` in `src/lib/dashboard.ts`), purely decorative, matching the mockup.
+
+## Medium and papers
+
+Medium of instruction (Sinhala/Tamil/English) is a **durable per-student attribute**, not a
+per-session choice — `student_profiles.medium` (`mediumEnum`), captured in onboarding
+alongside grade as one combined step (`completeOnboarding`, two `<fieldset>` radio groups on
+one form), editable later from `/profile`. Existing test accounts created before this column
+existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a plain schema
+default rather than a data-driven backfill, since "English" is a reasonable default and there
+was no real user data to preserve a signal from.
+
+Practice is now a subject-first, two-step flow instead of the old flat sub-topic list:
+1. `/quiz` — pick a subject (`getPracticeSubjects()` in `src/lib/papers.ts`; just "Science"
+   for now, but subject is a real table row, not hardcoded).
+2. `/quiz/subjects/[subjectId]` — a paper list for that subject, grouped under
+   Provincial/District/School headers, each paper showing title/year and a
+   Start/Resume/Retake button. Papers are filtered by the student's grade and by
+   **medium** — but medium resolves as `subject.fixedMedium ?? profile.medium`:
+   `subjects.fixedMedium` (nullable `mediumEnum`) is null for content subjects like Science
+   (student's own profile medium applies), and would pin a future language subject (e.g.
+   "Tamil Language") to its own language regardless of the student's profile — not built yet,
+   but the column exists so that's additive, not a schema change, when it lands.
+
+New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
+`provincial|district|school`, `title`, nullable `year`/`source`, `status`
+`draft|published`) sits alongside the existing sub-topic content tree rather than replacing
+it. `mcqs.sub_topic_id` and `quiz_attempts.sub_topic_id` were both changed from `NOT NULL` to
+**nullable**, with a matching nullable `paper_id` FK added to each — a deviation from "keep
+sub_topic_id as-is," made because a paper's questions don't have a natural sub-topic to hang
+off. `quiz_attempts` gets a `CHECK` constraint (`quiz_attempts_exactly_one_target`) enforcing
+exactly one of `sub_topic_id`/`paper_id` is set per row, so the two quiz "modes" can never be
+ambiguous at the DB level.
+
+Routing: `/quiz/subjects/[subjectId]` and `/quiz/papers/[paperId]` use static literal path
+segments (`subjects`, `papers`) ahead of their dynamic ones, rather than putting a second
+dynamic segment directly under `/quiz/`, because Next.js doesn't allow two different dynamic
+segment names at the same path position — `/quiz/[subTopicId]` (untouched, still used by the
+Dashboard's continue-card/progress-by-sub-topic Retake links) already occupies that slot.
+
+`src/lib/quiz.ts` gained paper-parallel functions (`getQuizForPaper`,
+`ensurePaperAttemptStarted`, `submitPaperQuizAttempt`) alongside the existing sub-topic ones,
+sharing a `gradeAnswers` helper. Two behavioral differences from the sub-topic flow:
+- No `QUIZ_LENGTH` cap — a paper serves every one of its published questions, since it
+  represents a real fixed exam paper, not an arbitrarily-sized practice set.
+- Papers have genuine **start/resume** semantics, unlike the sub-topic flow's atomic
+  single-insert-at-submit model: opening `/quiz/papers/[paperId]` calls
+  `ensurePaperAttemptStarted` (a GET-triggered write, intentional) which finds-or-creates an
+  in-progress (`completed_at IS NULL`) `quiz_attempts` row, so the paper shows "Resume" if
+  left mid-attempt. Submitting `UPDATE`s that same row rather than inserting a new one;
+  retaking an already-completed paper starts a fresh row instead of reusing the finished one.
+  Paper attempts never touch `mastery_scores` — mastery stays a sub-topic-only concept this
+  pass (see "What's NOT built yet").
+- Integration coverage: `tests/paper-flow.test.ts`.
 
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
 scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Resumable
-(partial-progress) quizzes aren't built either — see the app-shell note above.
+(partial-progress) quizzes for the **sub-topic** flow aren't built either — see the app-shell
+note above; papers now have real start/resume, see "Medium and papers" above. Reconciling
+paper attempts into sub-topic mastery/progress isn't built either — the Dashboard's
+"progress by sub-topic" section is deliberately untouched this pass.

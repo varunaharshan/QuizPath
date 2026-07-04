@@ -144,7 +144,7 @@ export default async function DashboardPage() {
                 key={quiz.attemptId}
                 className="flex items-center border-t border-app-border px-4.5 py-2.5 text-[13px]"
               >
-                <div className="flex-1">{quiz.subTopicName}</div>
+                <div className="flex-1">{quiz.title}</div>
                 <div className="w-[90px] text-ink-secondary">
                   {quiz.completedAt.toLocaleDateString(undefined, {
                     month: "short",

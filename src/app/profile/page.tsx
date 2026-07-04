@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
-import { updateGrade } from "./actions";
+import { updateProfile } from "./actions";
 
 export default async function ProfilePage() {
   const appUser = await getOrCreateAppUser();
@@ -32,7 +32,7 @@ export default async function ProfilePage() {
       isActiveLearner={completedQuizzes.length > 0}
     >
       <form
-        action={updateGrade}
+        action={updateProfile}
         className="mb-4.5 overflow-hidden rounded-[10px] border border-app-border bg-white"
       >
         <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
@@ -76,6 +76,24 @@ export default async function ProfilePage() {
             >
               <option value="10">Grade 10</option>
               <option value="11">Grade 11</option>
+            </select>
+          </div>
+          <div>
+            <label
+              htmlFor="medium"
+              className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary"
+            >
+              Medium
+            </label>
+            <select
+              id="medium"
+              name="medium"
+              defaultValue={profile.medium}
+              className="w-full max-w-[360px] rounded-md border border-app-border bg-white px-2.5 py-2 text-[13.5px] text-ink"
+            >
+              <option value="sinhala">Sinhala</option>
+              <option value="tamil">Tamil</option>
+              <option value="english">English</option>
             </select>
           </div>
           <button

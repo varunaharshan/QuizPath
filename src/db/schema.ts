@@ -10,13 +10,18 @@ import {
   jsonb,
   numeric,
   primaryKey,
+  check,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
 export const gradeEnum = pgEnum("grade", ["10", "11"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published"]);
 export const mcqDifficultyEnum = pgEnum("mcq_difficulty", ["easy", "medium", "hard"]);
+// Language of instruction. A student's medium is a durable profile attribute;
+// a paper's medium is the paper's own language, independent of who's reading it.
+export const mediumEnum = pgEnum("medium", ["sinhala", "tamil", "english"]);
+export const paperTypeEnum = pgEnum("paper_type", ["provincial", "district", "school"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", [
   "inactive",
   "active",
@@ -44,11 +49,19 @@ export const studentProfiles = pgTable("student_profiles", {
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
   grade: gradeEnum("grade").notNull(),
+  // NOT NULL with a default so existing rows (created before this field
+  // existed) backfill to "english" on migration rather than needing a
+  // separate "medium not set yet" state threaded through the app.
+  medium: mediumEnum("medium").notNull().default("english"),
 });
 
 export const subjects = pgTable("subjects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 120 }).notNull().unique(),
+  // Pins a language subject (English/Sinhala/Tamil, not built yet) to its own
+  // language regardless of the student's profile medium. Null for content
+  // subjects like Science, whose papers are filtered by the student's medium.
+  fixedMedium: mediumEnum("fixed_medium"),
 });
 
 export const modules = pgTable("modules", {
@@ -81,14 +94,35 @@ export const contentItems = pgTable("content_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// A whole past exam paper (provincial/district/school), not tied to a
+// specific module/sub-topic — students take it as one session covering all
+// of its questions. `medium` here is the paper's own language, independent
+// of the student's profile medium (see subjects.fixedMedium).
+export const papers = pgTable("papers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  subjectId: uuid("subject_id")
+    .notNull()
+    .references(() => subjects.id, { onDelete: "cascade" }),
+  grade: gradeEnum("grade").notNull(),
+  medium: mediumEnum("medium").notNull(),
+  paperType: paperTypeEnum("paper_type").notNull(),
+  title: varchar("title", { length: 300 }).notNull(),
+  year: integer("year"),
+  source: varchar("source", { length: 200 }),
+  status: contentStatusEnum("status").notNull().default("draft"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const mcqs = pgTable("mcqs", {
   id: uuid("id").primaryKey().defaultRandom(),
   contentItemId: uuid("content_item_id").references(() => contentItems.id, {
     onDelete: "set null",
   }),
-  subTopicId: uuid("sub_topic_id")
-    .notNull()
-    .references(() => subTopics.id, { onDelete: "cascade" }),
+  // Nullable: a past-paper MCQ may have no natural sub-topic to tag. Tag both
+  // when sensible (e.g. a paper question that clearly maps to a sub-topic)
+  // so sub-topic mastery tracking keeps working for those.
+  subTopicId: uuid("sub_topic_id").references(() => subTopics.id, { onDelete: "cascade" }),
+  paperId: uuid("paper_id").references(() => papers.id, { onDelete: "cascade" }),
   questionText: text("question_text").notNull(),
   options: jsonb("options").$type<string[]>().notNull(),
   correctOption: integer("correct_option").notNull(),
@@ -97,18 +131,28 @@ export const mcqs = pgTable("mcqs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const quizAttempts = pgTable("quiz_attempts", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  studentId: uuid("student_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  subTopicId: uuid("sub_topic_id")
-    .notNull()
-    .references(() => subTopics.id, { onDelete: "cascade" }),
-  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  score: numeric("score", { precision: 5, scale: 2 }),
-});
+export const quizAttempts = pgTable(
+  "quiz_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Exactly one of subTopicId/paperId is set (enforced below) — an attempt
+    // is structurally either a sub-topic quiz or a paper quiz.
+    subTopicId: uuid("sub_topic_id").references(() => subTopics.id, { onDelete: "cascade" }),
+    paperId: uuid("paper_id").references(() => papers.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    score: numeric("score", { precision: 5, scale: 2 }),
+  },
+  (table) => [
+    check(
+      "quiz_attempts_exactly_one_target",
+      sql`(${table.subTopicId} is not null) <> (${table.paperId} is not null)`,
+    ),
+  ],
+);
 
 export const quizAttemptAnswers = pgTable("quiz_attempt_answers", {
   id: uuid("id").primaryKey().defaultRandom(),
