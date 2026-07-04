@@ -67,8 +67,9 @@ explicitly: `db:seed` runs via `cross-env NODE_OPTIONS=--conditions=react-server
 Dashboard, not in code — "add Facebook later" is a dashboard toggle, not new integration
 work, which is the whole point of using a managed provider here). Session handling is via
 `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; same mechanism) calling
-`clerkMiddleware()` and protecting every route except `/sign-in` and the Clerk webhook.
-First-login provisioning happens two ways, both idempotent on `users.auth_provider_id`:
+`clerkMiddleware()` and protecting every route except `/` (the public landing page),
+`/sign-in`, and the Clerk webhook. First-login provisioning happens two ways, both
+idempotent on `users.auth_provider_id`:
 1. Lazily, in `getOrCreateAppUser()` (`src/lib/current-app-user.ts`), on the first
    authenticated request — this is what actually drives the flow in this session, since
    there's no public URL for Clerk's webhook to reach in local dev.
@@ -117,6 +118,23 @@ need to call it over the network to render itself.
   sub-topic → serve quiz → submit → persisted attempt/answers/mastery loop against a
   dedicated `quizpath_test` database (schema pushed by `tests/global-setup.ts`); `npm test`
   runs it.
+
+## Brand / design system
+
+Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`
+(`--color-navy-*`, `--color-gold-*`), giving Tailwind utilities like `bg-navy-900` and
+`text-gold-400` site-wide. So far they're only applied to the public landing page
+(`src/app/page.tsx`) and the sign-in page (`src/app/sign-in`), which share a
+`<BrandPanel>` component (`src/components/brand-panel.tsx`) — the landing page renders it
+full-width with a "Sign in with Google" CTA, the sign-in page renders it as the left half
+of a split screen (hidden below the `lg` breakpoint) next to Clerk's `<SignIn>` themed via
+`appearance.variables.colorPrimary` to match. The dashboard/quiz pages still use the
+original neutral zinc styling — retrofitting them to the new palette wasn't in scope for
+this pass.
+
+The layout/color structure (split-screen navy marketing panel + white sign-in form) was
+adapted from a reference screenshot of a different product's login page; the copy was
+rewritten from scratch for QuizPath rather than reused.
 
 ## What's NOT built yet
 

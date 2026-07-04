@@ -10,6 +10,17 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Brand palette — navy + gold, used on the landing and sign-in pages. */
+  --color-navy-950: #0f1f3d;
+  --color-navy-900: #14294c;
+  --color-navy-800: #1c3660;
+  --color-navy-700: #2a4a80;
+  --color-navy-600: #3d5fa0;
+
+  --color-gold-400: #f8cd5c;
+  --color-gold-500: #f0b429;
+  --color-gold-600: #d99a1b;
 }
 
 @media (prefers-color-scheme: dark) {
