@@ -7,7 +7,7 @@ import { submitQuizAttempt } from "@/lib/quiz";
 export async function submitQuiz(subTopicId: string, formData: FormData) {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   const profile = await getStudentProfile(appUser.id);

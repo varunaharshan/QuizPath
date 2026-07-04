@@ -5,7 +5,7 @@ import { setGrade } from "./actions";
 export default async function OnboardingPage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   const existingProfile = await getStudentProfile(appUser.id);

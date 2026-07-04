@@ -21,7 +21,7 @@ function masteryLabel(score: string | null): string {
 export default async function DashboardPage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   const profile = await getStudentProfile(appUser.id);

@@ -20,9 +20,9 @@ function Pill({ children }: { children: ReactNode }) {
   );
 }
 
-// The navy marketing panel shared by the landing page (full width) and the
-// sign-in page (left column of the split screen).
-export function BrandPanel({ cta }: { cta?: ReactNode }) {
+// The navy marketing panel shown as the left column of the combined
+// landing/sign-in split screen at "/".
+export function BrandPanel() {
   return (
     <div className="flex h-full flex-col justify-between text-white">
       <div>
@@ -37,8 +37,6 @@ export function BrandPanel({ cta }: { cta?: ReactNode }) {
           Free quiz practice for Grade 10 and 11 Science students. Pick a sub-topic, take a
           quiz, and see exactly what needs more work — no gamification gimmicks, no fluff.
         </p>
-
-        {cta}
 
         <div className="mt-10 grid grid-cols-3 gap-3 sm:gap-4">
           <StatBadge value="10" label="Questions per quiz" />

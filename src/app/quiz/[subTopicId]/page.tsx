@@ -13,7 +13,7 @@ export default async function QuizPage({
 
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   const profile = await getStudentProfile(appUser.id);

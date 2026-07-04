@@ -13,7 +13,7 @@ export async function setGrade(formData: FormData) {
 
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   await db

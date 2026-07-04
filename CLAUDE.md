@@ -68,7 +68,7 @@ Dashboard, not in code — "add Facebook later" is a dashboard toggle, not new i
 work, which is the whole point of using a managed provider here). Session handling is via
 `src/proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`; same mechanism) calling
 `clerkMiddleware()` and protecting every route except `/` (the public landing page),
-`/sign-in`, and the Clerk webhook. First-login provisioning happens two ways, both
+`/sso-callback`, and the Clerk webhook. First-login provisioning happens two ways, both
 idempotent on `users.auth_provider_id`:
 1. Lazily, in `getOrCreateAppUser()` (`src/lib/current-app-user.ts`), on the first
    authenticated request — this is what actually drives the flow in this session, since
@@ -123,22 +123,24 @@ need to call it over the network to render itself.
 
 Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`
 (`--color-navy-*`, `--color-gold-*`), giving Tailwind utilities like `bg-navy-900` and
-`text-gold-400` site-wide. So far they're only applied to the public landing page
-(`src/app/page.tsx`) and the sign-in page (`src/app/sign-in`), which share a
-`<BrandPanel>` component (`src/components/brand-panel.tsx`) — the landing page renders it
-full-width with a "Sign in with Google" CTA, the sign-in page renders it as the left half
-of a split screen (hidden below the `lg` breakpoint). The dashboard/quiz pages still use
-the original neutral zinc styling — retrofitting them to the new palette wasn't in scope
-for this pass.
+`text-gold-400` site-wide. So far they're only applied to `src/app/page.tsx`, which doubles
+as both the public landing page and the sign-in screen: a split-screen layout with a navy
+`<BrandPanel>` (`src/components/brand-panel.tsx`) on the left (hidden below the `lg`
+breakpoint) and the Google sign-in card on the right, for signed-out visitors; signed-in
+users are redirected straight past it to onboarding/dashboard as before. There's no
+separate `/sign-in` route — the landing page *is* the sign-in page, matching a reference
+screenshot's combined marketing-panel-plus-login-form layout. The dashboard/quiz pages
+still use the original neutral zinc styling — retrofitting them to the new palette wasn't
+in scope for this pass.
 
 Sign-in is a custom flow (`src/components/google-sign-in-button.tsx`), not Clerk's
 prebuilt `<SignIn>` widget — an explicit "Continue with Google" button (standard Google
 logo, `useSignIn` from `@clerk/nextjs/legacy`, since the default `@clerk/nextjs` export in
 this Clerk version is a newer signal-based API without `authenticateWithRedirect`) so
 there's no ambiguity that Google is the only sign-in method, plus a line of text saying so
-directly. `src/app/sign-in/sso-callback/page.tsx` (`<AuthenticateWithRedirectCallback>`)
-completes the OAuth redirect Clerk needs, then forwards to `/` (`redirectUrlComplete`),
-which is where the onboarding-vs-dashboard branch already lives.
+directly. `src/app/sso-callback/page.tsx` (`<AuthenticateWithRedirectCallback>`) completes
+the OAuth redirect Clerk needs, then forwards to `/` (`redirectUrlComplete`), which is
+where the onboarding-vs-dashboard branch already lives.
 
 The layout/color structure (split-screen navy marketing panel + white sign-in form) was
 adapted from a reference screenshot of a different product's login page; the copy was

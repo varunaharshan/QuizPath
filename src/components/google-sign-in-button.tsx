@@ -40,7 +40,7 @@ export function GoogleSignInButton() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: "/sign-in/sso-callback",
+        redirectUrl: "/sso-callback",
         redirectUrlComplete: "/",
       });
     } catch {

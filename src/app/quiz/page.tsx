@@ -6,7 +6,7 @@ import { getSubTopicsForGrade } from "@/lib/quiz";
 export default async function SelectSubTopicPage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
-    redirect("/sign-in");
+    redirect("/");
   }
 
   const profile = await getStudentProfile(appUser.id);
