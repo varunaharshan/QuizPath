@@ -2,10 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { getPracticeSubjects } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 
-export default async function PracticePage() {
+const GRADES = ["10", "11"] as const;
+
+export default async function PracticeGradePage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -16,10 +17,9 @@ export default async function PracticePage() {
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes, subjects] = await Promise.all([
+  const [statuses, completedQuizzes] = await Promise.all([
     getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
-    getPracticeSubjects(),
   ]);
 
   const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
@@ -34,21 +34,35 @@ export default async function PracticePage() {
     >
       <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
         <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
-          Choose a subject
+          Choose a grade to practice
         </div>
-        {subjects.map((subject) => (
-          <Link
-            key={subject.id}
-            href={`/quiz/subjects/${subject.id}`}
-            className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5 text-sm font-semibold last:border-b-0 hover:bg-app-surface-muted"
-          >
-            {subject.name}
-            <span aria-hidden className="text-ink-secondary">
-              →
-            </span>
-          </Link>
-        ))}
+        {GRADES.map((grade) => {
+          const isOwnGrade = grade === profile.grade;
+          return (
+            <Link
+              key={grade}
+              href={`/quiz/grade/${grade}`}
+              className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5 text-sm font-semibold last:border-b-0 hover:bg-app-surface-muted"
+            >
+              <span className="flex items-center gap-2.5">
+                Grade {grade}
+                {isOwnGrade && (
+                  <span className="rounded-full bg-progress-bg px-2.5 py-0.5 text-[11px] font-semibold text-progress">
+                    Your grade
+                  </span>
+                )}
+              </span>
+              <span aria-hidden className="text-ink-secondary">
+                →
+              </span>
+            </Link>
+          );
+        })}
       </div>
+      <p className="mt-3 text-[12.5px] text-ink-secondary">
+        Browsing a different grade here is just for practice — it won&apos;t change your profile
+        grade.
+      </p>
     </AppShell>
   );
 }

@@ -2,6 +2,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { papers, quizAttempts, subjects } from "@/db/schema";
 
+// Practice's Grade step is a free browsing choice (not tied to the student's
+// own student_profiles.grade), so route params need validating rather than
+// trusted as "10" | "11" outright.
+export function isValidGrade(value: string): value is "10" | "11" {
+  return value === "10" || value === "11";
+}
+
 export type PracticeSubject = { id: string; name: string };
 
 // Real query, not hardcoded — Science is the only row today, but more

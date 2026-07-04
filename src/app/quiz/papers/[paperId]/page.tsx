@@ -36,7 +36,10 @@ export default async function PaperQuizPage({
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-8">
       <div>
-        <Link href="/quiz" className="text-sm text-zinc-500 hover:underline dark:text-zinc-400">
+        <Link
+          href={`/quiz/grade/${paper.grade}/subjects/${paper.subjectId}`}
+          className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+        >
           ← Choose a different paper
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">{paper.title}</h1>

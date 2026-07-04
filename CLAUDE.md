@@ -213,17 +213,37 @@ existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a pla
 default rather than a data-driven backfill, since "English" is a reasonable default and there
 was no real user data to preserve a signal from.
 
-Practice is now a subject-first, two-step flow instead of the old flat sub-topic list:
-1. `/quiz` — pick a subject (`getPracticeSubjects()` in `src/lib/papers.ts`; just "Science"
-   for now, but subject is a real table row, not hardcoded).
-2. `/quiz/subjects/[subjectId]` — a paper list for that subject, grouped under
-   Provincial/District/School headers, each paper showing title/year and a
-   Start/Resume/Retake button. Papers are filtered by the student's grade and by
-   **medium** — but medium resolves as `subject.fixedMedium ?? profile.medium`:
-   `subjects.fixedMedium` (nullable `mediumEnum`) is null for content subjects like Science
-   (student's own profile medium applies), and would pin a future language subject (e.g.
-   "Tamil Language") to its own language regardless of the student's profile — not built yet,
-   but the column exists so that's additive, not a schema change, when it lands.
+Practice is a three-step flow, Grade → Subject → Papers, instead of the old flat sub-topic
+list:
+1. `/quiz` — pick a **grade** to practice: Grade 10 or Grade 11, with the student's own
+   `profile.grade` highlighted ("Your grade") as the default emphasis but not pre-selected —
+   either card is a real link. This is a **session-level browsing choice only**: nothing here
+   ever writes to `student_profiles.grade`. A Grade 11 student revising Grade 10 material (or
+   vice versa) just navigates to the other grade's papers; their actual profile grade — which
+   still drives the Dashboard, the sidebar's practice-count badge, and the context bar — never
+   changes because of it. `src/lib/papers.ts` exports `isValidGrade()` to validate the `grade`
+   route param (`notFound()` on anything else) rather than trusting it as `"10" | "11"` outright,
+   since — unlike every other `grade` value in this codebase — this one comes from a URL
+   segment a browsing student controls, not from the database.
+2. `/quiz/grade/[grade]` — pick a subject (`getPracticeSubjects()`; just "Science" for now,
+   but subject is a real table row, not hardcoded), carrying the browsed grade forward in the
+   URL.
+3. `/quiz/grade/[grade]/subjects/[subjectId]` — a paper list for that subject+grade, grouped
+   under Provincial/District/School headers, each paper showing title/year and a
+   Start/Resume/Retake button. Papers are filtered by the **browsed** grade (the route param,
+   not `profile.grade`) and by **medium** — medium resolves as `subject.fixedMedium ??
+   profile.medium` and stays a durable profile attribute; only grade is a free browsing choice
+   in this flow. `subjects.fixedMedium` (nullable `mediumEnum`) is null for content subjects
+   like Science (student's own profile medium applies), and would pin a future language subject
+   (e.g. "Tamil Language") to its own language regardless of the student's profile — not built
+   yet, but the column exists so that's additive, not a schema change, when it lands.
+
+`src/components/practice-breadcrumb.tsx` renders the "Grade 10 › Science"-style step indicator
+at the top of steps 2 and 3 (e.g. just "Grade 10" on the Subject step) — each non-final crumb
+links back to that step (so students can jump back without the browser's back button); the
+final crumb is plain text. The `AppShell` context bar's own `grade` prop is deliberately left
+as `profile.grade` on every Practice screen, never the browsed grade — it's an identity display
+("this is your grade"), not a reflection of what's currently being browsed.
 
 New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
 `provincial|district|school`, `title`, nullable `year`/`source`, `status`
@@ -235,11 +255,18 @@ off. `quiz_attempts` gets a `CHECK` constraint (`quiz_attempts_exactly_one_targe
 exactly one of `sub_topic_id`/`paper_id` is set per row, so the two quiz "modes" can never be
 ambiguous at the DB level.
 
-Routing: `/quiz/subjects/[subjectId]` and `/quiz/papers/[paperId]` use static literal path
-segments (`subjects`, `papers`) ahead of their dynamic ones, rather than putting a second
-dynamic segment directly under `/quiz/`, because Next.js doesn't allow two different dynamic
-segment names at the same path position — `/quiz/[subTopicId]` (untouched, still used by the
-Dashboard's continue-card/progress-by-sub-topic Retake links) already occupies that slot.
+Routing: `/quiz/grade/[grade]`, `/quiz/grade/[grade]/subjects/[subjectId]`, and
+`/quiz/papers/[paperId]` all use static literal path segments (`grade`, `subjects`, `papers`)
+ahead of their dynamic ones, rather than putting a second dynamic segment directly under
+`/quiz/`, because Next.js doesn't allow two different dynamic segment names at the same path
+position — `/quiz/[subTopicId]` (untouched, still used by the Dashboard's
+continue-card/progress-by-sub-topic Retake links) already occupies that slot. `/quiz/papers/
+[paperId]` deliberately stays a *sibling* of `/quiz/grade/...` rather than nesting under it
+(e.g. not `/quiz/grade/[grade]/subjects/[subjectId]/papers/[paperId]`) — a paper's own `grade`
+and `subjectId` are intrinsic to the paper row itself (now returned by `getQuizForPaper`, used
+to link back to the right `/quiz/grade/[grade]/subjects/[subjectId]`), so the paper-taking page
+doesn't need them threaded through the URL to render correctly regardless of which grade the
+student was browsing when they opened it.
 
 `src/lib/quiz.ts` gained paper-parallel functions (`getQuizForPaper`,
 `ensurePaperAttemptStarted`, `submitPaperQuizAttempt`) alongside the existing sub-topic ones,

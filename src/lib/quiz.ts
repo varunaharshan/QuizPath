@@ -147,12 +147,15 @@ export async function submitQuizAttempt(params: {
 }
 
 export type PaperQuiz = {
-  paper: { id: string; title: string } | null;
+  paper: { id: string; title: string; grade: "10" | "11"; subjectId: string } | null;
   questions: QuizQuestion[];
 };
 
 // Serves every published question for the paper — no QUIZ_LENGTH cap, unlike
 // sub-topic quizzes, since a paper attempt is meant to cover the whole paper.
+// Includes grade/subjectId so the paper-taking page can link back to the
+// right spot in the Grade → Subject → Papers navigation, whichever grade the
+// student was browsing when they opened it.
 export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
   const paper = await db.query.papers.findFirst({ where: eq(papers.id, paperId) });
   if (!paper) {
@@ -164,7 +167,10 @@ export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
     .from(mcqs)
     .where(and(eq(mcqs.paperId, paperId), eq(mcqs.status, "published")));
 
-  return { paper: { id: paper.id, title: paper.title }, questions };
+  return {
+    paper: { id: paper.id, title: paper.title, grade: paper.grade, subjectId: paper.subjectId },
+    questions,
+  };
 }
 
 // Marks a paper as "started" for Practice's Start/Resume/Retake status:

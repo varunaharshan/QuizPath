@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
-import { mcqs, papers, quizAttempts, subjects, users } from "@/db/schema";
+import { mcqs, papers, quizAttempts, studentProfiles, subjects, users } from "@/db/schema";
 import { ensurePaperAttemptStarted, getQuizForPaper, submitPaperQuizAttempt } from "@/lib/quiz";
 import { getPapersForSubject } from "@/lib/papers";
 
@@ -96,6 +96,11 @@ describe("paper-based quiz flow", () => {
       .values({ authProviderId: `test-paper-auth-${runId}`, email: `test-paper-${runId}@example.com` })
       .returning();
     studentId = student.id;
+
+    // The student's own profile grade is "10" — used below to confirm
+    // Practice's Grade step lets them freely browse Grade 11 papers too,
+    // without that browsing choice ever touching this row.
+    await db.insert(studentProfiles).values({ userId: studentId, grade: "10", medium: "english" });
   });
 
   afterAll(async () => {
@@ -196,13 +201,24 @@ describe("paper-based quiz flow", () => {
     expect(allAttempts.some((a) => a.id === retakeAttemptId && a.completedAt === null)).toBe(true);
   });
 
-  it("resolves Resume/Retake status correctly for a paper of a different grade, independent of any default grade", async () => {
-    // Everything else in this suite exercises a Grade 10 paper; this confirms status
-    // resolution is driven entirely by quiz_attempts.paper_id, not by which grade
-    // happens to be "the student's own" — Practice can browse any grade's papers.
+  it("resolves Resume/Retake status correctly when browsing a grade other than the student's own profile grade", async () => {
+    // The student's own student_profiles.grade is "10" (set in beforeAll); this
+    // paper is Grade 11. Practice's Grade step lets a student freely browse any
+    // grade for revision — this confirms status resolution is driven entirely
+    // by quiz_attempts.paper_id, never by student_profiles.grade, so opening,
+    // leaving incomplete, and returning to a non-default grade's paper still
+    // correctly shows "Resume" (and later "Retake"), exactly as it would for
+    // the student's own grade.
+    const profile = await db.query.studentProfiles.findFirst({
+      where: (p, { eq }) => eq(p.userId, studentId),
+    });
+    expect(profile?.grade).toBe("10");
+
     const attemptId = await ensurePaperAttemptStarted(studentId, otherGradePaperId);
     expect(attemptId).toBeTruthy();
 
+    // Simulates navigating away and back: re-listing the Grade 11 papers
+    // should show "Resume" for this still-incomplete attempt.
     let grouped = await getPapersForSubject({
       subjectId,
       grade: "11",
@@ -225,5 +241,11 @@ describe("paper-based quiz flow", () => {
       studentId,
     });
     expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("completed");
+
+    // Browsing Grade 11 must never have touched the student's own grade.
+    const profileAfter = await db.query.studentProfiles.findFirst({
+      where: (p, { eq }) => eq(p.userId, studentId),
+    });
+    expect(profileAfter?.grade).toBe("10");
   });
 });

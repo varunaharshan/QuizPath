@@ -2,8 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { getPapersForSubject, getSubjectById, type PaperListItem } from "@/lib/papers";
+import { getPapersForSubject, getSubjectById, isValidGrade, type PaperListItem } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
+import { PracticeBreadcrumb } from "@/components/practice-breadcrumb";
 
 const SECTIONS: { key: keyof Awaited<ReturnType<typeof getPapersForSubject>>; label: string }[] = [
   { key: "provincial", label: "Provincial papers" },
@@ -20,9 +21,12 @@ const BUTTON_LABEL: Record<PaperListItem["status"], string> = {
 export default async function SubjectPapersPage({
   params,
 }: {
-  params: Promise<{ subjectId: string }>;
+  params: Promise<{ grade: string; subjectId: string }>;
 }) {
-  const { subjectId } = await params;
+  const { grade, subjectId } = await params;
+  if (!isValidGrade(grade)) {
+    notFound();
+  }
 
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
@@ -39,10 +43,12 @@ export default async function SubjectPapersPage({
     notFound();
   }
 
+  // Medium is still a durable profile attribute (or the subject's own fixed
+  // medium) — only grade is a free browsing choice in this flow.
   const medium = subject.fixedMedium ?? profile.medium;
 
   const [grouped, statuses, completedQuizzes] = await Promise.all([
-    getPapersForSubject({ subjectId, grade: profile.grade, medium, studentId: appUser.id }),
+    getPapersForSubject({ subjectId, grade, medium, studentId: appUser.id }),
     getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
   ]);
@@ -58,14 +64,14 @@ export default async function SubjectPapersPage({
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <Link href="/quiz" className="text-sm text-ink-secondary hover:underline">
-        ← Choose a different subject
-      </Link>
+      <PracticeBreadcrumb
+        items={[{ label: `Grade ${grade}`, href: `/quiz/grade/${grade}` }, { label: subject.name }]}
+      />
       <h1 className="mt-2 mb-4 text-lg font-bold text-navy-900">{subject.name}</h1>
 
       {!hasAnyPapers ? (
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
-          No papers are available yet for Grade {profile.grade} in your medium.
+          No papers are available yet for Grade {grade} in your medium.
         </div>
       ) : (
         SECTIONS.map((section) => {
