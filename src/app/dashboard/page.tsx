@@ -33,8 +33,8 @@ export default async function DashboardPage() {
 
   const [statuses, continueSubTopic, completedQuizzes] = await Promise.all([
     getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getContinueSubTopic(appUser.id),
-    getCompletedQuizzes(appUser.id),
+    getContinueSubTopic(appUser.id, profile.grade),
+    getCompletedQuizzes(appUser.id, { grade: profile.grade }),
   ]);
 
   const practiceCount = statuses.filter((s) => s.label !== "mastered").length;

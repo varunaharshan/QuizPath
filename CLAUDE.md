@@ -174,6 +174,19 @@ adapts to OS dark mode; they're both intentionally fixed.
   bar chart), `getContinueSubTopic`, `getCompletedQuizzes` (derives real correct/total
   per attempt from `quiz_attempt_answers` rather than reverse-engineering it from the
   stored percentage), and `getProgressStats`.
+- `getContinueSubTopic(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })`
+  are both scoped to a specific grade (via the attempt's sub-topic's module, or the
+  attempt's paper) — the Dashboard passes the student's own `profile.grade`, so an attempt
+  from browsing a *different* grade's papers in Practice never leaks into "Continue where
+  you left off" or the "Completed quizzes" history, keeping the Dashboard focused on the
+  student's actual curriculum. `grade` on `getCompletedQuizzes` is optional and defaults to
+  unfiltered — every other page only needs `completedQuizzes.length > 0` for the "Active
+  learner" pill, an overall-activity signal that intentionally isn't grade-scoped. Since
+  `quiz_attempts` status resolution (`ensurePaperAttemptStarted`, `getPapersForSubject`) is
+  keyed purely off `paper_id`/`student_id` with no grade check at all, Practice's own
+  Start/Resume/Retake state is unaffected by any of this and works identically no matter
+  which grade's papers are being browsed — covered by a dedicated test in
+  `tests/paper-flow.test.ts`. `tests/dashboard.test.ts` covers the Dashboard-side scoping.
 - **Deviation from the mockup**: its "Continue where you left off" / "Resume" affordance
   implies mid-quiz progress tracking ("6 of 10 questions done"), which this app doesn't
   have — the quiz is a single-page submit-everything-at-once flow (see "Quiz-taking flow"

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   masteryScores,
@@ -63,21 +63,35 @@ export type ContinueSubTopic = {
   label: MasteryLabel;
 };
 
-// The student's most recently completed attempt, regardless of how it
-// scored — there's no partial/mid-quiz progress tracking in this MVP (the
-// quiz is a single-page submit), so "continue" means "pick this sub-topic
-// back up," not "resume this exact attempt."
-export async function getContinueSubTopic(studentId: string): Promise<ContinueSubTopic | null> {
+// The student's most recently completed attempt for their own grade,
+// regardless of how it scored — there's no partial/mid-quiz progress
+// tracking in this MVP (the quiz is a single-page submit), so "continue"
+// means "pick this sub-topic back up," not "resume this exact attempt."
+export async function getContinueSubTopic(
+  studentId: string,
+  grade: "10" | "11",
+): Promise<ContinueSubTopic | null> {
   // Only ever considers sub-topic attempts — paper attempts (subTopicId
-  // null) are a separate flow not reconciled into this card yet.
-  const lastAttempt = await db.query.quizAttempts.findFirst({
-    where: and(
-      eq(quizAttempts.studentId, studentId),
-      isNotNull(quizAttempts.completedAt),
-      isNotNull(quizAttempts.subTopicId),
-    ),
-    orderBy: desc(quizAttempts.completedAt),
-  });
+  // null) are a separate flow not reconciled into this card yet. Scoped to
+  // the student's own grade (via the sub-topic's module) so an attempt from
+  // browsing another grade's content in Practice never surfaces here —
+  // this card is specifically "continue your curriculum," not "everything
+  // you've ever attempted."
+  const [lastAttempt] = await db
+    .select({ subTopicId: quizAttempts.subTopicId, score: quizAttempts.score })
+    .from(quizAttempts)
+    .innerJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .innerJoin(modules, eq(modules.id, subTopics.moduleId))
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        isNotNull(quizAttempts.subTopicId),
+        eq(modules.grade, grade),
+      ),
+    )
+    .orderBy(desc(quizAttempts.completedAt))
+    .limit(1);
   if (!lastAttempt || !lastAttempt.subTopicId) return null;
 
   const subTopic = await db.query.subTopics.findFirst({
@@ -105,11 +119,18 @@ export type CompletedQuiz = {
 };
 
 // Every completed attempt, sub-topic or paper — resolves whichever title
-// applies rather than reconciling the two into one tracking model.
+// applies rather than reconciling the two into one tracking model. `grade`
+// is optional: the Dashboard's history table passes the student's own grade
+// (so an attempt from browsing another grade's papers in Practice doesn't
+// show up there), while other pages only need the overall "has this student
+// completed anything, ever" count (the "Active learner" pill) and call this
+// without a grade filter.
 export async function getCompletedQuizzes(
   studentId: string,
-  limit = 20,
+  options: { grade?: "10" | "11"; limit?: number } = {},
 ): Promise<CompletedQuiz[]> {
+  const { grade, limit = 20 } = options;
+
   const attempts = await db
     .select({
       id: quizAttempts.id,
@@ -118,7 +139,16 @@ export async function getCompletedQuizzes(
       completedAt: quizAttempts.completedAt,
     })
     .from(quizAttempts)
-    .where(and(eq(quizAttempts.studentId, studentId), isNotNull(quizAttempts.completedAt)))
+    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        grade ? or(eq(modules.grade, grade), eq(papers.grade, grade)) : undefined,
+      ),
+    )
     .orderBy(desc(quizAttempts.completedAt))
     .limit(limit);
 

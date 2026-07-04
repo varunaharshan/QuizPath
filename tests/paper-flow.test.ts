@@ -14,6 +14,7 @@ describe("paper-based quiz flow", () => {
   let studentId: string;
   let mcqIds: string[];
   let draftMcqId: string;
+  let otherGradeMcqIds: string[];
 
   beforeAll(async () => {
     const [subject] = await db
@@ -49,6 +50,27 @@ describe("paper-based quiz flow", () => {
       })
       .returning();
     otherGradePaperId = otherPaper.id;
+
+    const otherGradeInserted = await db
+      .insert(mcqs)
+      .values([
+        {
+          paperId: otherGradePaperId,
+          questionText: "10 + 10 = ?",
+          options: ["10", "15", "20", "25"],
+          correctOption: 2,
+          status: "published",
+        },
+        {
+          paperId: otherGradePaperId,
+          questionText: "20 + 20 = ?",
+          options: ["30", "35", "40", "45"],
+          correctOption: 2,
+          status: "published",
+        },
+      ])
+      .returning({ id: mcqs.id });
+    otherGradeMcqIds = otherGradeInserted.map((m) => m.id);
 
     const inserted = await db
       .insert(mcqs)
@@ -172,5 +194,36 @@ describe("paper-based quiz flow", () => {
       .where(eq(quizAttempts.paperId, paperId));
     expect(allAttempts).toHaveLength(2);
     expect(allAttempts.some((a) => a.id === retakeAttemptId && a.completedAt === null)).toBe(true);
+  });
+
+  it("resolves Resume/Retake status correctly for a paper of a different grade, independent of any default grade", async () => {
+    // Everything else in this suite exercises a Grade 10 paper; this confirms status
+    // resolution is driven entirely by quiz_attempts.paper_id, not by which grade
+    // happens to be "the student's own" — Practice can browse any grade's papers.
+    const attemptId = await ensurePaperAttemptStarted(studentId, otherGradePaperId);
+    expect(attemptId).toBeTruthy();
+
+    let grouped = await getPapersForSubject({
+      subjectId,
+      grade: "11",
+      medium: "english",
+      studentId,
+    });
+    expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("in_progress");
+
+    const [oq1, oq2] = otherGradeMcqIds;
+    await submitPaperQuizAttempt({
+      studentId,
+      paperId: otherGradePaperId,
+      answers: { [oq1]: 2, [oq2]: 2 }, // both correct -> 100%
+    });
+
+    grouped = await getPapersForSubject({
+      subjectId,
+      grade: "11",
+      medium: "english",
+      studentId,
+    });
+    expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("completed");
   });
 });
