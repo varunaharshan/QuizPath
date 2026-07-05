@@ -56,7 +56,7 @@ export default async function PaperQuizPage({
       <div className="-m-7 min-h-full bg-white p-7">
         <div className="mb-4">
           <Link
-            href={`/papers/grade/${paper.grade}/subjects/${paper.subjectId}`}
+            href={`/papers?grade=${paper.grade}&subjectId=${paper.subjectId}`}
             className="text-[13px] text-quiz-grey-text hover:underline"
           >
             ← Choose a different paper

@@ -28,6 +28,20 @@ export async function getSubjectById(subjectId: string): Promise<SubjectInfo | n
   return subject ?? null;
 }
 
+export type PaperTypeValue = "provincial" | "district" | "school";
+
+export const PAPER_TYPE_LABELS: Record<PaperTypeValue, string> = {
+  provincial: "Provincial",
+  district: "District",
+  school: "School",
+};
+
+// The Papers filter form's Paper Type dropdown is a free query-string choice
+// (like grade), so it needs validating rather than trusted outright.
+export function isValidPaperType(value: string): value is PaperTypeValue {
+  return value === "provincial" || value === "district" || value === "school";
+}
+
 export type PaperAttemptStatus = "not_started" | "in_progress" | "completed";
 
 export type PaperListItem = {
@@ -43,6 +57,16 @@ export type GroupedPapers = {
   district: PaperListItem[];
   school: PaperListItem[];
 };
+
+// The Papers filter form defaults its Paper Type dropdown to the first type
+// (in this fixed order) that actually has papers for the current grade+
+// subject, so landing on the page (or switching grade/subject) never
+// defaults into a Paper Type whose own dropdown would be empty when a
+// different type has papers available.
+export function firstNonEmptyPaperType(grouped: GroupedPapers): PaperTypeValue {
+  const order: PaperTypeValue[] = ["provincial", "district", "school"];
+  return order.find((type) => grouped[type].length > 0) ?? "provincial";
+}
 
 // Filtered by grade and by whichever medium applies (the subject's
 // fixed_medium if it has one, otherwise the student's profile medium —

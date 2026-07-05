@@ -421,49 +421,50 @@ existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a pla
 default rather than a data-driven backfill, since "English" is a reasonable default and there
 was no real user data to preserve a signal from.
 
-Papers (the sidebar's "Papers" nav item — see "App shell" above) is a three-step flow,
-Grade → Subject → Papers, instead of the old flat sub-topic list:
-1. `/papers` — pick a **grade** to practice: Grade 10 or Grade 11, with the student's own
-   `profile.grade` highlighted ("Your grade") as the default emphasis but not pre-selected —
-   either card is a real link. This is a **session-level browsing choice only**: nothing here
-   ever writes to `student_profiles.grade`. A Grade 11 student revising Grade 10 material (or
-   vice versa) just navigates to the other grade's papers; their actual profile grade — which
-   still drives the Dashboard and the context bar — never changes because of it.
-   `src/lib/papers.ts` exports `isValidGrade()` to validate the `grade` route param
-   (`notFound()` on anything else) rather than trusting it as `"10" | "11"` outright, since —
-   unlike every other `grade` value in this codebase — this one comes from a URL segment a
-   browsing student controls, not from the database.
-2. `/papers/grade/[grade]` — pick a subject (`getPracticeSubjects()`; just "Science" for now,
-   but subject is a real table row, not hardcoded), carrying the browsed grade forward in the
-   URL.
-3. `/papers/grade/[grade]/subjects/[subjectId]` — a paper list for that subject+grade, grouped
-   under Provincial/District/School headers, each paper showing title/year and a
-   Start/Resume/Retake button. Papers are filtered by the **browsed** grade (the route param,
-   not `profile.grade`) and by **medium** — medium resolves as `subject.fixedMedium ??
-   profile.medium` and stays a durable profile attribute; only grade is a free browsing choice
-   in this flow. `subjects.fixedMedium` (nullable `mediumEnum`) is null for content subjects
-   like Science (student's own profile medium applies), and would pin a future language subject
-   (e.g. "Tamil Language") to its own language regardless of the student's profile — not built
-   yet, but the column exists so that's additive, not a schema change, when it lands.
+Papers (the sidebar's "Papers" nav item — see "App shell" above) is a single filter page at
+`/papers`, not a multi-step drill-down: four dropdowns — Grade, Subject, Paper Type, and the
+specific Paper — plus a Start/Resume/Retake button (`<PapersFilterForm>` in
+`src/components/papers-filter-form.tsx`), matching a student-provided reference screenshot's
+"Past Papers" filter card. All four selections live in the URL's query string
+(`?grade=&subjectId=&type=&paper=`), not route params, so the page is a single Server
+Component (`src/app/papers/page.tsx`) that reads `searchParams`, re-fetches on every change,
+and passes the results to the (thin, `"use client"`) filter form:
+- **Grade and Subject** work exactly as the old 3-step flow did: a **session-level browsing
+  choice only** (nothing here ever writes to `student_profiles.grade`), with `medium`
+  resolved as `subject.fixedMedium ?? profile.medium` (medium stays a durable profile
+  attribute; only grade is a free browsing choice). Changing either resets the Paper Type/
+  Paper selections, since the previous ones may no longer apply.
+- **Paper Type** is a new dropdown (`provincial | district | school`, matching `paper_type`'s
+  real enum values — not the reference screenshot's fictional "GCSE"/"Zonal"/"Model" labels,
+  which came from a different product's mockup). `isValidPaperType()` in `src/lib/papers.ts`
+  validates it the same way `isValidGrade()` already did for grade — both are free
+  query-string choices a browsing student controls, not values trusted from the database.
+  When no type is selected (or the URL's is invalid), `firstNonEmptyPaperType()` picks the
+  first of the three (in that order) that actually has papers for the current grade+subject,
+  so switching grade/subject never lands on an empty dropdown when a different type would
+  have papers.
+- **Paper** lists whichever papers `getPapersForSubject()` (unchanged) returned for the
+  selected type, each labeled with its title/year; selecting one and clicking
+  Start/Resume/Retake (label driven by that paper's own `PaperAttemptStatus`, same three
+  values as before) navigates straight to the existing `/quiz/papers/[paperId]` quiz-taking
+  route — unchanged, since only the *selection* mechanism was redesigned, not how a paper is
+  actually taken.
+- Because all four values are free filter-form state (not identity-bearing route params
+  anymore), invalid or missing query values fall back to a sane default (student's own grade,
+  first subject, first non-empty paper type) rather than `notFound()`-ing — a deliberate
+  change from the old grade/subject route params, which did 404 on garbage input.
 
-This whole three-step flow originally lived under `/quiz` (`/quiz`, `/quiz/grade/[grade]`,
-`/quiz/grade/[grade]/subjects/[subjectId]`) back when "Practice" was the sidebar's only
-practice-related nav item; it moved to `/papers` once "Papers" and "Practice" became two
-separate nav items (see "App shell" above) — the destination is really "browse and take past
-papers," so the route name now matches the nav label it's reachable from. The sub-topic
+This single page replaced an earlier three-step Grade → Subject → Papers page-per-step flow
+(`/papers`, `/papers/grade/[grade]`, `/papers/grade/[grade]/subjects/[subjectId]`, itself
+originally at `/quiz/*` before "Papers" and "Practice" became separate nav items — see "App
+shell" above). `src/components/step-breadcrumb.tsx` (the "Grade 10 › Science"-style step
+indicator) is no longer used by Papers now that it's one page rather than three; the Progress
+tab (below) still uses it for its own separate Grade → Subject → Topics flow. The sub-topic
 quiz-taking route (`/quiz/[subTopicId]`, reached only via deep links from the Dashboard's
-Recommended-practice cards and Progress's per-topic Practice buttons, never from this flow)
-and the paper-taking route (`/quiz/papers/[paperId]`) were deliberately left at their existing
-`/quiz/*` paths — neither is part of the Grade → Subject → Papers *browsing* flow that moved,
-just the mechanics of taking a specific quiz once a paper or sub-topic has already been
-chosen, so there was no reason to move them too.
-
-`src/components/step-breadcrumb.tsx` renders the "Grade 10 › Science"-style step indicator
-at the top of steps 2 and 3 (e.g. just "Grade 10" on the Subject step) — each non-final crumb
-links back to that step (so students can jump back without the browser's back button); the
-final crumb is plain text. The `AppShell` context bar's own `grade` prop is deliberately left
-as `profile.grade` on every Papers screen, never the browsed grade — it's an identity display
-("this is your grade"), not a reflection of what's currently being browsed.
+Recommended-practice cards and Progress's per-topic Practice buttons) and the paper-taking
+route (`/quiz/papers/[paperId]`) are unaffected by any of this — neither was ever part of the
+Papers *browsing/filtering* UI, just the mechanics of taking a specific quiz once a paper or
+sub-topic has already been chosen.
 
 New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
 `provincial|district|school`, `title`, nullable `year`/`source`, `status`
@@ -475,20 +476,15 @@ off. `quiz_attempts` gets a `CHECK` constraint (`quiz_attempts_exactly_one_targe
 exactly one of `sub_topic_id`/`paper_id` is set per row, so the two quiz "modes" can never be
 ambiguous at the DB level.
 
-Routing: `/papers/grade/[grade]` and `/papers/grade/[grade]/subjects/[subjectId]` use static
-literal path segments (`grade`, `subjects`) ahead of their dynamic ones. `/quiz/papers/[paperId]`
-(paper-taking, still under `/quiz` — see above) deliberately stays a *sibling* of
-`/papers/grade/...` rather than nesting under it (e.g. not
-`/papers/grade/[grade]/subjects/[subjectId]/papers/[paperId]`) — a paper's own `grade` and
-`subjectId` are intrinsic to the paper row itself (returned by `getQuizForPaper`, used to link
-back to the right `/papers/grade/[grade]/subjects/[subjectId]`), so the paper-taking page
-doesn't need them threaded through the URL to render correctly regardless of which grade the
-student was browsing when they opened it. (Historically, back when this browsing flow lived
-under `/quiz/grade/...`, the static `grade`/`subjects` segments were also what let it coexist
-with `/quiz/[subTopicId]` at the same path position — Next.js doesn't allow two different
-dynamic segment names at the same slot. That's no longer a factor now that the browsing flow
-is under its own `/papers` root, but the static-segment structure itself didn't need to
-change.)
+Routing: `/quiz/papers/[paperId]` (paper-taking, still under `/quiz` — see above) has no
+relationship to `/papers`'s own route structure at all now — a paper's own `grade` and
+`subjectId` are intrinsic to the paper row itself (returned by `getQuizForPaper`, used to
+build the "Choose a different paper" link back to `/papers?grade=&subjectId=`), so the
+paper-taking page doesn't need them threaded through nested URL segments to render correctly
+regardless of which grade/subject the student was browsing when they opened it. Both of that
+back-link and Progress's own "head to Papers" empty-state link pass `grade`/`subjectId` as
+query params (`/papers?grade=10&subjectId=...`) so landing back on the filter page comes in
+pre-filled to the right context, rather than resetting to the student's own defaults.
 
 `src/lib/quiz.ts` has paper-parallel functions (`getQuizForPaper`, `ensurePaperAttemptStarted`,
 `finalizePaperAttempt`) alongside the existing sub-topic ones (`getQuizForSubTopic`,
@@ -507,14 +503,15 @@ running total) is covered separately in `tests/mastery.test.ts`.
 
 ## Progress tab
 
-Progress uses the **exact same Grade → Subject → ... shape as Papers**, not a different
-navigation pattern for the same two grades:
-1. `/progress` — pick a grade, identical UI/copy pattern to Papers' own grade picker
-   (`src/app/papers/page.tsx`): the student's own `profile.grade` is highlighted "Your grade"
+Progress keeps its own three-step Grade → Subject → Topics page-per-step flow — unlike Papers
+(above), which collapsed down to a single filter page, Progress still uses a card-list picker
+at each step (this predates, and was deliberately left alone by, the Papers filter-form
+redesign):
+1. `/progress` — pick a grade: the student's own `profile.grade` is highlighted "Your grade"
    but either card is a real link, and picking one never writes to `student_profiles.grade`.
    A Grade 11 student can view Grade 10 progress if they've been practicing those papers —
-   same free-browsing rule as Papers, not a separate one.
-2. `/progress/grade/[grade]` — pick a subject, identical to Papers' subject step.
+   same free-browsing rule Papers has always had, not a separate one.
+2. `/progress/grade/[grade]` — pick a subject.
 3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown, rebuilt to match a
    student-provided mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
    - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total

@@ -66,7 +66,7 @@ export default async function ProgressTopicsPage({
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
           You haven&apos;t tried any Grade {grade} {subject.name} papers yet —{" "}
           <Link
-            href={`/papers/grade/${grade}/subjects/${subjectId}`}
+            href={`/papers?grade=${grade}&subjectId=${subjectId}`}
             className="font-medium text-progress underline"
           >
             head to Papers
