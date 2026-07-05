@@ -55,15 +55,17 @@ export default async function QuizResultsPage({
   const label = masteryLabelForScore(scoreNum);
 
   return (
-    <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
-      <div>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">{subTopic?.name}</p>
-        <h1 className="mt-1 text-4xl font-semibold tracking-tight">{scoreNum}%</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">{MASTERY_LABEL_TEXT[label]}</p>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+    <main className="mx-auto flex w-full max-w-lg flex-1 flex-col items-center justify-center gap-6 bg-quiz-bg p-8 text-center">
+      <div className="rounded-xl border border-quiz-border bg-quiz-card-bg px-8 py-7">
+        <p className="text-sm text-quiz-grey-text">{subTopic?.name}</p>
+        <h1 className="mt-1 text-4xl font-extrabold tracking-tight text-quiz-navy-light">{scoreNum}%</h1>
+        <p className="mt-2 inline-block rounded-full bg-quiz-purple-bg px-3 py-1 text-sm font-semibold text-quiz-purple-text">
+          {MASTERY_LABEL_TEXT[label]}
+        </p>
+        <p className="mt-3 text-sm text-quiz-grey-text">
           {questionsAnswered} of {totalQuestions} questions answered · {correctCount} correct
         </p>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-quiz-grey-text">
           Marks: {correctCount * MARKS_PER_QUESTION} / {totalQuestions * MARKS_PER_QUESTION}
         </p>
       </div>
@@ -71,13 +73,13 @@ export default async function QuizResultsPage({
       <div className="flex gap-3">
         <Link
           href={`/quiz/${subTopicId}`}
-          className="rounded-full border border-black/10 px-5 py-2.5 text-sm font-medium hover:bg-black/[.04] dark:border-white/15 dark:hover:bg-white/[.06]"
+          className="rounded-lg border border-quiz-option-border bg-white px-5 py-2.5 text-sm font-bold text-quiz-navy hover:border-quiz-navy-light"
         >
           Retake this quiz
         </Link>
         <Link
           href="/dashboard"
-          className="rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background hover:bg-[#383838] dark:hover:bg-[#ccc]"
+          className="rounded-lg bg-quiz-navy px-5 py-2.5 text-sm font-bold text-white"
         >
           Back to dashboard
         </Link>

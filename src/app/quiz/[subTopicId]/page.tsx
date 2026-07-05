@@ -58,24 +58,26 @@ export default async function QuizPage({
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <div className="mb-4">
-        <Link href="/quiz" className="text-[13px] text-ink-secondary hover:underline">
-          ← Choose a different sub-topic
-        </Link>
-        <h1 className="mt-2 text-lg font-bold text-navy-900">{subTopic.name}</h1>
-      </div>
+      <div className="-m-7 min-h-full bg-quiz-bg p-7">
+        <div className="mb-4">
+          <Link href="/quiz" className="text-[13px] text-quiz-grey-text hover:underline">
+            ← Choose a different sub-topic
+          </Link>
+          <h1 className="mt-2 text-lg font-bold text-quiz-navy">{subTopic.name}</h1>
+        </div>
 
-      {questions.length === 0 ? (
-        <p className="text-sm text-ink-secondary">No questions are available for this sub-topic yet.</p>
-      ) : (
-        <QuizForm
-          questions={questions}
-          initialAnswers={existingAnswers}
-          saveAnswer={boundSaveAnswer}
-          submitQuiz={boundSubmit}
-          submitLabel="Submit quiz"
-        />
-      )}
+        {questions.length === 0 ? (
+          <p className="text-sm text-quiz-grey-text">No questions are available for this sub-topic yet.</p>
+        ) : (
+          <QuizForm
+            questions={questions}
+            initialAnswers={existingAnswers}
+            saveAnswer={boundSaveAnswer}
+            submitQuiz={boundSubmit}
+            submitLabel="Submit quiz"
+          />
+        )}
+      </div>
     </AppShell>
   );
 }

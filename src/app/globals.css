@@ -41,6 +41,28 @@
   --color-progress-bg: #eaf1fa;
   --color-teal: #0e7c86;
   --color-teal-bg: #e1f3f5;
+
+  /* Quiz-taking palette — the take-quiz/results screens' own content area
+     (breadcrumb down through results) is intentionally styled differently
+     from the rest of the authenticated app shell, matching
+     docs/quiz-taking-mockup-reference.html's exact CSS variables 1:1
+     (not approximated against the app-shell/brand palettes above). The
+     surrounding AppShell topbar/sidebar/context bar keep their existing
+     navy/gold styling untouched. */
+  --color-quiz-navy: #232d4d;
+  --color-quiz-navy-light: #2e3a63;
+  --color-quiz-bg: #f4f2ec;
+  --color-quiz-card-bg: #f0eee6;
+  --color-quiz-green-bg: #dcefe3;
+  --color-quiz-green-text: #1f7a4d;
+  --color-quiz-red-bg: #f7dede;
+  --color-quiz-red-text: #b23b3b;
+  --color-quiz-grey-bg: #e7e4da;
+  --color-quiz-grey-text: #5c584c;
+  --color-quiz-purple-bg: #e2e1f5;
+  --color-quiz-purple-text: #4a3fae;
+  --color-quiz-border: #e2ded2;
+  --color-quiz-option-border: #dedad0;
 }
 
 @media (prefers-color-scheme: dark) {

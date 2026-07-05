@@ -208,6 +208,31 @@ markers, "Question map" jump grid) is adapted from a student-provided mockup
 (`docs/quiz-taking-mockup-reference.html`, a Grade 9 practice-test page) — visuals
 only. Several of that mockup's *behaviors* are deliberately not carried over, since
 they conflict with this app's existing scoring/feedback model:
+
+- **Colors are the mockup's exact hex values, not the app shell's navy/gold brand
+  palette.** This screen (from the back-link/heading down through the results
+  screen) is deliberately styled apart from Dashboard/Practice/Progress — a second
+  intentional departure alongside "App shell" 's own fixed light theme. New
+  `--color-quiz-*` tokens in `globals.css` copy the mockup's `--navy`/`--navy-light`/
+  `--bg`/`--card-bg`/`--green-*`/`--red-*`/`--grey-*`/`--purple-*`/`--border`/
+  `--option-border` variables 1:1 (e.g. `--color-quiz-navy: #232d4d`), rather than
+  reusing or approximating against `--color-navy-900` etc. `quiz-navy` is the
+  question card's text/heading/primary-button color; `quiz-navy-light` is the
+  progress/selected-option tint and the results screen's big score percentage;
+  `quiz-grey-bg`/`quiz-grey-text` is the neutral "Remaining" stat and unrevealed
+  jump-grid states; `quiz-purple-bg`/`quiz-purple-text` backs the "Answered" stat
+  and the results screen's mastery-label pill (a "supporting stat," not literally
+  in the mockup, styled from the same palette); `quiz-green-*`/`quiz-red-*` are
+  reserved for the jump grid's correct/incorrect states, reachable only once a
+  post-submission review screen exists (see below). The AppShell topbar/sidebar/
+  context bar surrounding this content keep their existing navy/gold styling
+  untouched — only the screen's own content area switches palettes, via a
+  `-m-7 bg-quiz-bg p-7` wrapper div that bleeds past `<AppShell>`'s default
+  `app-bg`-colored `<main>` padding to give this screen its own `--bg` background
+  edge-to-edge, matching the mockup's page background rather than the app shell's.
+  A source-guard test in `tests/quiz-ui.test.ts` asserts `quiz-form.tsx` only ever
+  uses `quiz-*` tokens, never `navy-900`/`gold-*`/`app-border`/`app-surface-muted`/
+  `ink*`/`progress-bg`.
 - **No immediate per-answer feedback.** The mockup locks each option and reveals
   correct/incorrect the instant a student answers; this app never reveals anything
   before the results page (unchanged from before this pass).

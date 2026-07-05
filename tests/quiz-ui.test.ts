@@ -74,4 +74,9 @@ describe("QuizForm source guards", () => {
   it("renders the per-question sub-topic name as the topic tag", () => {
     expect(source).toMatch(/subTopicName/);
   });
+
+  it("uses only the mockup's exact quiz-* palette tokens, never the app shell's navy/gold/app-* tokens", () => {
+    expect(source).toMatch(/quiz-navy|quiz-card-bg|quiz-grey|quiz-purple/);
+    expect(source).not.toMatch(/\bnavy-900\b|\bgold-\d|\bapp-border\b|\bapp-surface-muted\b|\bink-secondary\b|\bink\b|\bprogress-bg\b/);
+  });
 });
