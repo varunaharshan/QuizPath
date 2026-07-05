@@ -58,7 +58,7 @@ export default async function QuizPage({
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <div className="-m-7 min-h-full bg-quiz-bg p-7">
+      <div className="-m-7 min-h-full bg-white p-7">
         <div className="mb-4">
           <Link href="/quiz" className="text-[13px] text-quiz-grey-text hover:underline">
             ← Choose a different sub-topic

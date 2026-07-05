@@ -58,7 +58,7 @@ export default async function PaperQuizPage({
       practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <div className="-m-7 min-h-full bg-quiz-bg p-7">
+      <div className="-m-7 min-h-full bg-white p-7">
         <div className="mb-4">
           <Link
             href={`/quiz/grade/${paper.grade}/subjects/${paper.subjectId}`}

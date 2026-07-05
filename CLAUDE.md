@@ -227,12 +227,21 @@ they conflict with this app's existing scoring/feedback model:
   post-submission review screen exists (see below). The AppShell topbar/sidebar/
   context bar surrounding this content keep their existing navy/gold styling
   untouched — only the screen's own content area switches palettes, via a
-  `-m-7 bg-quiz-bg p-7` wrapper div that bleeds past `<AppShell>`'s default
-  `app-bg`-colored `<main>` padding to give this screen its own `--bg` background
-  edge-to-edge, matching the mockup's page background rather than the app shell's.
-  A source-guard test in `tests/quiz-ui.test.ts` asserts `quiz-form.tsx` only ever
-  uses `quiz-*` tokens, never `navy-900`/`gold-*`/`app-border`/`app-surface-muted`/
-  `ink*`/`progress-bg`.
+  `-m-7 p-7` wrapper div on the two take-quiz pages that bleeds past
+  `<AppShell>`'s default `app-bg`-colored `<main>` padding, giving this screen
+  its own background edge-to-edge rather than the app shell's. That wrapper is
+  plain white (`bg-white`), not the mockup's `--bg` beige — a deliberate,
+  explicit deviation from the mockup requested after the initial palette pass,
+  since the beige read as visually heavier than intended for the take-quiz
+  screen specifically. The two **results** pages (a separate standalone
+  `<main>`, not wrapped in `<AppShell>`) still use `bg-quiz-bg` (`--bg`) as
+  before — this deviation applies only to the take-quiz pages' own wrapper.
+  The question card (`--card-bg`) and stat cards (`--purple-bg`/`--grey-bg`)
+  keep their own backgrounds and borders unchanged, so they stay visually
+  distinct from the page (via their borders/hue, not via a contrasting page
+  backdrop) even on white. A source-guard test in `tests/quiz-ui.test.ts`
+  asserts `quiz-form.tsx` only ever uses `quiz-*` tokens, never
+  `navy-900`/`gold-*`/`app-border`/`app-surface-muted`/`ink*`/`progress-bg`.
 - **No immediate per-answer feedback.** The mockup locks each option and reveals
   correct/incorrect the instant a student answers; this app never reveals anything
   before the results page (unchanged from before this pass).
