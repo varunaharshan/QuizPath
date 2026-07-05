@@ -2,28 +2,57 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
-export type ActiveNav = "dashboard" | "papers" | "practice" | "progress" | "profile";
+export type ActiveNav =
+  | "dashboard"
+  | "papers"
+  | "practice-weak-areas"
+  | "practice-by-topic"
+  | "practice-by-keyword"
+  | "progress"
+  | "profile";
 
-// "Papers" is today's existing Grade -> Subject -> Papers browsing flow
-// (see src/app/papers/page.tsx), just under its own nav item now. "Practice"
-// is a new, separate nav item whose own behavior hasn't been designed yet —
-// it points at the same /papers destination as a stopgap until that's
-// defined, rather than a broken link or a throwaway placeholder page.
-const NAV_ITEMS: {
-  key: ActiveNav;
-  href: string;
-  label: string;
-  icon: string;
-  section: "Overview" | "Learning" | "Account";
-}[] = [
+type NavItem = { key: ActiveNav; href: string; label: string; icon: string };
+
+const TOP_NAV_ITEMS: (NavItem & { section: "Overview" | "Account" })[] = [
   { key: "dashboard", href: "/dashboard", label: "Dashboard", icon: "⌂", section: "Overview" },
-  { key: "papers", href: "/papers", label: "Papers", icon: "📄", section: "Learning" },
-  { key: "practice", href: "/papers", label: "Practice", icon: "✎", section: "Learning" },
-  { key: "progress", href: "/progress", label: "Progress", icon: "☰", section: "Learning" },
   { key: "profile", href: "/profile", label: "Profile", icon: "◉", section: "Account" },
 ];
 
+// "Papers" is the Grade -> Subject -> Papers browsing/filtering flow (see
+// src/app/papers/page.tsx). "Progress" is the Grade -> Subject -> Topics
+// breakdown. Both are flat, single-destination nav items.
+const PAPERS_ITEM: NavItem = { key: "papers", href: "/papers", label: "Papers", icon: "📄" };
+const PROGRESS_ITEM: NavItem = { key: "progress", href: "/progress", label: "Progress", icon: "☰" };
+
+// "Practice" itself has no single destination — it's a section header over
+// three real sub-pages (Weak Areas, By Topic, By Keyword), always expanded
+// (no collapse/toggle state, so no client JS needed for the sidebar).
+const PRACTICE_SUBITEMS: NavItem[] = [
+  { key: "practice-weak-areas", href: "/practice/weak-areas", label: "Weak Areas", icon: "⚠" },
+  { key: "practice-by-topic", href: "/practice/by-topic", label: "By Topic", icon: "▤" },
+  { key: "practice-by-keyword", href: "/practice/by-keyword", label: "By Keyword", icon: "⌕" },
+];
+
 const SECTIONS = ["Overview", "Learning", "Account"] as const;
+
+function NavLink({ item, active, indent = false }: { item: NavItem; active: ActiveNav; indent?: boolean }) {
+  const isActive = item.key === active;
+  return (
+    <Link
+      href={item.href}
+      className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] py-2 text-[13.5px] ${
+        indent ? "pl-6 pr-2.5" : "px-2.5"
+      } ${
+        isActive
+          ? "border-progress bg-progress-bg font-semibold text-progress"
+          : "border-transparent text-ink-secondary hover:bg-app-surface-muted"
+      }`}
+    >
+      <span className="w-[18px] shrink-0 text-center text-[15px]">{item.icon}</span>
+      {item.label}
+    </Link>
+  );
+}
 
 export function AppShell({
   active,
@@ -39,6 +68,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const topTab = active === "profile" ? "settings" : "learn";
+  const isPracticeActive = active.startsWith("practice-");
 
   return (
     <div className="flex min-h-screen flex-1 flex-col bg-app-bg text-ink">
@@ -99,23 +129,27 @@ export function AppShell({
               <p className="mx-2.5 mb-1.5 mt-3.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted first:mt-1">
                 {section}
               </p>
-              {NAV_ITEMS.filter((item) => item.section === section).map((item) => {
-                const isActive = item.key === active;
-                return (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] px-2.5 py-2 text-[13.5px] ${
-                      isActive
-                        ? "border-progress bg-progress-bg font-semibold text-progress"
-                        : "border-transparent text-ink-secondary hover:bg-app-surface-muted"
+              {section === "Learning" ? (
+                <>
+                  <NavLink item={PAPERS_ITEM} active={active} />
+                  <div
+                    className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] border-transparent px-2.5 py-2 text-[13.5px] ${
+                      isPracticeActive ? "font-semibold text-ink" : "text-ink-secondary"
                     }`}
                   >
-                    <span className="w-[18px] shrink-0 text-center text-[15px]">{item.icon}</span>
-                    {item.label}
-                  </Link>
-                );
-              })}
+                    <span className="w-[18px] shrink-0 text-center text-[15px]">✎</span>
+                    Practice
+                  </div>
+                  {PRACTICE_SUBITEMS.map((item) => (
+                    <NavLink key={item.key} item={item} active={active} indent />
+                  ))}
+                  <NavLink item={PROGRESS_ITEM} active={active} />
+                </>
+              ) : (
+                TOP_NAV_ITEMS.filter((item) => item.section === section).map((item) => (
+                  <NavLink key={item.key} item={item} active={active} />
+                ))
+              )}
             </div>
           ))}
         </nav>

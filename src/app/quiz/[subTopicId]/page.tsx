@@ -48,7 +48,7 @@ export default async function QuizPage({
 
   return (
     <AppShell
-      active="practice"
+      active="practice-by-topic"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
       isActiveLearner={completedQuizzes.length > 0}

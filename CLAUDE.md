@@ -335,23 +335,23 @@ adapts to OS dark mode; they're both intentionally fixed.
   page passes an `active` nav key and a few precomputed display values (name, grade,
   active-learner flag) as props, rather than the shell fetching its own data or needing
   `usePathname()`.
-- **"Papers" and "Practice" are two separate nav items now** (previously one item, "Practice").
-  "Papers" is the existing Grade → Subject → Papers browsing flow, moved from `/quiz` to
-  `/papers` (see "Medium and papers" below for the full route list) — its own pages set
-  `active="papers"`. "Practice" is a new nav item whose own behavior hasn't been designed
-  yet; it points at the same `/papers` destination as a stopgap (rather than a dead link or
-  a throwaway placeholder page) until that's defined in a future pass. Landing on `/papers`
-  this way still highlights "Papers" in the sidebar, not "Practice" — the active state
-  reflects whichever page actually rendered, which is correct as long as the two share a
-  destination. The sub-topic quiz-taking page (`/quiz/[subTopicId]`) still sets
-  `active="practice"` (unchanged) since it isn't part of the Papers browsing flow either.
-  The sidebar's old practice-count badge (non-mastered sub-topic count) was dropped in this
-  same pass, since neither Papers nor the not-yet-defined Practice is an obvious home for it;
-  `AppShell` no longer takes a `practiceCount` prop at all.
+- **"Papers" and "Practice" are two separate nav items** (previously one item, "Practice").
+  "Papers" is the Grade → Subject → Papers browsing/filtering flow at `/papers` (see "Medium
+  and papers" below) — a flat, single-destination link, `active="papers"`. "Practice" is a
+  section header, not a link itself — it has no single destination, only three real sub-pages
+  underneath it (see "Practice" below): Weak Areas, By Topic, By Keyword. The submenu is
+  always expanded (no collapse/toggle state, so the sidebar still needs no client JS); the
+  header text itself is bolded whenever `active` is any of the three `practice-*` values, via
+  `active.startsWith("practice-")`, even though the header has no `active` value of its own.
+  The sub-topic quiz-taking page (`/quiz/[subTopicId]`, reached only via deep links, never
+  from a nav click) sets `active="practice-by-topic"` — the closest of the three conceptually,
+  since it's always "practicing one specific topic." The sidebar's old practice-count badge
+  (non-mastered sub-topic count) stays dropped (from when Papers/Practice first split) —
+  `AppShell` still takes no `practiceCount` prop.
 - `src/lib/dashboard.ts` holds the read queries the shell/pages need: `getSubTopicStatusesForGrade`
-  (mastery status per sub-topic, backs the Progress tab; no longer called by any Dashboard/
-  Papers/Practice page now that the sidebar badge is gone, but still directly unit-tested),
-  `getContinueAttempt`, `getCompletedQuizzes` (derives real correct/total per attempt from
+  (mastery status per sub-topic — backs the Progress tab and, now, the Practice sub-pages'
+  Weak Areas/By Topic views below), `getContinueAttempt`, `getCompletedQuizzes` (derives real
+  correct/total per attempt from
   `quiz_attempt_answers` rather than reverse-engineering it from the stored percentage),
   `getProgressStats`, and `rankRecommendedPracticeTopics`.
 - `getContinueAttempt(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })` are
@@ -565,6 +565,46 @@ filtered to weak topics only, and proving the order isn't score-sorted — the e
 grade+subject with zero attempts (with the untouched topic's score `null`, not `0`), and topics
 never bleeding in from a different subject at the same grade.
 
+## Practice (Weak Areas, By Topic, By Keyword)
+
+The sidebar's "Practice" section (see "App shell" above) has three real sub-pages now,
+matching the mockup's expandable submenu. All three are read-only views over the same
+`getSubTopicStatusesForGrade(studentId, grade)` data the Progress tab uses — there's no new
+mastery-tracking mechanism, just three different filters/presentations of it — and every
+topic row links to the existing `/quiz/[subTopicId]` quiz-taking route via the shared
+`<TopicPracticeList>` (`src/components/topic-practice-list.tsx`), so none of this needed any
+new quiz-serving logic either.
+
+- **`/practice/weak-areas`** — every sub-topic labeled `needs_work` (score < 60, and only
+  ones actually attempted — `not_started` topics aren't "weak," just untried, same reasoning
+  `rankRecommendedPracticeTopics` already uses on the Dashboard), sorted lowest score first
+  (most urgent). `weakAreas()` in `src/lib/practice.ts` is the pure filter+sort, directly
+  unit-tested. The mockup's "Practice All Weak Areas" button (one mixed quiz pooling
+  questions across several sub-topics at once) is deliberately **not** built — every quiz
+  attempt today is scoped to exactly one sub-topic or one paper
+  (`quiz_attempts_exactly_one_target`), and a cross-sub-topic pooled attempt would be a real
+  quiz-engine change, not a UI addition. Each weak topic still gets its own individual
+  Practice button.
+- **`/practice/by-topic`** — every sub-topic for the grade (not just weak ones), same list
+  presentation. No subject tabs, unlike the mockup — Science is the only subject today (see
+  "Single-tenant MVP"), so a tab bar with one permanently-selected tab would be pure
+  decoration; add tabs back once there's a real second subject.
+- **`/practice/by-keyword`** — a plain GET `<form>` (no client JS: the search box just
+  reloads the page with `?q=`) over `searchSubTopicIdsByKeyword(grade, query)` in
+  `src/lib/practice.ts`. This is a deliberate scope reduction from the mockup's "Top
+  Keywords" feature: there's no keywords table or tag column anywhere in the schema, so
+  "keyword search" here means a case-insensitive substring match against existing sub-topic
+  names, module names, and published question text (`ilike` across a join, returning matching
+  sub-topic IDs that the page then filters its already-fetched statuses down to — only one
+  place, `getSubTopicStatusesForGrade`, ever computes the mastery data itself). A blank query
+  browses every topic for the grade (same list as By Topic) rather than showing nothing,
+  matching the mockup's persistent topic list that's visible before any search runs.
+
+Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly, and
+`searchSubTopicIdsByKeyword` against a real seeded sub-topic/module/question set (matches by
+name, by module name, and by question text; never matches a different grade even with an
+identical keyword; a blank query returns nothing rather than everything).
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
@@ -574,3 +614,12 @@ to a later session. The Dashboard's own "progress by sub-topic" card is still gr
 (not subject-scoped) and shows a plain percentage with no questions-answered confidence
 note — the Progress tab is the one place that now surfaces the fuller
 Grade+Subject+confidence view.
+
+Also deferred, from the same GradeBoost-style reference mockup that the Papers/Practice
+sidebar split and the Practice sub-pages were adapted from: a real keyword taxonomy (Practice
+by Keyword currently does a substring search over existing content instead — see "Practice"
+above), a pooled/mixed quiz spanning multiple sub-topics at once ("Practice All Weak Areas"),
+Incorrect Questions (retry a history of previously-wrong answers), Bookmarked Questions,
+Analytics (score trends over time, avg. time per question), Search Questions (full question
+bank search), Revision Notes, streaks/gamification, an Exam Board field, and notification
+toggles — none of these have any schema or UI today.
