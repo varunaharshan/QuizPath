@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { ensurePaperAttemptStarted, getExistingAnswers, getQuizForPaper } from "@/lib/quiz";
+import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { AppShell } from "@/components/app-shell";
 import { QuizForm } from "@/components/quiz-form";
 import { savePaperAnswer, submitPaperQuiz } from "./actions";
 
@@ -33,6 +35,12 @@ export default async function PaperQuizPage({
   const attemptId = await ensurePaperAttemptStarted(appUser.id, paperId);
   const existingAnswers = await getExistingAnswers(attemptId);
 
+  const [statuses, completedQuizzes] = await Promise.all([
+    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+    getCompletedQuizzes(appUser.id),
+  ]);
+  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+
   const boundSaveAnswer = async (mcqId: string, selectedOption: number) => {
     "use server";
     await savePaperAnswer(attemptId, mcqId, selectedOption);
@@ -43,21 +51,25 @@ export default async function PaperQuizPage({
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-8">
-      <div>
+    <AppShell
+      active="practice"
+      studentName={appUser.name ?? appUser.email.split("@")[0]}
+      grade={profile.grade}
+      practiceCount={practiceCount}
+      isActiveLearner={completedQuizzes.length > 0}
+    >
+      <div className="mb-4">
         <Link
           href={`/quiz/grade/${paper.grade}/subjects/${paper.subjectId}`}
-          className="text-sm text-zinc-500 hover:underline dark:text-zinc-400"
+          className="text-[13px] text-ink-secondary hover:underline"
         >
           ← Choose a different paper
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{paper.title}</h1>
+        <h1 className="mt-2 text-lg font-bold text-navy-900">{paper.title}</h1>
       </div>
 
       {questions.length === 0 ? (
-        <p className="text-zinc-500 dark:text-zinc-400">
-          No questions are available for this paper yet.
-        </p>
+        <p className="text-sm text-ink-secondary">No questions are available for this paper yet.</p>
       ) : (
         <QuizForm
           questions={questions}
@@ -67,6 +79,6 @@ export default async function PaperQuizPage({
           submitLabel="Submit paper"
         />
       )}
-    </main>
+    </AppShell>
   );
 }

@@ -142,6 +142,9 @@ describe("paper-based quiz flow", () => {
     expect(quiz.questions.some((q) => q.id === draftMcqId)).toBe(false);
     for (const q of quiz.questions) {
       expect(q).not.toHaveProperty("correctOption");
+      // None of this paper's fixture questions are tagged with a sub-topic
+      // — the topic tag must be null, not a fabricated/omitted field.
+      expect(q.subTopicName).toBeNull();
     }
   });
 

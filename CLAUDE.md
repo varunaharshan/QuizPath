@@ -201,6 +201,64 @@ radio attribute forced every question to be answered before Submit would even fi
   behavior unchanged) lives in `tests/quiz-flow.test.ts` (sub-topic) and
   `tests/paper-flow.test.ts` (paper).
 
+### Quiz-taking visual design
+
+`<QuizForm>`'s layout (stats row, card-based question, lettered A/B/C/D option
+markers, "Question map" jump grid) is adapted from a student-provided mockup
+(`docs/quiz-taking-mockup-reference.html`, a Grade 9 practice-test page) — visuals
+only. Several of that mockup's *behaviors* are deliberately not carried over, since
+they conflict with this app's existing scoring/feedback model:
+- **No immediate per-answer feedback.** The mockup locks each option and reveals
+  correct/incorrect the instant a student answers; this app never reveals anything
+  before the results page (unchanged from before this pass).
+- **No hints.** The mockup's hint toggle/text isn't built — deferred to a later
+  session, not part of this MVP; there's no `mcqs` schema column for it yet either.
+- **No "Reset test" button.** Save-and-resume/partial-submit (above) is the only
+  way an attempt is managed; there's no reset-and-start-over affordance.
+- **The live stats row shows only "Answered" / "Remaining"**, never a running
+  "Correct" / "Wrong" / "Score %" — showing those would mean revealing correctness
+  mid-quiz. `computeQuizProgress` (`src/lib/quiz-ui.ts`) backs this: it takes only
+  `(totalQuestions, answeredCount)`, so it's structurally incapable of leaking
+  correctness (there's no per-question correctness data to leak).
+- **The "Question map" jump grid never shows correct/wrong coloring pre-submission**
+  — only current / answered / unanswered. `jumpButtonStatus` (`src/lib/quiz-ui.ts`)
+  takes a `revealed` flag and only splits `answered` into `correct`/`incorrect` when
+  `revealed: true`; `<QuizForm>` always calls it with `revealed: false` hardcoded,
+  since per-question review after a quiz isn't built yet (see "What's NOT built
+  yet"). The function supports the future reveal case without a signature change
+  once that screen exists; both branches are unit-tested directly in
+  `tests/quiz-ui.test.ts` even though only the non-revealing one is reachable from
+  the running app today.
+- **The topic tag is `subTopicName`** — `QuizQuestion` (`src/lib/quiz.ts`) gained
+  this field, sourced from the existing `sub_topic_id` relationship (the sub-topic's
+  own `name`), not a new "Learning Objective" taxonomy field. For a sub-topic quiz
+  every question shares the same tag (the sub-topic itself); for a paper, each
+  question resolves its *own* tag via a left join to `sub_topics` in
+  `getQuizForPaper` (`null` for a paper question that isn't tagged with a
+  sub-topic — some aren't, see "Medium and papers").
+- **"Marks: X / Y" on the results screen** is a fixed, purely presentational
+  multiplier (`MARKS_PER_QUESTION = 2` in `src/lib/quiz.ts`) applied uniformly —
+  every question carries equal weight, so there's no per-question weight field in
+  the schema. `Y` is `totalQuestions * MARKS_PER_QUESTION` (the full paper/quiz
+  size, not just what was answered), matching the existing "X of Y questions
+  answered" line's own `Y`.
+- Both quiz-taking pages (`/quiz/[subTopicId]`, `/quiz/papers/[paperId]`) are now
+  wrapped in `<AppShell>` (they previously rendered a standalone `<main>`, unlike
+  every other authenticated page) — the mockup's own navy header/toolbar chrome
+  was adapted to fit inside the app's existing topbar/sidebar rather than
+  replacing it.
+- Test coverage: `tests/quiz-ui.test.ts` covers `computeQuizProgress` and
+  `jumpButtonStatus` directly, plus source-guard assertions on `quiz-form.tsx`
+  (no Reset/hint text outside comments, the jump grid's `revealed: false` is
+  hardcoded, `subTopicName` is actually wired in) — this codebase has no
+  component-rendering test harness (adding one, e.g. jsdom/Testing Library, was
+  out of scope for this pass), so these guard the same behaviors the way every
+  other UI-adjacent piece of logic here is tested: as plain, directly-tested pure
+  functions/data, not rendered output. `getQuizForSubTopic`/`getQuizForPaper`'s
+  `subTopicName` resolution (constant per sub-topic quiz; per-question, including
+  the untagged-paper-question `null` case) is covered in `tests/quiz-flow.test.ts`,
+  `tests/paper-flow.test.ts`, and `tests/mastery.test.ts`.
+
 ## Brand / design system
 
 Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`
@@ -456,7 +514,9 @@ never bleeding in from a different subject at the same grade.
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
-scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. The Dashboard's
-own "progress by sub-topic" card is still grade-only (not subject-scoped) and shows a plain
-percentage with no questions-answered confidence note — the Progress tab is the one place that
-now surfaces the fuller Grade+Subject+confidence view.
+scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Hints
+(the mockup's per-question hint toggle/text) are also deferred — no schema column, no UI —
+to a later session. The Dashboard's own "progress by sub-topic" card is still grade-only
+(not subject-scoped) and shows a plain percentage with no questions-answered confidence
+note — the Progress tab is the one place that now surfaces the fuller
+Grade+Subject+confidence view.

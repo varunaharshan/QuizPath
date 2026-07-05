@@ -120,6 +120,9 @@ describe("quiz-taking flow", () => {
     expect(quiz.questions.some((q) => q.id === draftMcqId)).toBe(false);
     for (const q of quiz.questions) {
       expect(q).not.toHaveProperty("correctOption");
+      // Every question in a sub-topic quiz carries that same sub-topic's
+      // name as its topic tag.
+      expect(q.subTopicName).toBe(`Test Sub-topic ${runId}`);
     }
   });
 

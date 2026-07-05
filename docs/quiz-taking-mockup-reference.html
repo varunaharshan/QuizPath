@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<!-- saved from url=(0065)file:///C:/Users/dulat/Downloads/Quizpath/grade9_science_mcq.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<title>Grade 9 Science — Third Term Test 2019 (Part I)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root{
+    --navy:#232d4d;
+    --navy-light:#2e3a63;
+    --bg:#f4f2ec;
+    --card-bg:#f0eee6;
+    --green-bg:#dcefe3;
+    --green-text:#1f7a4d;
+    --red-bg:#f7dede;
+    --red-text:#b23b3b;
+    --grey-bg:#e7e4da;
+    --grey-text:#5c584c;
+    --purple-bg:#e2e1f5;
+    --purple-text:#4a3fae;
+    --border:#e2ded2;
+    --option-border:#dedad0;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:#fafaf7;
+    color:#222;
+    padding:24px 12px 60px;
+  }
+  .wrap{max-width:860px;margin:0 auto;}
+  .header{
+    background:var(--navy);
+    color:#fff;
+    border-radius:10px;
+    padding:18px 22px;
+  }
+  .header h1{margin:0 0 6px;font-size:20px;font-weight:700;}
+  .header .sub{font-size:13px;color:#c7cbe0;line-height:1.5;}
+  .progress-track{
+    height:6px;
+    background:#e7e4da;
+    border-radius:6px;
+    margin:16px 0 18px;
+    overflow:hidden;
+  }
+  .progress-fill{
+    height:100%;
+    width:5%;
+    background:var(--navy-light);
+    border-radius:6px;
+    transition:width .25s ease;
+  }
+  .stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:10px;
+    margin-bottom:18px;
+  }
+  .stat{
+    border-radius:10px;
+    padding:14px 8px;
+    text-align:center;
+  }
+  .stat .num{font-size:24px;font-weight:700;display:block;}
+  .stat .lbl{font-size:11px;letter-spacing:.04em;font-weight:600;text-transform:uppercase;opacity:.85;}
+  .stat.correct{background:var(--green-bg);color:var(--green-text);}
+  .stat.wrong{background:var(--red-bg);color:var(--red-text);}
+  .stat.left{background:var(--grey-bg);color:var(--grey-text);}
+  .stat.score{background:var(--purple-bg);color:var(--purple-text);}
+
+  .card{
+    background:var(--card-bg);
+    border-radius:12px;
+    padding:20px 22px;
+    border:1px solid var(--border);
+  }
+  .qmeta{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:13px;
+    margin-bottom:14px;
+    color:#555;
+  }
+  .qmeta .qnum{font-weight:700;color:#333;}
+  .tag{
+    color:var(--navy-light);
+    font-weight:600;
+    cursor:default;
+  }
+  .tag.lo{
+    background:#e5e2f7;
+    color:#4a3fae;
+    padding:2px 8px;
+    border-radius:5px;
+    font-size:11px;
+    font-weight:700;
+  }
+  .qtext{
+    font-size:16px;
+    line-height:1.55;
+    margin-bottom:16px;
+    color:#1c1c1c;
+  }
+  .qtext .qimg{
+    display:block;
+    margin:10px 0;
+    max-width:100%;
+  }
+  .options{display:flex;flex-direction:column;gap:10px;margin-bottom:6px;}
+  .option{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    background:#fff;
+    border:1px solid var(--option-border);
+    border-radius:10px;
+    padding:12px 16px;
+    cursor:pointer;
+    font-size:14.5px;
+    line-height:1.5;
+    transition:border-color .15s, background .15s;
+  }
+  .option:hover{border-color:var(--navy-light);}
+  .option .letter{
+    flex:0 0 26px;
+    width:26px;
+    height:26px;
+    border-radius:50%;
+    background:#eceae2;
+    color:#444;
+    font-weight:700;
+    font-size:12.5px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .option.selected{
+    border-color:var(--navy-light);
+    background:#eef0fa;
+  }
+  .option.selected .letter{background:var(--navy-light);color:#fff;}
+  .option.correct{
+    border-color:var(--green-text);
+    background:var(--green-bg);
+  }
+  .option.correct .letter{background:var(--green-text);color:#fff;}
+  .option.incorrect{
+    border-color:var(--red-text);
+    background:var(--red-bg);
+  }
+  .option.incorrect .letter{background:var(--red-text);color:#fff;}
+  .option.disabled{cursor:default;}
+
+  .hint-section{
+    margin-top:16px;
+    border-top:1px dashed var(--option-border);
+    padding-top:12px;
+  }
+  .hint-toggle{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    cursor:pointer;
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--navy-light);
+    user-select:none;
+  }
+  .hint-toggle .chevron{
+    display:inline-block;
+    transition:transform .2s ease;
+    font-size:11px;
+  }
+  .hint-toggle.open .chevron{transform:rotate(90deg);}
+  .hint-body{
+    display:none;
+    margin-top:10px;
+    background:#fdf7e3;
+    border:1px solid #ecdfa8;
+    border-radius:8px;
+    padding:12px 14px;
+    font-size:13.5px;
+    line-height:1.55;
+    color:#6b5a12;
+  }
+  .hint-body.show{display:block;}
+
+  .footer-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:18px;
+  }
+  .nav-btns{display:flex;gap:10px;}
+  button{
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:700;
+    border-radius:8px;
+    padding:10px 18px;
+    cursor:pointer;
+    border:1px solid var(--option-border);
+    background:#fff;
+    color:#333;
+  }
+  button.primary{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .answered-count{font-size:13px;color:#666;}
+
+  .toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:20px;
+    gap:10px;
+  }
+  .toolbar .left-tools{display:flex;gap:8px;flex-wrap:wrap;}
+  .toolbar button{padding:8px 14px;font-size:12.5px;}
+
+  .jump-grid{
+    display:grid;
+    grid-template-columns:repeat(10,1fr);
+    gap:6px;
+    margin-top:14px;
+  }
+  .jump-btn{
+    padding:0;
+    height:34px;
+    font-size:12.5px;
+    border-radius:6px;
+  }
+  .jump-btn.current{border-color:var(--navy);box-shadow:0 0 0 2px var(--navy-light) inset;}
+  .jump-btn.answered-correct{background:var(--green-bg);border-color:var(--green-text);color:var(--green-text);}
+  .jump-btn.answered-wrong{background:var(--red-bg);border-color:var(--red-text);color:var(--red-text);}
+
+  .results{
+    display:none;
+    text-align:center;
+    padding:30px 10px;
+  }
+  .results h2{color:var(--navy);}
+  .results .big{font-size:42px;font-weight:800;color:var(--navy-light);}
+
+  @media (max-width:600px){
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .jump-grid{grid-template-columns:repeat(5,1fr);}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <h1>Grade 9 Science — Third Term Test 2019 (Part I)</h1>
+    <div class="sub">North Western Province · 20 MCQs · Answer all questions · Hints included · 2 marks each (40 marks)</div>
+  </div>
+
+  <div class="progress-track"><div class="progress-fill" id="progressFill" style="width: 5%;"></div></div>
+
+  <div class="stats">
+    <div class="stat correct"><span class="num" id="statCorrect">0</span><span class="lbl">Correct</span></div>
+    <div class="stat wrong"><span class="num" id="statWrong">0</span><span class="lbl">Wrong</span></div>
+    <div class="stat left"><span class="num" id="statLeft">20</span><span class="lbl">Left</span></div>
+    <div class="stat score"><span class="num" id="statScore">—</span><span class="lbl">Score %</span></div>
+  </div>
+
+  <div class="card" id="quizCard">
+    <div class="qmeta">
+      <span class="qnum" id="qPosition">Q1 of 20</span>
+      <span class="tag" id="qTopic">Biology</span>
+      <span class="tag lo" id="qLO">LO1</span>
+    </div>
+    <div class="qtext" id="qText">The answer given for a multi-cellular microorganism out of the followings.</div>
+    <div class="options" id="qOptions"><div class="option"><span class="letter">A</span><span>Virus</span></div><div class="option"><span class="letter">B</span><span>Fungi</span></div><div class="option"><span class="letter">C</span><span>Bacteria</span></div><div class="option"><span class="letter">D</span><span>Euglena</span></div></div>
+
+    
+  </div>
+
+  <div class="footer-row">
+    <div class="nav-btns">
+      <button id="prevBtn" disabled="">← Prev</button>
+      <button class="primary" id="nextBtn">Next →</button>
+    </div>
+    <div class="answered-count" id="answeredCount">0 / 20 answered</div>
+  </div>
+
+  <div class="toolbar">
+    <div class="left-tools">
+      <button id="jumpToggleBtn">Question map</button>
+      
+    </div>
+    <button class="primary" id="finishBtn">Finish &amp; Submit</button>
+  </div>
+
+  <div class="jump-grid" id="jumpGrid" style="display:none;"><button class="jump-btn current">1</button><button class="jump-btn">2</button><button class="jump-btn">3</button><button class="jump-btn">4</button><button class="jump-btn">5</button><button class="jump-btn">6</button><button class="jump-btn">7</button><button class="jump-btn">8</button><button class="jump-btn">9</button><button class="jump-btn">10</button><button class="jump-btn">11</button><button class="jump-btn">12</button><button class="jump-btn">13</button><button class="jump-btn">14</button><button class="jump-btn">15</button><button class="jump-btn">16</button><button class="jump-btn">17</button><button class="jump-btn">18</button><button class="jump-btn">19</button><button class="jump-btn">20</button></div>
+
+  <div class="results card" id="resultsCard">
+    <h2>Test complete</h2>
+    <div class="big" id="finalScore">0%</div>
+    <p id="finalSummary"></p>
+    <button class="primary" id="reviewBtn">Review answers</button>
+    <button id="restartBtn">Restart test</button>
+  </div>
+
+</div>
+
+<script>
+const QUESTIONS = [
+{
+  topic:"Biology", lo:"LO1",
+  text:"The answer given for a multi-cellular microorganism out of the followings.",
+  options:["Virus","Fungi","Bacteria","Euglena"],
+  correct:1,
+  hint:"Think about which of these organisms is made up of more than one cell. Viruses, bacteria and Euglena are all unicellular (or not even truly cellular, in the case of viruses)."
+},
+{
+  topic:"Biology", lo:"LO1",
+  text:"The hearing frequency range of the human ear is,",
+  options:["2 Hz – 20 Hz","20 Hz – 200 Hz","20 Hz – 20,000 Hz","200 Hz – 20,000 Hz"],
+  correct:2,
+  hint:"This is the standard audible range quoted in textbooks for a healthy young human ear — remember it spans from a very low value up to twenty thousand hertz."
+},
+{
+  topic:"Chemistry", lo:"LO2",
+  text:"The physical methods that can be used to remove chaff and sand from rice are,",
+  options:["Panning and winnowing","Vapourization and Panning","Panning and Fractional distillation","Crystallization and Vapourization"],
+  correct:0,
+  hint:"Winnowing uses air/wind to blow away light chaff, while panning uses water to separate denser sand from rice grains. Neither distillation nor crystallization applies to solid mixtures like this."
+},
+{
+  topic:"Physics", lo:"LO3",
+  text:"Which of the following is the reason to consider force as a vector quantity?",
+  options:["Having a line of action and a point of application.","Having a point of application and a definite direction.","Having a magnitude and a point of application.","Having a magnitude and a definite direction."],
+  correct:3,
+  hint:"A vector quantity is defined by two properties only: how much (magnitude) and which way (direction). Point of application and line of action are useful but not what makes it a vector."
+},
+{
+  topic:"Physics", lo:"LO3",
+  text:"A – Sharpening a knife edge. B – Making heavily loaded trucks and containers with a large number of wheels. C – Broadening the shoulder strap of a school bag. D – Using nails for the shoes of the players.<br><br>Which answer gives the steps that are taken to <strong>reduce</strong> pressure?",
+  options:["A and B only.","A and C only.","B and C only.","A, B and D only."],
+  correct:2,
+  hint:"Pressure = Force / Area. To reduce pressure you increase the contact area. Sharpening a knife and using nails on shoes actually decrease area (to increase pressure), so only the wheels and the broadened strap reduce pressure."
+},
+{
+  topic:"Biology", lo:"LO1",
+  text:"The chamber in the human heart which is connected with the pulmonary artery is the",
+  options:["Right atrium","Right ventricle","Left ventricle","Left atrium"],
+  correct:1,
+  hint:"The pulmonary artery carries deoxygenated blood away from the heart to the lungs. Trace the path: blood leaves the heart from a ventricle, not an atrium, and it's the side that handles deoxygenated blood."
+},
+{
+  topic:"Biology", lo:"LO1",
+  text:"Which one is <strong>not</strong> a condition affected by plant growth substances (hormones)?",
+  options:[
+    "The plant leaves getting a yellowish colour due to the lack of fertilizers.",
+    "Bending of the plant stem towards the sunlight.",
+    "The growth of lateral buds rapidly after removing the auxiliary bud of a plant.",
+    "The ripening of fruits rapidly when using chemical substances."
+  ],
+  correct:0,
+  hint:"Yellowing from a lack of fertilizer is a nutrient-deficiency effect, not a hormone-driven response. Phototropism, apical dominance, and fruit ripening are all classic plant-hormone effects."
+},
+{
+  topic:"Biology", lo:"LO1",
+  text:"Select the correct answer which gives the animals that use false feet (pseudopodia) and flippers for their movements, respectively.",
+  options:["Amoeba and Paramecium.","Euglena and Turtle","Turtle and Amoeba","Amoeba and Turtle"],
+  correct:3,
+  hint:"Pseudopodia ('false feet') are the signature movement structure of Amoeba. Flippers are used by animals like turtles for swimming. Match each movement structure to its matching organism in order."
+},
+{
+  topic:"Science - General", lo:"LO4",
+  text:"Which theory can be considered the most accepted modern theory about the origin of the earth?",
+  options:["Big Bang theory","Theory of special creation","Cosmozoic theory","Theory of spontaneous generation"],
+  correct:0,
+  hint:"This is the theory most widely supported by modern astrophysical evidence (like cosmic background radiation) for the origin of the universe and, by extension, the earth."
+},
+{
+  topic:"Chemistry", lo:"LO2",
+  text:"What is the correct statement related to plating copper metal on an iron/steel ring?",
+  options:["Steel ring should be connected to the positive terminal.","Steel ring should be connected to the negative terminal.","A copper plate should be connected to the negative terminal.","A copper plate should be used as the positive terminal."],
+  correct:1,
+  hint:"In electroplating, the object to be plated acts as the cathode (negative terminal), attracting metal ions from the solution. The metal being deposited (copper) forms the anode."
+},
+{
+  topic:"Chemistry", lo:"LO2",
+  text:"Select the correct instance where the seeds can be seen floating on an orange juice solution.",
+  options:["At the instance of extracting orange juice.","When adding water to the orange juice.","When adding sugar to the orange juice.","When adding a drop of salt solution to the orange juice."],
+  correct:2,
+  hint:"Think about density and concentration. Adding sugar increases the density of the juice solution enough that the seeds, which were sinking, start to float — similar to the classic egg-in-saltwater density demonstration."
+},
+{
+  topic:"Biology", lo:"LO4",
+  text:"When considering biodiversity on the earth, 'biodiversity hotspots' means,",
+  options:["A zone with high temperature on the earth.","A zone which faces rapid extinction of living organisms.","A zone with highly changeable climatic conditions.","A zone with relatively high biodiversity."],
+  correct:3,
+  hint:"A 'hotspot' in this context is about richness, not heat or instability — it refers to a region packed with an unusually large variety of species."
+},
+{
+  topic:"Science - General", lo:"LO4",
+  text:"A green building means a building made to minimize (or not emit at all) green house gases to the environment. A factor that should be considered when constructing a green building is,",
+  options:["Having a minimum plant cover.","Planning houses in order to minimize maintenance cost.","Giving maximum amount of light.","Having a maximum of waste materials."],
+  correct:1,
+  hint:"Green buildings are about efficiency and low environmental impact. Minimizing plant cover and maximizing waste work against this goal, and 'maximum light' isn't itself a green design principle. Efficient planning that reduces costs and resource use fits best."
+},
+{
+  topic:"Physics", lo:"LO3",
+  text:"What type of surface causes diffuse reflection to take place?<br><em>(The paper shows four line drawings: (1) a smooth flat straight line, (2) a smooth gentle curve, (3) an irregular wavy curve, (4) a rough, tightly wavy/zig-zag line.)</em>",
+  options:[
+    "A perfectly smooth, flat surface (straight line)",
+    "A smooth, evenly curved surface",
+    "A moderately uneven curved surface",
+    "A rough, irregular surface with many small bumps (tightly wavy line)"
+  ],
+  correct:3,
+  hint:"Diffuse reflection happens when light hits an irregular, bumpy surface and scatters in many directions — unlike a smooth surface, which produces regular (specular) reflection. Look for the roughest, most irregular drawing."
+},
+{
+  topic:"Physics", lo:"LO3",
+  text:"The diagram in the paper shows three simple machines: a windlass-type wheel and axle, a pulley with a bucket, and children on a see-saw (lever).<br><br>Select the answer which gives the simple machines shown above, in order.",
+  options:["Wheel and axle, Pulley, Lever","Lever, wheel and axle, Pulley","Pulley, Lever, Inclined plane","Inclined plane, wheel and axle, Pulley."],
+  correct:0,
+  hint:"Match each picture to its machine type in the order they were drawn: the crank-and-drum device is a wheel and axle, the rope-over-wheel with a bucket is a pulley, and the see-saw is a lever."
+},
+{
+  topic:"Biology", lo:"LO4",
+  text:"Which answer more accurately explains the 'lotus effect' (self-cleaning, water-repelling leaves)?",
+  options:[
+    "The water molecule is made up of nano-scale particles.",
+    "Water is repelled due to the pressure of charges on the surfaces of plant leaves.",
+    "The fine arrangement of nano-scale particles on the surfaces of plant leaves.",
+    "There is a substance like oil on the surfaces of plant leaves."
+  ],
+  correct:2,
+  hint:"The lotus effect is a real, well-studied phenomenon caused by microscopic/nano-scale surface texture (tiny bumps) on the leaf, not by oil, static charge, or the water molecule itself. Its structure traps air and minimizes contact with water and dirt."
+},
+{
+  topic:"Physics", lo:"LO4",
+  text:"Which is the correct strategy that can be followed by a person in an open area/land, to prevent lightning-related accidents?",
+  options:[
+    "Standing on an insulated material, such as a stone.",
+    "Walking towards a tree or a pillar.",
+    "Removing metal objects such as mobile phones.",
+    "Sitting or lying down flat on the earth."
+  ],
+  correct:0,
+  hint:"Standing on an insulating material like a dry stone slows the transfer of an electrical charge from the ground through your body. Avoid tall isolated objects like lone trees (lightning targets height), and don't lie flat (this increases contact area with the ground). Removing metal objects helps but isn't the primary strategy tested here."
+},
+{
+  topic:"Science - General", lo:"LO4",
+  text:"Which of the following is <strong>not</strong> a suitable strategy to prevent 'global warming'?",
+  options:["Reforestation and conservation of forests.","Adapting to a simple lifestyle without using many materials.","Using more electricity.","Using public transport frequently."],
+  correct:2,
+  hint:"Most electricity is still generated using fossil fuels in many contexts, so using more of it generally increases greenhouse gas emissions rather than reducing them — the opposite of what the other three options achieve."
+},
+{
+  topic:"Science - General", lo:"LO4",
+  text:"What is the incorrect statement about using timber?",
+  options:[
+    "Timber is the oldest building material that could be recycled and renewed naturally.",
+    "Valuable timbers like ebony, satinwood and calamander wood can be seen in the wet zone often.",
+    "Durability, ability to create attractive patterns, and colour are special characteristics of timber.",
+    "Timber can be destroyed by termites and weevils, which take it as food."
+  ],
+  correct:1,
+  hint:"Think about where these rare, valuable timber species are typically found in Sri Lanka — they are associated with drier regions rather than being commonly found in the wet zone, which makes that statement the incorrect one."
+},
+{
+  topic:"Chemistry", lo:"LO2",
+  text:"A – Hydrogen gas is evolved when electrolysing acidulated water.<br>B – Gold cyanide solution is used as the electrolyte to plate gold.<br>C – Copper can be plated on the anode when electrolyzing copper sulphate.<br><br>The true statement(s) are,",
+  options:["A and B only","A and C only","B and C only","All of A, B and C"],
+  correct:0,
+  hint:"Electrolysis of acidulated water does release hydrogen gas at the cathode, and gold cyanide solution is indeed a standard electrolyte for gold plating — both true. But metal plating always deposits onto the cathode, not the anode, which makes statement C false."
+}
+];
+
+const state = {
+  current:0,
+  answers:new Array(QUESTIONS.length).fill(null),
+  finished:false
+};
+
+const els = {
+  progressFill:document.getElementById('progressFill'),
+  statCorrect:document.getElementById('statCorrect'),
+  statWrong:document.getElementById('statWrong'),
+  statLeft:document.getElementById('statLeft'),
+  statScore:document.getElementById('statScore'),
+  qPosition:document.getElementById('qPosition'),
+  qTopic:document.getElementById('qTopic'),
+  qLO:document.getElementById('qLO'),
+  qText:document.getElementById('qText'),
+  qOptions:document.getElementById('qOptions'),
+  hintToggle:document.getElementById('hintToggle'),
+  hintBody:document.getElementById('hintBody'),
+  prevBtn:document.getElementById('prevBtn'),
+  nextBtn:document.getElementById('nextBtn'),
+  answeredCount:document.getElementById('answeredCount'),
+  jumpGrid:document.getElementById('jumpGrid'),
+  jumpToggleBtn:document.getElementById('jumpToggleBtn'),
+  resetBtn:document.getElementById('resetBtn'),
+  finishBtn:document.getElementById('finishBtn'),
+  quizCard:document.getElementById('quizCard'),
+  resultsCard:document.getElementById('resultsCard'),
+  finalScore:document.getElementById('finalScore'),
+  finalSummary:document.getElementById('finalSummary'),
+  reviewBtn:document.getElementById('reviewBtn'),
+  restartBtn:document.getElementById('restartBtn')
+};
+
+const LETTERS = ['A','B','C','D'];
+
+function renderStats(){
+  let correct=0, wrong=0, answered=0;
+  state.answers.forEach((a,i)=>{
+    if(a!==null){
+      answered++;
+      if(a===QUESTIONS[i].correct) correct++; else wrong++;
+    }
+  });
+  const left = QUESTIONS.length - answered;
+  els.statCorrect.textContent = correct;
+  els.statWrong.textContent = wrong;
+  els.statLeft.textContent = left;
+  els.statScore.textContent = answered>0 ? Math.round((correct/answered)*100)+'%' : '—';
+  els.answeredCount.textContent = answered + ' / ' + QUESTIONS.length + ' answered';
+  els.progressFill.style.width = ((state.current+1)/QUESTIONS.length*100)+'%';
+}
+
+function renderQuestion(){
+  const idx = state.current;
+  const q = QUESTIONS[idx];
+  els.qPosition.textContent = 'Q'+(idx+1)+' of '+QUESTIONS.length;
+  els.qTopic.textContent = q.topic;
+  els.qLO.textContent = q.lo;
+  els.qText.innerHTML = q.text;
+
+  els.qOptions.innerHTML = '';
+  const selected = state.answers[idx];
+  q.options.forEach((opt, i)=>{
+    const div = document.createElement('div');
+    div.className = 'option';
+    if(selected!==null){
+      div.classList.add('disabled');
+      if(i===q.correct) div.classList.add('correct');
+      else if(i===selected) div.classList.add('incorrect');
+    }
+    if(selected===i) div.classList.add('selected');
+    div.innerHTML = '<span class="letter">'+LETTERS[i]+'</span><span>'+opt+'</span>';
+    div.addEventListener('click', ()=>selectOption(idx,i));
+    els.qOptions.appendChild(div);
+  });
+
+  els.hintBody.innerHTML = q.hint;
+  els.hintBody.classList.remove('show');
+  els.hintToggle.classList.remove('open');
+  els.hintToggle.querySelector('span:last-child').textContent = 'Show hint';
+
+  els.prevBtn.disabled = idx===0;
+  els.nextBtn.textContent = idx===QUESTIONS.length-1 ? 'Finish →' : 'Next →';
+
+  renderStats();
+  renderJumpGrid();
+}
+
+function selectOption(qIdx, optIdx){
+  if(state.answers[qIdx]!==null) return;
+  state.answers[qIdx] = optIdx;
+  renderQuestion();
+}
+
+function renderJumpGrid(){
+  els.jumpGrid.innerHTML = '';
+  QUESTIONS.forEach((q,i)=>{
+    const btn = document.createElement('button');
+    btn.className = 'jump-btn';
+    btn.textContent = i+1;
+    if(i===state.current) btn.classList.add('current');
+    if(state.answers[i]!==null){
+      btn.classList.add(state.answers[i]===q.correct ? 'answered-correct' : 'answered-wrong');
+    }
+    btn.addEventListener('click', ()=>{ state.current=i; renderQuestion(); });
+    els.jumpGrid.appendChild(btn);
+  });
+}
+
+els.hintToggle.addEventListener('click', ()=>{
+  const open = els.hintBody.classList.toggle('show');
+  els.hintToggle.classList.toggle('open', open);
+  els.hintToggle.querySelector('span:last-child').textContent = open ? 'Hide hint' : 'Show hint';
+});
+
+els.prevBtn.addEventListener('click', ()=>{
+  if(state.current>0){ state.current--; renderQuestion(); }
+});
+els.nextBtn.addEventListener('click', ()=>{
+  if(state.current<QUESTIONS.length-1){ state.current++; renderQuestion(); }
+  else showResults();
+});
+
+els.jumpToggleBtn.addEventListener('click', ()=>{
+  els.jumpGrid.style.display = els.jumpGrid.style.display==='none' ? 'grid' : 'none';
+});
+
+els.resetBtn.addEventListener('click', ()=>{
+  if(confirm('Reset all answers and start over?')){
+    state.answers = new Array(QUESTIONS.length).fill(null);
+    state.current = 0;
+    els.resultsCard.style.display='none';
+    els.quizCard.style.display='block';
+    document.querySelector('.footer-row').style.display='flex';
+    document.querySelector('.toolbar').style.display='flex';
+    renderQuestion();
+  }
+});
+
+els.finishBtn.addEventListener('click', showResults);
+els.restartBtn.addEventListener('click', ()=>els.resetBtn.click());
+els.reviewBtn.addEventListener('click', ()=>{
+  els.resultsCard.style.display='none';
+  els.quizCard.style.display='block';
+  document.querySelector('.footer-row').style.display='flex';
+  document.querySelector('.toolbar').style.display='flex';
+  state.current = state.answers.findIndex(a=>a===null);
+  if(state.current===-1) state.current=0;
+  renderQuestion();
+});
+
+function showResults(){
+  let correct=0, answered=0;
+  state.answers.forEach((a,i)=>{ if(a!==null){answered++; if(a===QUESTIONS[i].correct) correct++;} });
+  const pct = answered>0 ? Math.round((correct/QUESTIONS.length)*100) : 0;
+  els.finalScore.textContent = pct+'%';
+  els.finalSummary.textContent = correct+' correct out of '+QUESTIONS.length+' ('+answered+' answered). Marks: '+(correct*2)+' / '+(QUESTIONS.length*2)+'.';
+  els.quizCard.style.display='none';
+  document.querySelector('.footer-row').style.display='none';
+  document.querySelector('.toolbar').style.display='none';
+  els.jumpGrid.style.display='none';
+  els.resultsCard.style.display='block';
+}
+
+renderQuestion();
+</script>
+
+
+</body></html>

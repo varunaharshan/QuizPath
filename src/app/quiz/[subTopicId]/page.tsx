@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { ensureSubTopicAttemptStarted, getExistingAnswers, getQuizForSubTopic } from "@/lib/quiz";
+import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { AppShell } from "@/components/app-shell";
 import { QuizForm } from "@/components/quiz-form";
 import { saveSubTopicAnswer, submitSubTopicQuiz } from "./actions";
 
@@ -33,6 +35,12 @@ export default async function QuizPage({
   const attemptId = await ensureSubTopicAttemptStarted(appUser.id, subTopicId);
   const existingAnswers = await getExistingAnswers(attemptId);
 
+  const [statuses, completedQuizzes] = await Promise.all([
+    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+    getCompletedQuizzes(appUser.id),
+  ]);
+  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+
   const boundSaveAnswer = async (mcqId: string, selectedOption: number) => {
     "use server";
     await saveSubTopicAnswer(attemptId, mcqId, selectedOption);
@@ -43,18 +51,22 @@ export default async function QuizPage({
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-8">
-      <div>
-        <Link href="/quiz" className="text-sm text-zinc-500 hover:underline dark:text-zinc-400">
+    <AppShell
+      active="practice"
+      studentName={appUser.name ?? appUser.email.split("@")[0]}
+      grade={profile.grade}
+      practiceCount={practiceCount}
+      isActiveLearner={completedQuizzes.length > 0}
+    >
+      <div className="mb-4">
+        <Link href="/quiz" className="text-[13px] text-ink-secondary hover:underline">
           ← Choose a different sub-topic
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{subTopic.name}</h1>
+        <h1 className="mt-2 text-lg font-bold text-navy-900">{subTopic.name}</h1>
       </div>
 
       {questions.length === 0 ? (
-        <p className="text-zinc-500 dark:text-zinc-400">
-          No questions are available for this sub-topic yet.
-        </p>
+        <p className="text-sm text-ink-secondary">No questions are available for this sub-topic yet.</p>
       ) : (
         <QuizForm
           questions={questions}
@@ -64,6 +76,6 @@ export default async function QuizPage({
           submitLabel="Submit quiz"
         />
       )}
-    </main>
+    </AppShell>
   );
 }

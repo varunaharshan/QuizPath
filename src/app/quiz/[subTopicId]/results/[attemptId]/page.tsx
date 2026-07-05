@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { quizAttemptAnswers, quizAttempts, subTopics } from "@/db/schema";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getQuizForSubTopic, masteryLabelForScore, type MasteryLabel } from "@/lib/quiz";
+import { getQuizForSubTopic, masteryLabelForScore, MARKS_PER_QUESTION, type MasteryLabel } from "@/lib/quiz";
 
 const MASTERY_LABEL_TEXT: Record<MasteryLabel, string> = {
   needs_work: "Needs work",
@@ -62,6 +62,9 @@ export default async function QuizResultsPage({
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">{MASTERY_LABEL_TEXT[label]}</p>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
           {questionsAnswered} of {totalQuestions} questions answered · {correctCount} correct
+        </p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          Marks: {correctCount * MARKS_PER_QUESTION} / {totalQuestions * MARKS_PER_QUESTION}
         </p>
       </div>
 

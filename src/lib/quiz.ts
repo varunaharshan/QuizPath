@@ -8,6 +8,11 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // everything they have.
 export const QUIZ_LENGTH = 10;
 
+// Purely presentational "Marks: X / Y" display on the results screen (every
+// question carries equal weight — there's no per-question weight field in
+// the schema). Fixed multiplier, not stored anywhere.
+export const MARKS_PER_QUESTION = 2;
+
 export type MasteryLabel = "needs_work" | "in_progress" | "mastered";
 
 // Rules-based mastery, per spec section 5: below 60% = needs work, 80%+ =
@@ -23,6 +28,10 @@ export type QuizQuestion = {
   id: string;
   questionText: string;
   options: string[];
+  // The one tag shown per question in the quiz-taking UI — sourced directly
+  // from the existing sub_topic_id relationship, not a separate taxonomy
+  // field. Null for a paper question that isn't tagged with a sub-topic.
+  subTopicName: string | null;
 };
 
 export type Quiz = {
@@ -51,7 +60,12 @@ export async function getQuizForSubTopic(subTopicId: string): Promise<Quiz> {
     .orderBy(mcqs.createdAt)
     .limit(QUIZ_LENGTH);
 
-  return { subTopic: { id: subTopic.id, name: subTopic.name }, questions };
+  // Every question in a sub-topic quiz belongs to that same sub-topic, so
+  // the tag is constant across the set.
+  return {
+    subTopic: { id: subTopic.id, name: subTopic.name },
+    questions: questions.map((q) => ({ ...q, subTopicName: subTopic.name })),
+  };
 }
 
 export type SubmitQuizResult = {
@@ -283,9 +297,18 @@ export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
     return { paper: null, questions: [] };
   }
 
+  // Left join, not inner: a paper question doesn't have to be tagged with a
+  // sub-topic (see "Medium and papers" in CLAUDE.md), so subTopicName is
+  // null for an untagged question rather than dropping the row.
   const questions = await db
-    .select({ id: mcqs.id, questionText: mcqs.questionText, options: mcqs.options })
+    .select({
+      id: mcqs.id,
+      questionText: mcqs.questionText,
+      options: mcqs.options,
+      subTopicName: subTopics.name,
+    })
     .from(mcqs)
+    .leftJoin(subTopics, eq(subTopics.id, mcqs.subTopicId))
     .where(and(eq(mcqs.paperId, paperId), eq(mcqs.status, "published")))
     .orderBy(mcqs.createdAt);
 

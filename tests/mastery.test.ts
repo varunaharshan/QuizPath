@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { masteryScores, mcqs, modules, papers, subjects, subTopics, users } from "@/db/schema";
-import { ensurePaperAttemptStarted } from "@/lib/quiz";
+import { ensurePaperAttemptStarted, getQuizForPaper } from "@/lib/quiz";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
 
 // Confirms mastery_scores is a cumulative running ratio across every attempt
@@ -141,6 +141,14 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
     await db.delete(modules).where(eq(modules.id, moduleId));
     await db.delete(users).where(eq(users.id, studentId));
     await pool.end();
+  });
+
+  it("resolves each paper question's own topic tag from its sub_topic_id, independent of its neighbors", async () => {
+    const quiz = await getQuizForPaper(paper1Id);
+    const tagged = quiz.questions.find((q) => q.id === paper1TaggedMcqId);
+    const filler = quiz.questions.find((q) => q.id === paper1FillerMcqId);
+    expect(tagged?.subTopicName).toBe(`Test Mastery Sub-topic ${runId}`);
+    expect(filler?.subTopicName).toBeNull();
   });
 
   it("combines two separate papers' tagged questions into one cumulative mastery score", async () => {
