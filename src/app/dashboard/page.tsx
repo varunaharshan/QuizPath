@@ -34,9 +34,7 @@ export default async function DashboardPage() {
   ]);
 
   const recommended = stats ? rankRecommendedPracticeTopics(stats.topics, 2) : [];
-  const progressHref = subject
-    ? `/progress/grade/${profile.grade}/subjects/${subject.id}`
-    : "/progress";
+  const progressHref = subject ? `/progress?grade=${profile.grade}&subjectId=${subject.id}` : "/progress";
   const displayName = appUser.name ?? appUser.email.split("@")[0];
   const firstName = displayName.split(" ")[0];
 

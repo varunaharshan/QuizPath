@@ -394,8 +394,8 @@ owns. Four sections, top to bottom:
 2. **Your snapshot** — the exact same 4 KPI cards as the Progress tab (`getProgressStats`,
    reused as-is), scoped to the student's own `profile.grade` and the one subject
    (`getPracticeSubjects()[0]`, since Science is the only subject — see "Single-tenant MVP").
-   "View full progress →" links to `/progress/grade/[grade]/subjects/[subjectId]` for that
-   exact grade+subject.
+   "View full progress →" links to `/progress?grade=&subjectId=` (see "Progress tab" below)
+   pre-filled to that exact grade+subject.
 3. **Recommended practice** — the top 2 weakest topics via `rankRecommendedPracticeTopics`, a
    pure function (no DB access, directly unit-tested) over `ProgressStats.topics`: topics in
    the 40-59% range rank first (closest to crossing the 60% "needs work" threshold, so
@@ -457,14 +457,11 @@ and passes the results to the (thin, `"use client"`) filter form:
 This single page replaced an earlier three-step Grade → Subject → Papers page-per-step flow
 (`/papers`, `/papers/grade/[grade]`, `/papers/grade/[grade]/subjects/[subjectId]`, itself
 originally at `/quiz/*` before "Papers" and "Practice" became separate nav items — see "App
-shell" above). `src/components/step-breadcrumb.tsx` (the "Grade 10 › Science"-style step
-indicator) is no longer used by Papers now that it's one page rather than three; the Progress
-tab (below) still uses it for its own separate Grade → Subject → Topics flow. The sub-topic
-quiz-taking route (`/quiz/[subTopicId]`, reached only via deep links from the Dashboard's
-Recommended-practice cards and Progress's per-topic Practice buttons) and the paper-taking
-route (`/quiz/papers/[paperId]`) are unaffected by any of this — neither was ever part of the
-Papers *browsing/filtering* UI, just the mechanics of taking a specific quiz once a paper or
-sub-topic has already been chosen.
+shell" above). The sub-topic quiz-taking route (`/quiz/[subTopicId]`, reached only via deep
+links from the Dashboard's Recommended-practice cards and Progress's per-topic Practice
+buttons) and the paper-taking route (`/quiz/papers/[paperId]`) are unaffected by any of this —
+neither was ever part of the Papers *browsing/filtering* UI, just the mechanics of taking a
+specific quiz once a paper or sub-topic has already been chosen.
 
 New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
 `provincial|district|school`, `title`, nullable `year`/`source`, `status`
@@ -503,32 +500,36 @@ running total) is covered separately in `tests/mastery.test.ts`.
 
 ## Progress tab
 
-Progress keeps its own three-step Grade → Subject → Topics page-per-step flow — unlike Papers
-(above), which collapsed down to a single filter page, Progress still uses a card-list picker
-at each step (this predates, and was deliberately left alone by, the Papers filter-form
-redesign):
-1. `/progress` — pick a grade: the student's own `profile.grade` is highlighted "Your grade"
-   but either card is a real link, and picking one never writes to `student_profiles.grade`.
-   A Grade 11 student can view Grade 10 progress if they've been practicing those papers —
-   same free-browsing rule Papers has always had, not a separate one.
-2. `/progress/grade/[grade]` — pick a subject.
-3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown, rebuilt to match a
-   student-provided mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
-   - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total
-     correct answers (green), average score (amber). These are fixed category colors per the
-     mockup, not dynamic per the score value — a new `--color-teal`/`--color-teal-bg` token
-     was added to `globals.css` since the palette didn't have one yet. There's deliberately no
-     "topics mastered" card anymore — removed per the mockup.
-   - **One "Mastery by topic" table**, not a separate "needs work" callout plus a bars list —
-     every sub-topic for this grade+subject appears as a row, in syllabus order (module
-     sortOrder, then sub-topic sortOrder — *not* sorted by score), with columns for #, Topic, a
-     Progress bar, Questions, Correct, Score, and a Practice button on *every* row (including
-     already-mastered topics, not gated to weak ones). Score shows `—` rather than `0%` when
-     `questionsAnswered` is 0 (not started, not "scored zero"). Each row's Practice button
-     links straight to `/quiz/[subTopicId]` — the existing sub-topic quiz route already pools
-     every published MCQ tagged with that `sub_topic_id` regardless of which paper (if any) it
-     also belongs to, and logs the resulting attempt with `paper_id` null, so this needed no
-     new quiz-serving mechanism, just linking to what already existed.
+Like Papers (above), Progress is a single filter page at `/progress` rather than a
+page-per-step drill-down — it was originally its own separate three-step Grade → Subject →
+Topics flow (predating, and initially left alone by, the Papers filter-form redesign) but was
+brought in line with the same shape once the Papers change landed:
+- **Grade and Subject** are two dropdowns (`<ProgressFilterForm>` in
+  `src/components/progress-filter-form.tsx`, structurally the same cascading-query-string
+  pattern as `<PapersFilterForm>` — see "Medium and papers" above — minus the Paper Type/Paper
+  fields and the Start/Resume/Retake button, since Progress is a live view rather than
+  something you launch) — both a **session-level browsing choice only**, same free-browsing
+  rule Papers has always had: a Grade 11 student can view Grade 10 progress if they've been
+  practicing those papers, and picking either never writes to `student_profiles.grade`.
+  Invalid/missing query values fall back to the student's own grade and first subject, same
+  as Papers.
+- **The topic breakdown below the filter card** was rebuilt to match a student-provided
+  mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
+  - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total
+    correct answers (green), average score (amber). These are fixed category colors per the
+    mockup, not dynamic per the score value — a new `--color-teal`/`--color-teal-bg` token
+    was added to `globals.css` since the palette didn't have one yet. There's deliberately no
+    "topics mastered" card anymore — removed per the mockup.
+  - **One "Mastery by topic" table**, not a separate "needs work" callout plus a bars list —
+    every sub-topic for this grade+subject appears as a row, in syllabus order (module
+    sortOrder, then sub-topic sortOrder — *not* sorted by score), with columns for #, Topic, a
+    Progress bar, Questions, Correct, Score, and a Practice button on *every* row (including
+    already-mastered topics, not gated to weak ones). Score shows `—` rather than `0%` when
+    `questionsAnswered` is 0 (not started, not "scored zero"). Each row's Practice button
+    links straight to `/quiz/[subTopicId]` — the existing sub-topic quiz route already pools
+    every published MCQ tagged with that `sub_topic_id` regardless of which paper (if any) it
+    also belongs to, and logs the resulting attempt with `paper_id` null, so this needed no
+    new quiz-serving mechanism, just linking to what already existed.
 
 **No cross-grade blending anywhere in this tab, and the KPI cards are cumulative, not
 per-attempt averages** — `getProgressStats(studentId, grade, subjectId)` (`src/lib/dashboard.ts`)
@@ -554,11 +555,6 @@ for its callers, which only need the percentage) and gained an optional third `s
 parameter — optional because every *other* caller (dashboard, practice, the sidebar's
 practice-count badge) intentionally wants "every subject for this grade," since Science is the
 only subject today and that badge is meant to be grade-wide, not subject-scoped.
-
-`src/components/practice-breadcrumb.tsx` was renamed to `src/components/step-breadcrumb.tsx`
-(component renamed `PracticeBreadcrumb` → `StepBreadcrumb`) since it's now shared by both
-Practice's and Progress's Grade/Subject steps — it never had any Practice-specific logic, just
-a misleading name once a second feature started using it.
 
 Integration coverage: `tests/progress.test.ts` — own-grade progress, a different grade the
 student has practiced (mirroring Practice's cross-grade browsing), the KPI cards' cumulative
