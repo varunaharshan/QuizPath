@@ -12,8 +12,15 @@ import {
   subTopics,
   users,
 } from "@/db/schema";
-import { getQuizForSubTopic, submitQuizAttempt } from "@/lib/quiz";
+import {
+  ensureSubTopicAttemptStarted,
+  finalizeSubTopicAttempt,
+  getExistingAnswers,
+  getQuizForSubTopic,
+  saveQuizAnswer,
+} from "@/lib/quiz";
 import { getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { submitFullSubTopicQuiz } from "./helpers";
 
 describe("quiz-taking flow", () => {
   const runId = randomUUID().slice(0, 8);
@@ -118,13 +125,14 @@ describe("quiz-taking flow", () => {
 
   it("grades an attempt, persists it, and sets mastery to 'in_progress' for a 2/3 score", async () => {
     const [q1, q2, q3] = mcqIds;
-    const result = await submitQuizAttempt({
+    const result = await submitFullSubTopicQuiz({
       studentId,
       subTopicId,
       answers: { [q1]: 1, [q2]: 1, [q3]: 0 }, // 2 correct, 1 wrong -> 66.67%
     });
 
-    expect(result.total).toBe(3);
+    expect(result.questionsAnswered).toBe(3);
+    expect(result.totalQuestions).toBe(3);
     expect(result.correctCount).toBe(2);
     expect(result.score).toBeCloseTo(66.67, 1);
     expect(result.masteryLabel).toBe("in_progress");
@@ -157,7 +165,7 @@ describe("quiz-taking flow", () => {
 
   it("combines a later 3/3 attempt into the running cumulative mastery (not an overwrite)", async () => {
     const [q1, q2, q3] = mcqIds;
-    const result = await submitQuizAttempt({
+    const result = await submitFullSubTopicQuiz({
       studentId,
       subTopicId,
       answers: { [q1]: 1, [q2]: 1, [q3]: 2 }, // all correct -> 100% for this attempt
@@ -182,5 +190,53 @@ describe("quiz-taking flow", () => {
       .from(quizAttempts)
       .where(eq(quizAttempts.subTopicId, subTopicId));
     expect(allAttempts).toHaveLength(2);
+  });
+
+  it("blocks finalizing an attempt with zero saved answers (no divide-by-zero)", async () => {
+    const attemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    await expect(finalizeSubTopicAttempt({ studentId, attemptId })).rejects.toThrow();
+
+    const attempt = await db.query.quizAttempts.findFirst({ where: eq(quizAttempts.id, attemptId) });
+    expect(attempt!.completedAt).toBeNull();
+  });
+
+  it("finalizes successfully with exactly 1 answered question, scoring only against what was answered", async () => {
+    const [q1] = mcqIds; // correctOption is 1 for q1
+    const attemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    await saveQuizAnswer({ studentId, attemptId, mcqId: q1, selectedOption: 1 });
+
+    const result = await finalizeSubTopicAttempt({ studentId, attemptId });
+    expect(result.questionsAnswered).toBe(1);
+    expect(result.totalQuestions).toBe(3);
+    expect(result.correctCount).toBe(1);
+    expect(result.score).toBe(100);
+  });
+
+  it("resumes an in-progress attempt with prior answers intact after navigating away without submitting", async () => {
+    const [q1, q2] = mcqIds;
+    const attemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    await saveQuizAnswer({ studentId, attemptId, mcqId: q1, selectedOption: 1 });
+
+    // Simulates leaving without submitting, then coming back via Practice:
+    // the same in-progress attempt is reused, and its answer is still there.
+    const resumedAttemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    expect(resumedAttemptId).toBe(attemptId);
+
+    const existingAnswers = await getExistingAnswers(resumedAttemptId);
+    expect(existingAnswers[q1]).toBe(1);
+
+    // Answering a second question incrementally saves it too, without
+    // disturbing the first.
+    await saveQuizAnswer({ studentId, attemptId: resumedAttemptId, mcqId: q2, selectedOption: 1 });
+    const updatedAnswers = await getExistingAnswers(resumedAttemptId);
+    expect(updatedAnswers[q1]).toBe(1);
+    expect(updatedAnswers[q2]).toBe(1);
+
+    // Explicitly submitting (partial — only 2 of 3 answered) completes the
+    // attempt, so a subsequent "resume" call must start a fresh attempt
+    // instead of reopening this now-finished one.
+    await finalizeSubTopicAttempt({ studentId, attemptId: resumedAttemptId });
+    const nextAttemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    expect(nextAttemptId).not.toBe(resumedAttemptId);
   });
 });

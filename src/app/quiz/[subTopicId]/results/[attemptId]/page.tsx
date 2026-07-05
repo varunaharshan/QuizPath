@@ -2,9 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { quizAttempts, subTopics } from "@/db/schema";
+import { quizAttemptAnswers, quizAttempts, subTopics } from "@/db/schema";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { masteryLabelForScore, type MasteryLabel } from "@/lib/quiz";
+import { getQuizForSubTopic, masteryLabelForScore, type MasteryLabel } from "@/lib/quiz";
 
 const MASTERY_LABEL_TEXT: Record<MasteryLabel, string> = {
   needs_work: "Needs work",
@@ -40,6 +40,17 @@ export default async function QuizResultsPage({
     where: eq(subTopics.id, subTopicId),
   });
 
+  const [{ questions }, answeredRows] = await Promise.all([
+    getQuizForSubTopic(subTopicId),
+    db
+      .select({ isCorrect: quizAttemptAnswers.isCorrect })
+      .from(quizAttemptAnswers)
+      .where(eq(quizAttemptAnswers.quizAttemptId, attemptId)),
+  ]);
+  const totalQuestions = questions.length;
+  const questionsAnswered = answeredRows.length;
+  const correctCount = answeredRows.filter((a) => a.isCorrect).length;
+
   const scoreNum = Number(attempt.score ?? 0);
   const label = masteryLabelForScore(scoreNum);
 
@@ -49,6 +60,9 @@ export default async function QuizResultsPage({
         <p className="text-sm text-zinc-500 dark:text-zinc-400">{subTopic?.name}</p>
         <h1 className="mt-1 text-4xl font-semibold tracking-tight">{scoreNum}%</h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">{MASTERY_LABEL_TEXT[label]}</p>
+        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          {questionsAnswered} of {totalQuestions} questions answered · {correctCount} correct
+        </p>
       </div>
 
       <div className="flex gap-3">

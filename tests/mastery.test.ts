@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { masteryScores, mcqs, modules, papers, subjects, subTopics, users } from "@/db/schema";
-import { ensurePaperAttemptStarted, submitPaperQuizAttempt, submitQuizAttempt } from "@/lib/quiz";
+import { ensurePaperAttemptStarted } from "@/lib/quiz";
+import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
 
 // Confirms mastery_scores is a cumulative running ratio across every attempt
 // that touches a sub-topic — provincial/district/school paper questions and
@@ -145,7 +146,7 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
   it("combines two separate papers' tagged questions into one cumulative mastery score", async () => {
     // Paper 1: tagged question correct, untagged filler wrong (filler must not count).
     await ensurePaperAttemptStarted(studentId, paper1Id);
-    await submitPaperQuizAttempt({
+    await submitFullPaperQuiz({
       studentId,
       paperId: paper1Id,
       answers: { [paper1TaggedMcqId]: 0, [paper1FillerMcqId]: 1 },
@@ -161,7 +162,7 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
     // by the latest attempt alone, this would now read 0% — it must instead
     // combine with paper 1's result into a single running ratio.
     await ensurePaperAttemptStarted(studentId, paper2Id);
-    await submitPaperQuizAttempt({
+    await submitFullPaperQuiz({
       studentId,
       paperId: paper2Id,
       answers: { [paper2TaggedMcqId]: 1, [paper2FillerMcqId]: 0 },
@@ -186,7 +187,7 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
     // A third, correct answer via the ordinary sub-topic-quiz flow should
     // fold into the same cumulative total (now 2 of 3), regardless of the
     // fact that it didn't come from any paper at all.
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId,
       answers: { [directSubTopicMcqId]: 0 },

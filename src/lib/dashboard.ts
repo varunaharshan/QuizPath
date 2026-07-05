@@ -78,28 +78,24 @@ export type ContinueAttempt = {
 };
 
 // The student's most recently *started but not yet completed* attempt for
-// their own grade — genuinely resumable, unlike the old version of this card
-// (which showed the last completed sub-topic quiz with a "Retake" action,
-// since the sub-topic flow has no partial-progress state at all). Written
-// generally over both paper and sub-topic attempts rather than hardcoding
-// "paper only", even though only papers can actually produce an incomplete
-// row today — the sub-topic quiz flow is a single atomic insert-at-submit
-// (see "Quiz-taking flow" in CLAUDE.md), so it can never be "in progress."
-// This keeps the query correct if/when partial-progress tracking is ever
-// added for sub-topic quizzes too.
+// their own grade — genuinely resumable. Written generally over both paper
+// and sub-topic attempts rather than hardcoding "paper only" — since both
+// flows now have real start/resume semantics (ensurePaperAttemptStarted /
+// ensureSubTopicAttemptStarted in src/lib/quiz.ts), either can be the
+// in-progress row this returns.
 //
-// `questionsDone` is always 0: neither quiz flow persists individual answers
-// until the whole form is submitted, so there's no real per-question
-// progress to report for a genuinely incomplete attempt — a deviation from
-// a mockup that depicted granular "24 of 40 done" tracking, in the same
-// spirit as the earlier documented deviation for the old version of this
-// card (see the app-shell note below).
+// `questionsDone` is a real live count from quiz_attempt_answers (each
+// answer is saved incrementally as the student picks it — see "Save and
+// resume" in CLAUDE.md), not a placeholder — matching the mockup's "24 of 40
+// questions done" progress bar rather than the earlier always-0 deviation
+// from it.
 export async function getContinueAttempt(
   studentId: string,
   grade: "10" | "11",
 ): Promise<ContinueAttempt | null> {
   const [incomplete] = await db
     .select({
+      id: quizAttempts.id,
       subTopicId: quizAttempts.subTopicId,
       paperId: quizAttempts.paperId,
     })
@@ -118,6 +114,12 @@ export async function getContinueAttempt(
     .limit(1);
   if (!incomplete) return null;
 
+  const savedAnswers = await db
+    .select({ id: quizAttemptAnswers.id })
+    .from(quizAttemptAnswers)
+    .where(eq(quizAttemptAnswers.quizAttemptId, incomplete.id));
+  const questionsDone = savedAnswers.length;
+
   if (incomplete.paperId) {
     const paper = await db.query.papers.findFirst({ where: eq(papers.id, incomplete.paperId) });
     if (!paper) return null;
@@ -133,12 +135,10 @@ export async function getContinueAttempt(
       name: paper.title,
       source: paper.source ?? `${paper.paperType.charAt(0).toUpperCase()}${paper.paperType.slice(1)} paper`,
       totalQuestions: questions.length,
-      questionsDone: 0,
+      questionsDone,
     };
   }
 
-  // Structurally unreachable today (see comment above) — the sub-topic flow
-  // never leaves an incomplete row — but implemented for completeness.
   if (incomplete.subTopicId) {
     const subTopic = await db.query.subTopics.findFirst({ where: eq(subTopics.id, incomplete.subTopicId) });
     if (!subTopic) return null;
@@ -154,7 +154,7 @@ export async function getContinueAttempt(
       name: subTopic.name,
       source: "Practice quiz",
       totalQuestions: questions.length,
-      questionsDone: 0,
+      questionsDone,
     };
   }
 

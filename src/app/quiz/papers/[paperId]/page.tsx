@@ -1,8 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { ensurePaperAttemptStarted, getQuizForPaper } from "@/lib/quiz";
-import { submitPaperQuiz } from "./actions";
+import { ensurePaperAttemptStarted, getExistingAnswers, getQuizForPaper } from "@/lib/quiz";
+import { QuizForm } from "@/components/quiz-form";
+import { savePaperAnswer, submitPaperQuiz } from "./actions";
 
 export default async function PaperQuizPage({
   params,
@@ -29,9 +30,17 @@ export default async function PaperQuizPage({
   // Marks the paper as "in progress" the moment the student opens it, so a
   // later visit to Practice offers "Resume" instead of "Start" if they never
   // submit.
-  await ensurePaperAttemptStarted(appUser.id, paperId);
+  const attemptId = await ensurePaperAttemptStarted(appUser.id, paperId);
+  const existingAnswers = await getExistingAnswers(attemptId);
 
-  const submitWithPaper = submitPaperQuiz.bind(null, paperId);
+  const boundSaveAnswer = async (mcqId: string, selectedOption: number) => {
+    "use server";
+    await savePaperAnswer(attemptId, mcqId, selectedOption);
+  };
+  const boundSubmit = async () => {
+    "use server";
+    await submitPaperQuiz(paperId, attemptId);
+  };
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 p-8">
@@ -50,43 +59,13 @@ export default async function PaperQuizPage({
           No questions are available for this paper yet.
         </p>
       ) : (
-        <form action={submitWithPaper} className="flex flex-col gap-8">
-          {questions.map((question, index) => (
-            <fieldset
-              key={question.id}
-              className="rounded-lg border border-black/10 p-5 dark:border-white/15"
-            >
-              <legend className="px-1 text-sm font-medium text-zinc-500 dark:text-zinc-400">
-                Question {index + 1} of {questions.length}
-              </legend>
-              <p className="mt-1 font-medium">{question.questionText}</p>
-              <div className="mt-4 flex flex-col gap-2">
-                {question.options.map((option, optionIndex) => (
-                  <label
-                    key={optionIndex}
-                    className="flex items-center gap-3 rounded-md border border-black/10 px-4 py-3 text-sm hover:bg-black/[.03] dark:border-white/15 dark:hover:bg-white/[.05]"
-                  >
-                    <input
-                      type="radio"
-                      name={`mcq:${question.id}`}
-                      value={optionIndex}
-                      required
-                      className="h-4 w-4"
-                    />
-                    {option}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          ))}
-
-          <button
-            type="submit"
-            className="rounded-full bg-foreground px-6 py-3 font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
-          >
-            Submit paper
-          </button>
-        </form>
+        <QuizForm
+          questions={questions}
+          initialAnswers={existingAnswers}
+          saveAnswer={boundSaveAnswer}
+          submitQuiz={boundSubmit}
+          submitLabel="Submit paper"
+        />
       )}
     </main>
   );

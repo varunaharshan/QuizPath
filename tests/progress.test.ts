@@ -3,8 +3,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics, users } from "@/db/schema";
-import { submitQuizAttempt } from "@/lib/quiz";
 import { getProgressStats, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { submitFullSubTopicQuiz } from "./helpers";
 
 // Confirms the Progress tab's Grade + Subject scoping and the KPI/topic-table
 // math: a student can view progress for their own grade or a different one
@@ -125,32 +125,32 @@ describe("Progress tab: Grade + Subject scoping and KPI math", () => {
     studentId = student.id;
 
     // X: 1 of 2 correct -> 50% (needs_work).
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subTopicXId,
       answers: { [xMcqs[0]]: 0, [xMcqs[1]]: 1 },
     });
     // Y: 9 of 10 correct -> 90% (mastered).
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subTopicYId,
       answers: Object.fromEntries(yMcqs.map((id, i) => [id, i === 9 ? 1 : 0])),
     });
     // Z: 0 of 3 correct -> 0% (needs_work).
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subTopicZId,
       answers: Object.fromEntries(zMcqs.map((id) => [id, 1])),
     });
     // A3 (Grade 11, the student's own profile grade): 1 of 2 -> 50% (needs_work).
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subTopicA3Id,
       answers: { [a3Mcqs[0]]: 0, [a3Mcqs[1]]: 1 },
     });
     // B1 (a different subject, same Grade 10): 0 of 1 -> 0% (needs_work).
     // Must never surface in Subject A's Grade 10 progress view.
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subTopicB1Id,
       answers: { [b1Mcqs[0]]: 1 },

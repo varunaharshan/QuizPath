@@ -119,8 +119,8 @@ need to call it over the network to render itself.
   that overwrote mastery with just the latest attempt's score (no historical weight at all);
   the cumulative model also means any paper MCQ tagged with a `sub_topic_id` (provincial,
   district, or school) feeds the same running total as an ordinary sub-topic quiz — a paper
-  can touch several sub-topics at once, so `submitPaperQuizAttempt` recalculates every distinct
-  one among its questions. `mastery_scores.questions_answered` stores the denominator
+  can touch several sub-topics at once, so `finalizePaperAttempt` recalculates every distinct
+  one among its answered questions. `mastery_scores.questions_answered` stores the denominator
   alongside `score`, so the UI can show confidence (e.g. "52% (based on 6 questions)") instead
   of presenting a thin sample as equally reliable as a large one — not yet wired into any page,
   since that's Progress-tab work. Thresholds on the resulting score: `< 60` = `needs_work`,
@@ -129,16 +129,77 @@ need to call it over the network to render itself.
   threshold function (`masteryLabelForScore`) is also used to label a single attempt's own
   score for immediate post-submit feedback (e.g. "you scored 100% on this attempt") — that
   per-attempt label is unrelated to, and unaffected by, the cumulative mastery_scores value.
-- The quiz submit flow is a single Server Action + native HTML form (radios marked
-  `required` for native "answer everything" validation) — no client-side JS/state needed,
-  so there's no separate quiz Client Component.
 - Placeholder MCQs (`src/db/seed.ts`, 10 questions under Grade 10 → "Types of Chemical
   Reactions") are prefixed `[PLACEHOLDER TEST CONTENT]` so they're never mistaken for
   reviewed content — see spec section 7 for the real review process.
 - Integration coverage: `tests/quiz-flow.test.ts` (vitest) runs the full select
-  sub-topic → serve quiz → submit → persisted attempt/answers/mastery loop against a
-  dedicated `quizpath_test` database (schema pushed by `tests/global-setup.ts`); `npm test`
-  runs it.
+  sub-topic → serve quiz → submit → persisted attempt/answers/mastery loop, plus the
+  partial-submit/save-and-resume scenarios described below, against a dedicated
+  `quizpath_test` database (schema pushed by `tests/global-setup.ts`); `npm test` runs it.
+  `tests/helpers.ts` exports `submitFullSubTopicQuiz`/`submitFullPaperQuiz`, thin
+  ensure→save-each-answer→finalize wrappers used by tests (`mastery.test.ts`,
+  `dashboard.test.ts`, `progress.test.ts`) that just need a completed attempt as setup,
+  not the incremental-save behavior itself.
+
+### Save and resume, partial submission
+
+A quiz attempt (sub-topic or paper) can be submitted with only *some* questions answered,
+and can be closed and resumed later without losing progress. This replaced an earlier
+model where every answer was batch-inserted only at final submit, and a native `required`
+radio attribute forced every question to be answered before Submit would even fire.
+
+- **Every answer is saved the moment it's picked**, not batched at submit.
+  `saveQuizAnswer` (`src/lib/quiz.ts`) upserts a single `quiz_attempt_answers` row per
+  `(quiz_attempt_id, mcq_id)` — a unique constraint on that pair
+  (`quiz_attempt_answers_attempt_mcq_unique`) is what makes the upsert well-defined, so
+  changing an answer before submitting updates the existing row instead of accumulating
+  duplicates. There's still no row at all for a question the student never touched — the
+  "questions answered" counts everywhere (mastery, Progress/Dashboard KPI cards) are just
+  `quiz_attempt_answers` row counts, so they already reflect only real answers with no
+  special-casing needed.
+- **Both flows now have real start/resume semantics.** `ensureSubTopicAttemptStarted`
+  mirrors the paper flow's pre-existing `ensurePaperAttemptStarted`: idempotent
+  find-or-create of the student's in-progress (`completed_at IS NULL`) `quiz_attempts` row
+  for that sub-topic, called the moment the quiz page loads. `getExistingAnswers(attemptId)`
+  returns every previously-saved answer keyed by `mcqId`, so a resumed quiz page can
+  pre-fill radios exactly where the student left off. This is also why
+  `getQuizForSubTopic` now has a stable `ORDER BY mcqs.created_at` (previously unordered) —
+  without it, a sub-topic with more published MCQs than `QUIZ_LENGTH` could serve a
+  different random subset on each request, which would break resuming (a previously
+  answered question might not even be in the new serve-set).
+- **Finalizing an attempt** (`finalizeAttempt`, wrapped by `finalizeSubTopicAttempt` /
+  `finalizePaperAttempt`) marks `completed_at` and scores strictly against what was
+  actually saved: `score = correct / questionsAnswered`, never against the full question
+  count, and requires at least one saved answer (throws otherwise — this is also what
+  prevents a divide-by-zero on an all-unanswered submit). A `SubmitQuizResult` now
+  reports `questionsAnswered` and `totalQuestions` as two separate fields (the old
+  `total` field, which conflated "answered" and "available", is gone), so the results
+  page can show "18 of 40 questions answered · 12 correct · 67%" rather than looking
+  like a low-scoring full attempt.
+- **Submitting, partial or full, always completes the attempt** — `completed_at` gets
+  set either way, so Practice shows "Retake" afterward, never "Resume". "Resume" only
+  ever means "navigated away without submitting" (attempt still has `completed_at IS
+  NULL`); explicitly submitting is what ends that session, regardless of how many
+  questions were answered.
+- **The quiz-taking pages are Client Components** (`src/components/quiz-form.tsx`,
+  shared by both `/quiz/[subTopicId]` and `/quiz/papers/[paperId]`) — a deliberate
+  departure from this codebase's earlier "no client JS needed" quiz pages, because
+  true incremental auto-save (a Server Action call per answer, not just at form submit)
+  and a Submit button that's live-gated on "at least 1 answered" both need client-side
+  state. Each page's Server Component does the initial `ensureXAttemptStarted` +
+  `getExistingAnswers` and passes the results, plus two small bound inline Server
+  Actions (`"use server"` closures capturing `attemptId`), into `<QuizForm>`. Selecting
+  an option updates local state immediately and fires the save action in the
+  background; the Submit button is disabled with the label "Answer at least 1 question
+  to submit" until `answeredCount > 0`; if answered count is less than the total, a
+  `window.confirm("You've answered X of Y questions. Submit anyway?")` gate runs before
+  calling the finalize action — no custom modal, per the "don't add more friction than
+  that one step" brief.
+- Integration coverage for all of the above (0-answered blocked, exactly-1-answered
+  succeeds with no divide-by-zero, resume-with-answers-intact after navigating away
+  without submitting, partial-submit flips status to Retake not Resume, full-completion
+  behavior unchanged) lives in `tests/quiz-flow.test.ts` (sub-topic) and
+  `tests/paper-flow.test.ts` (paper).
 
 ## Brand / design system
 
@@ -216,23 +277,15 @@ owns. Four sections, top to bottom:
 1. **Continue where you left off** — `getContinueAttempt(studentId, grade)` finds the
    student's most recently *started but not yet completed* attempt, written generally over
    both paper and sub-topic attempts (a left join + `or(module.grade, paper.grade)`) rather
-   than hardcoded to "paper only," even though only papers can actually produce an incomplete
-   row today — the sub-topic quiz flow is a single atomic insert-at-submit (see
-   "Quiz-taking flow" above), so it structurally can never be "in progress." This keeps the
-   query correct if/when partial-progress tracking is ever added for sub-topic quizzes too;
-   `tests/dashboard.test.ts` exercises that branch by inserting a raw incomplete sub-topic row
-   directly; since the public API can't produce one.
-   - **Deviation from the mockup**: it depicts granular per-question progress ("24 of 40
-     questions done", a proportional bar) for an in-progress paper. Neither quiz flow persists
-     individual answers until the whole form is submitted — there is no partial-progress data
-     to report, the same architectural gap already documented for the *previous* version of
-     this card (which showed "Retake" on a completed sub-topic instead of a real resume).
-     `getContinueAttempt` always returns `questionsDone: 0` for a genuinely incomplete attempt
-     (truthful, not fabricated), and the Dashboard renders an accordingly-empty progress bar
-     rather than inventing a number. A paper's `name` is its title; its `source` line prefers
-     the paper's own `source` column (e.g. "Colombo District") falling back to a capitalized
-     `paper_type` label; a topic-practice attempt's `source` is the literal string
-     "Practice quiz" (there's no historical paper to name).
+   than hardcoded to "paper only" — both flows now have real start/resume semantics (see
+   "Save and resume, partial submission" above), so either can be the in-progress row this
+   returns. `questionsDone` is a real live count of that attempt's saved
+   `quiz_attempt_answers` rows (matching the mockup's "24 of 40 questions done" progress
+   bar), not a placeholder — this only became possible once answers were saved
+   incrementally rather than batched at final submit. A paper's `name` is its title; its
+   `source` line prefers the paper's own `source` column (e.g. "Colombo District") falling
+   back to a capitalized `paper_type` label; a topic-practice attempt's `source` is the
+   literal string "Practice quiz" (there's no historical paper to name).
 2. **Your snapshot** — the exact same 4 KPI cards as the Progress tab (`getProgressStats`,
    reused as-is), scoped to the student's own `profile.grade` and the one subject
    (`getPracticeSubjects()[0]`, since Science is the only subject — see "Single-tenant MVP").
@@ -318,22 +371,20 @@ to link back to the right `/quiz/grade/[grade]/subjects/[subjectId]`), so the pa
 doesn't need them threaded through the URL to render correctly regardless of which grade the
 student was browsing when they opened it.
 
-`src/lib/quiz.ts` gained paper-parallel functions (`getQuizForPaper`,
-`ensurePaperAttemptStarted`, `submitPaperQuizAttempt`) alongside the existing sub-topic ones,
-sharing a `gradeAnswers` helper. Two behavioral differences from the sub-topic flow:
-- No `QUIZ_LENGTH` cap — a paper serves every one of its published questions, since it
-  represents a real fixed exam paper, not an arbitrarily-sized practice set.
-- Papers have genuine **start/resume** semantics, unlike the sub-topic flow's atomic
-  single-insert-at-submit model: opening `/quiz/papers/[paperId]` calls
-  `ensurePaperAttemptStarted` (a GET-triggered write, intentional) which finds-or-creates an
-  in-progress (`completed_at IS NULL`) `quiz_attempts` row, so the paper shows "Resume" if
-  left mid-attempt. Submitting `UPDATE`s that same row rather than inserting a new one;
-  retaking an already-completed paper starts a fresh row instead of reusing the finished one.
-  Paper attempts DO feed `mastery_scores` now, but only for whichever of their questions are
-  also tagged with a `sub_topic_id` — see "Quiz-taking flow" above for the cumulative model.
-- Integration coverage: `tests/paper-flow.test.ts`; the cross-flow cumulative mastery behavior
-  (a paper's tagged questions plus a direct sub-topic quiz all combining into one running
-  total) is covered separately in `tests/mastery.test.ts`.
+`src/lib/quiz.ts` has paper-parallel functions (`getQuizForPaper`, `ensurePaperAttemptStarted`,
+`finalizePaperAttempt`) alongside the existing sub-topic ones (`getQuizForSubTopic`,
+`ensureSubTopicAttemptStarted`, `finalizeSubTopicAttempt`), sharing the `saveQuizAnswer` /
+`getExistingAnswers` / `finalizeAttempt` helpers that back the save-and-resume model (see
+"Save and resume, partial submission" above — both flows now have identical start/resume
+semantics, which wasn't always true). The one remaining behavioral difference: no
+`QUIZ_LENGTH` cap for papers — a paper serves every one of its published questions, since it
+represents a real fixed exam paper, not an arbitrarily-sized practice set. Paper attempts DO
+feed `mastery_scores`, but only for whichever of their *answered* questions are also tagged
+with a `sub_topic_id` — see "Quiz-taking flow" above for the cumulative model. Retaking an
+already-completed paper starts a fresh `quiz_attempts` row instead of reusing the finished
+one. Integration coverage: `tests/paper-flow.test.ts`; the cross-flow cumulative mastery
+behavior (a paper's tagged questions plus a direct sub-topic quiz all combining into one
+running total) is covered separately in `tests/mastery.test.ts`.
 
 ## Progress tab
 
@@ -405,9 +456,7 @@ never bleeding in from a different subject at the same grade.
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
-scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Resumable
-(partial-progress) quizzes for the **sub-topic** flow aren't built either — see the app-shell
-note above; papers now have real start/resume, see "Medium and papers" above. The Dashboard's
+scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. The Dashboard's
 own "progress by sub-topic" card is still grade-only (not subject-scoped) and shows a plain
 percentage with no questions-answered confidence note — the Progress tab is the one place that
 now surfaces the fuller Grade+Subject+confidence view.

@@ -11,6 +11,7 @@ import {
   numeric,
   primaryKey,
   check,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -154,17 +155,26 @@ export const quizAttempts = pgTable(
   ],
 );
 
-export const quizAttemptAnswers = pgTable("quiz_attempt_answers", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  quizAttemptId: uuid("quiz_attempt_id")
-    .notNull()
-    .references(() => quizAttempts.id, { onDelete: "cascade" }),
-  mcqId: uuid("mcq_id")
-    .notNull()
-    .references(() => mcqs.id, { onDelete: "cascade" }),
-  selectedOption: integer("selected_option").notNull(),
-  isCorrect: boolean("is_correct").notNull(),
-});
+export const quizAttemptAnswers = pgTable(
+  "quiz_attempt_answers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    quizAttemptId: uuid("quiz_attempt_id")
+      .notNull()
+      .references(() => quizAttempts.id, { onDelete: "cascade" }),
+    mcqId: uuid("mcq_id")
+      .notNull()
+      .references(() => mcqs.id, { onDelete: "cascade" }),
+    selectedOption: integer("selected_option").notNull(),
+    isCorrect: boolean("is_correct").notNull(),
+  },
+  (table) => [
+    // One saved answer per question per attempt — lets an in-progress answer
+    // be changed by upserting on this pair, rather than accumulating stale
+    // rows every time a student revises a choice before submitting.
+    unique("quiz_attempt_answers_attempt_mcq_unique").on(table.quizAttemptId, table.mcqId),
+  ],
+);
 
 export const masteryScores = pgTable(
   "mastery_scores",

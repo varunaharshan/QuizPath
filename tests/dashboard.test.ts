@@ -3,13 +3,14 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, papers, quizAttempts, subjects, subTopics, users } from "@/db/schema";
-import { ensurePaperAttemptStarted, submitQuizAttempt } from "@/lib/quiz";
+import { ensurePaperAttemptStarted, ensureSubTopicAttemptStarted, saveQuizAnswer } from "@/lib/quiz";
 import {
   getCompletedQuizzes,
   getContinueAttempt,
   rankRecommendedPracticeTopics,
   type TopicProgress,
 } from "@/lib/dashboard";
+import { submitFullSubTopicQuiz } from "./helpers";
 
 // Confirms the Dashboard's "continue where you left off" card and "recent
 // activity" list stay scoped to whichever grade is asked for, even when an
@@ -26,6 +27,7 @@ describe("dashboard grade scoping", () => {
   let grade11SubTopicId: string;
   let grade10McqIds: string[];
   let grade11McqIds: string[];
+  let grade10SubTopic2McqId: string;
   let grade10PaperAId: string;
   let grade10PaperBId: string;
   let otherGradePaperId: string;
@@ -75,6 +77,12 @@ describe("dashboard grade scoping", () => {
       ])
       .returning({ id: mcqs.id });
     grade10McqIds = grade10Inserted.map((m) => m.id);
+
+    const [grade10SubTopic2Mcq] = await db
+      .insert(mcqs)
+      .values({ subTopicId: grade10SubTopic2Id, questionText: "3 + 3 = ?", options: ["5", "6", "7"], correctOption: 1, status: "published" })
+      .returning({ id: mcqs.id });
+    grade10SubTopic2McqId = grade10SubTopic2Mcq.id;
 
     const grade11Inserted = await db
       .insert(mcqs)
@@ -137,12 +145,12 @@ describe("dashboard grade scoping", () => {
     // Grade 11 attempt is the most recent overall — if grade scoping weren't
     // applied, it would incorrectly win the "continue" slot for a Grade 10
     // query and leak into a Grade 10 recent-activity list.
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: grade10SubTopicId,
       answers: { [grade10McqIds[0]]: 1 },
     });
-    await submitQuizAttempt({
+    await submitFullSubTopicQuiz({
       studentId,
       subTopicId: grade11SubTopicId,
       answers: { [grade11McqIds[0]]: 1 },
@@ -175,21 +183,29 @@ describe("dashboard grade scoping", () => {
   });
 
   it("getContinueAttempt picks up an in-progress topic-practice attempt too, regardless of type, when it's the most recent", async () => {
-    // The sub-topic quiz flow is atomic (submitQuizAttempt always inserts an
-    // already-completed row) so this can't happen through the public API —
-    // inserted directly to exercise the general (not paper-only) query.
-    const [rawIncomplete] = await db
-      .insert(quizAttempts)
-      .values({ studentId, subTopicId: grade10SubTopic2Id, completedAt: null })
-      .returning();
+    // Sub-topic quizzes now have real start/resume semantics (mirroring
+    // papers), so an in-progress row can be produced through the actual
+    // public API rather than needing a raw insert.
+    const attemptId = await ensureSubTopicAttemptStarted(studentId, grade10SubTopic2Id);
 
-    const grade10Continue = await getContinueAttempt(studentId, "10");
+    let grade10Continue = await getContinueAttempt(studentId, "10");
     expect(grade10Continue?.type).toBe("topic_practice");
     expect(grade10Continue?.id).toBe(grade10SubTopic2Id);
     expect(grade10Continue?.source).toBe("Practice quiz");
     expect(grade10Continue?.questionsDone).toBe(0);
 
-    await db.delete(quizAttempts).where(eq(quizAttempts.id, rawIncomplete.id));
+    // Saving an answer incrementally must be reflected live in questionsDone
+    // — this is what lets the Dashboard show real "X of Y done" progress.
+    await saveQuizAnswer({
+      studentId,
+      attemptId,
+      mcqId: grade10SubTopic2McqId,
+      selectedOption: 1,
+    });
+    grade10Continue = await getContinueAttempt(studentId, "10");
+    expect(grade10Continue?.questionsDone).toBe(1);
+
+    await db.delete(quizAttempts).where(eq(quizAttempts.id, attemptId));
   });
 
   it("getCompletedQuizzes labels each row by attempt type and excludes off-grade/incomplete attempts", async () => {

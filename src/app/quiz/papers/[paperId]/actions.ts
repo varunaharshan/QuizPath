@@ -2,9 +2,9 @@
 
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { submitPaperQuizAttempt } from "@/lib/quiz";
+import { finalizePaperAttempt, saveQuizAnswer } from "@/lib/quiz";
 
-export async function submitPaperQuiz(paperId: string, formData: FormData) {
+export async function savePaperAnswer(attemptId: string, mcqId: string, selectedOption: number) {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -15,18 +15,21 @@ export async function submitPaperQuiz(paperId: string, formData: FormData) {
     redirect("/onboarding");
   }
 
-  const answers: Record<string, number> = {};
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("mcq:")) {
-      answers[key.slice(4)] = Number(value);
-    }
+  await saveQuizAnswer({ studentId: appUser.id, attemptId, mcqId, selectedOption });
+}
+
+export async function submitPaperQuiz(paperId: string, attemptId: string) {
+  const appUser = await getOrCreateAppUser();
+  if (!appUser) {
+    redirect("/");
   }
 
-  const result = await submitPaperQuizAttempt({
-    studentId: appUser.id,
-    paperId,
-    answers,
-  });
+  const profile = await getStudentProfile(appUser.id);
+  if (!profile) {
+    redirect("/onboarding");
+  }
+
+  const result = await finalizePaperAttempt({ studentId: appUser.id, attemptId });
 
   redirect(`/quiz/papers/${paperId}/results/${result.attemptId}`);
 }

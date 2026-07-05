@@ -3,8 +3,15 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, papers, quizAttempts, studentProfiles, subjects, users } from "@/db/schema";
-import { ensurePaperAttemptStarted, getQuizForPaper, submitPaperQuizAttempt } from "@/lib/quiz";
+import {
+  ensurePaperAttemptStarted,
+  finalizePaperAttempt,
+  getExistingAnswers,
+  getQuizForPaper,
+  saveQuizAnswer,
+} from "@/lib/quiz";
 import { getPapersForSubject } from "@/lib/papers";
+import { submitFullPaperQuiz } from "./helpers";
 
 describe("paper-based quiz flow", () => {
   const runId = randomUUID().slice(0, 8);
@@ -157,13 +164,14 @@ describe("paper-based quiz flow", () => {
 
   it("submits, grades, and completes the same in-progress attempt (no new row), doesn't touch mastery_scores", async () => {
     const [q1, q2, q3] = mcqIds;
-    const result = await submitPaperQuizAttempt({
+    const result = await submitFullPaperQuiz({
       studentId,
       paperId,
       answers: { [q1]: 1, [q2]: 1, [q3]: 0 }, // 2 correct, 1 wrong -> 66.67%
     });
 
-    expect(result.total).toBe(3);
+    expect(result.questionsAnswered).toBe(3);
+    expect(result.totalQuestions).toBe(3);
     expect(result.correctCount).toBe(2);
     expect(result.score).toBeCloseTo(66.67, 1);
 
@@ -228,7 +236,7 @@ describe("paper-based quiz flow", () => {
     expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("in_progress");
 
     const [oq1, oq2] = otherGradeMcqIds;
-    await submitPaperQuizAttempt({
+    await submitFullPaperQuiz({
       studentId,
       paperId: otherGradePaperId,
       answers: { [oq1]: 2, [oq2]: 2 }, // both correct -> 100%
@@ -247,5 +255,51 @@ describe("paper-based quiz flow", () => {
       where: (p, { eq }) => eq(p.userId, studentId),
     });
     expect(profileAfter?.grade).toBe("10");
+  });
+
+  it("saves paper answers incrementally, resumes with them intact, then shows Retake (not Resume) after a partial submit", async () => {
+    const [q1] = mcqIds;
+    // Reuses the still-in-progress "retake" attempt left over from the
+    // earlier retake test.
+    const attemptId = await ensurePaperAttemptStarted(studentId, paperId);
+    await saveQuizAnswer({ studentId, attemptId, mcqId: q1, selectedOption: 1 });
+
+    // Simulates navigating away without submitting, then returning: same
+    // attempt, same answer, still just "Resume".
+    const resumedAttemptId = await ensurePaperAttemptStarted(studentId, paperId);
+    expect(resumedAttemptId).toBe(attemptId);
+    const existingAnswers = await getExistingAnswers(resumedAttemptId);
+    expect(existingAnswers[q1]).toBe(1);
+
+    let grouped = await getPapersForSubject({
+      subjectId,
+      grade: "10",
+      medium: "english",
+      studentId,
+    });
+    expect(grouped.provincial[0].status).toBe("in_progress");
+
+    // Explicitly submitting with only 1 of 3 questions answered ends this
+    // session — status must flip to "completed" (Retake), not stay "Resume".
+    await finalizePaperAttempt({ studentId, attemptId: resumedAttemptId });
+
+    grouped = await getPapersForSubject({
+      subjectId,
+      grade: "10",
+      medium: "english",
+      studentId,
+    });
+    expect(grouped.provincial[0].status).toBe("completed");
+
+    const nextAttemptId = await ensurePaperAttemptStarted(studentId, paperId);
+    expect(nextAttemptId).not.toBe(resumedAttemptId);
+  });
+
+  it("blocks finalizing a paper attempt with zero saved answers", async () => {
+    const attemptId = await ensurePaperAttemptStarted(studentId, paperId);
+    await expect(finalizePaperAttempt({ studentId, attemptId })).rejects.toThrow();
+
+    const attempt = await db.query.quizAttempts.findFirst({ where: eq(quizAttempts.id, attemptId) });
+    expect(attempt!.completedAt).toBeNull();
   });
 });
