@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 import { updateProfile } from "./actions";
 
@@ -15,12 +15,7 @@ export default async function ProfilePage() {
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getCompletedQuizzes(appUser.id),
-  ]);
-
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+  const completedQuizzes = await getCompletedQuizzes(appUser.id);
   const displayName = appUser.name ?? appUser.email.split("@")[0];
 
   return (
@@ -28,7 +23,6 @@ export default async function ProfilePage() {
       active="profile"
       studentName={displayName}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <form

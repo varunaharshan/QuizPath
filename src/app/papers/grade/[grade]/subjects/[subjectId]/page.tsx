@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { getPapersForSubject, getSubjectById, isValidGrade, type PaperListItem } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { StepBreadcrumb } from "@/components/step-breadcrumb";
@@ -47,25 +47,22 @@ export default async function SubjectPapersPage({
   // medium) — only grade is a free browsing choice in this flow.
   const medium = subject.fixedMedium ?? profile.medium;
 
-  const [grouped, statuses, completedQuizzes] = await Promise.all([
+  const [grouped, completedQuizzes] = await Promise.all([
     getPapersForSubject({ subjectId, grade, medium, studentId: appUser.id }),
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
   ]);
 
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
   const hasAnyPapers = SECTIONS.some((section) => grouped[section.key].length > 0);
 
   return (
     <AppShell
-      active="practice"
+      active="papers"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <StepBreadcrumb
-        items={[{ label: `Grade ${grade}`, href: `/quiz/grade/${grade}` }, { label: subject.name }]}
+        items={[{ label: `Grade ${grade}`, href: `/papers/grade/${grade}` }, { label: subject.name }]}
       />
       <h1 className="mt-2 mb-4 text-lg font-bold text-navy-900">{subject.name}</h1>
 

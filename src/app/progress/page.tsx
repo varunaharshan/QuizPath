@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 
 const GRADES = ["10", "11"] as const;
@@ -21,19 +21,13 @@ export default async function ProgressGradePage() {
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getCompletedQuizzes(appUser.id),
-  ]);
-
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+  const completedQuizzes = await getCompletedQuizzes(appUser.id);
 
   return (
     <AppShell
       active="progress"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">

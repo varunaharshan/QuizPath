@@ -1,12 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { getPracticeSubjects, isValidGrade } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { StepBreadcrumb } from "@/components/step-breadcrumb";
 
-export default async function PracticeSubjectPage({
+export default async function PapersSubjectPage({
   params,
 }: {
   params: Promise<{ grade: string }>;
@@ -26,20 +26,16 @@ export default async function PracticeSubjectPage({
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes, subjects] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+  const [completedQuizzes, subjects] = await Promise.all([
     getCompletedQuizzes(appUser.id),
     getPracticeSubjects(),
   ]);
 
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
-
   return (
     <AppShell
-      active="practice"
+      active="papers"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <StepBreadcrumb items={[{ label: `Grade ${grade}` }]} />
@@ -51,7 +47,7 @@ export default async function PracticeSubjectPage({
         {subjects.map((subject) => (
           <Link
             key={subject.id}
-            href={`/quiz/grade/${grade}/subjects/${subject.id}`}
+            href={`/papers/grade/${grade}/subjects/${subject.id}`}
             className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5 text-sm font-semibold last:border-b-0 hover:bg-app-surface-muted"
           >
             {subject.name}

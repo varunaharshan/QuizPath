@@ -325,22 +325,35 @@ rewritten from scratch for QuizPath rather than reused.
 The authenticated app (everything past sign-in) was rebuilt from a student-provided HTML/CSS
 mockup: a navy top bar (QuizPath brand, "Learn"/"Settings" tabs, gold active-tab underline,
 `<UserButton>` avatar), a context bar (name, grade, "Free tier" / "Active learner" pills),
-and a persistent sidebar (Dashboard, Practice, Progress, Profile). This is a **second, fixed
-light theme** distinct from the navy marketing pages — new tokens for it
+and a persistent sidebar (Dashboard, Papers, Practice, Progress, Profile). This is a **second,
+fixed light theme** distinct from the navy marketing pages — new tokens for it
 (`--color-app-bg`, `--color-ink*`, `--color-mastered`/`--color-warn`/`--color-progress` +
 their `-bg` variants) live alongside the brand palette in `globals.css`. Neither theme
 adapts to OS dark mode; they're both intentionally fixed.
 
 - `src/components/app-shell.tsx` is a plain Server Component (no client JS needed) — each
   page passes an `active` nav key and a few precomputed display values (name, grade,
-  practice count, active-learner flag) as props, rather than the shell fetching its own
-  data or needing `usePathname()`.
-- `src/lib/dashboard.ts` holds the read queries the shell/pages need:
-  `getSubTopicStatusesForGrade` (mastery status per sub-topic, backs the practice list, the
-  sidebar's practice-count badge, and the Progress tab), `getContinueAttempt`,
-  `getCompletedQuizzes` (derives real correct/total per attempt from `quiz_attempt_answers`
-  rather than reverse-engineering it from the stored percentage), `getProgressStats`, and
-  `rankRecommendedPracticeTopics`.
+  active-learner flag) as props, rather than the shell fetching its own data or needing
+  `usePathname()`.
+- **"Papers" and "Practice" are two separate nav items now** (previously one item, "Practice").
+  "Papers" is the existing Grade → Subject → Papers browsing flow, moved from `/quiz` to
+  `/papers` (see "Medium and papers" below for the full route list) — its own pages set
+  `active="papers"`. "Practice" is a new nav item whose own behavior hasn't been designed
+  yet; it points at the same `/papers` destination as a stopgap (rather than a dead link or
+  a throwaway placeholder page) until that's defined in a future pass. Landing on `/papers`
+  this way still highlights "Papers" in the sidebar, not "Practice" — the active state
+  reflects whichever page actually rendered, which is correct as long as the two share a
+  destination. The sub-topic quiz-taking page (`/quiz/[subTopicId]`) still sets
+  `active="practice"` (unchanged) since it isn't part of the Papers browsing flow either.
+  The sidebar's old practice-count badge (non-mastered sub-topic count) was dropped in this
+  same pass, since neither Papers nor the not-yet-defined Practice is an obvious home for it;
+  `AppShell` no longer takes a `practiceCount` prop at all.
+- `src/lib/dashboard.ts` holds the read queries the shell/pages need: `getSubTopicStatusesForGrade`
+  (mastery status per sub-topic, backs the Progress tab; no longer called by any Dashboard/
+  Papers/Practice page now that the sidebar badge is gone, but still directly unit-tested),
+  `getContinueAttempt`, `getCompletedQuizzes` (derives real correct/total per attempt from
+  `quiz_attempt_answers` rather than reverse-engineering it from the stored percentage),
+  `getProgressStats`, and `rankRecommendedPracticeTopics`.
 - `getContinueAttempt(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })` are
   both scoped to a specific grade (via the attempt's sub-topic's module, or the attempt's
   paper) — the Dashboard passes the student's own `profile.grade`, so an attempt from
@@ -408,22 +421,22 @@ existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a pla
 default rather than a data-driven backfill, since "English" is a reasonable default and there
 was no real user data to preserve a signal from.
 
-Practice is a three-step flow, Grade → Subject → Papers, instead of the old flat sub-topic
-list:
-1. `/quiz` — pick a **grade** to practice: Grade 10 or Grade 11, with the student's own
+Papers (the sidebar's "Papers" nav item — see "App shell" above) is a three-step flow,
+Grade → Subject → Papers, instead of the old flat sub-topic list:
+1. `/papers` — pick a **grade** to practice: Grade 10 or Grade 11, with the student's own
    `profile.grade` highlighted ("Your grade") as the default emphasis but not pre-selected —
    either card is a real link. This is a **session-level browsing choice only**: nothing here
    ever writes to `student_profiles.grade`. A Grade 11 student revising Grade 10 material (or
    vice versa) just navigates to the other grade's papers; their actual profile grade — which
-   still drives the Dashboard, the sidebar's practice-count badge, and the context bar — never
-   changes because of it. `src/lib/papers.ts` exports `isValidGrade()` to validate the `grade`
-   route param (`notFound()` on anything else) rather than trusting it as `"10" | "11"` outright,
-   since — unlike every other `grade` value in this codebase — this one comes from a URL
-   segment a browsing student controls, not from the database.
-2. `/quiz/grade/[grade]` — pick a subject (`getPracticeSubjects()`; just "Science" for now,
+   still drives the Dashboard and the context bar — never changes because of it.
+   `src/lib/papers.ts` exports `isValidGrade()` to validate the `grade` route param
+   (`notFound()` on anything else) rather than trusting it as `"10" | "11"` outright, since —
+   unlike every other `grade` value in this codebase — this one comes from a URL segment a
+   browsing student controls, not from the database.
+2. `/papers/grade/[grade]` — pick a subject (`getPracticeSubjects()`; just "Science" for now,
    but subject is a real table row, not hardcoded), carrying the browsed grade forward in the
    URL.
-3. `/quiz/grade/[grade]/subjects/[subjectId]` — a paper list for that subject+grade, grouped
+3. `/papers/grade/[grade]/subjects/[subjectId]` — a paper list for that subject+grade, grouped
    under Provincial/District/School headers, each paper showing title/year and a
    Start/Resume/Retake button. Papers are filtered by the **browsed** grade (the route param,
    not `profile.grade`) and by **medium** — medium resolves as `subject.fixedMedium ??
@@ -433,11 +446,23 @@ list:
    (e.g. "Tamil Language") to its own language regardless of the student's profile — not built
    yet, but the column exists so that's additive, not a schema change, when it lands.
 
-`src/components/practice-breadcrumb.tsx` renders the "Grade 10 › Science"-style step indicator
+This whole three-step flow originally lived under `/quiz` (`/quiz`, `/quiz/grade/[grade]`,
+`/quiz/grade/[grade]/subjects/[subjectId]`) back when "Practice" was the sidebar's only
+practice-related nav item; it moved to `/papers` once "Papers" and "Practice" became two
+separate nav items (see "App shell" above) — the destination is really "browse and take past
+papers," so the route name now matches the nav label it's reachable from. The sub-topic
+quiz-taking route (`/quiz/[subTopicId]`, reached only via deep links from the Dashboard's
+Recommended-practice cards and Progress's per-topic Practice buttons, never from this flow)
+and the paper-taking route (`/quiz/papers/[paperId]`) were deliberately left at their existing
+`/quiz/*` paths — neither is part of the Grade → Subject → Papers *browsing* flow that moved,
+just the mechanics of taking a specific quiz once a paper or sub-topic has already been
+chosen, so there was no reason to move them too.
+
+`src/components/step-breadcrumb.tsx` renders the "Grade 10 › Science"-style step indicator
 at the top of steps 2 and 3 (e.g. just "Grade 10" on the Subject step) — each non-final crumb
 links back to that step (so students can jump back without the browser's back button); the
 final crumb is plain text. The `AppShell` context bar's own `grade` prop is deliberately left
-as `profile.grade` on every Practice screen, never the browsed grade — it's an identity display
+as `profile.grade` on every Papers screen, never the browsed grade — it's an identity display
 ("this is your grade"), not a reflection of what's currently being browsed.
 
 New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
@@ -450,18 +475,20 @@ off. `quiz_attempts` gets a `CHECK` constraint (`quiz_attempts_exactly_one_targe
 exactly one of `sub_topic_id`/`paper_id` is set per row, so the two quiz "modes" can never be
 ambiguous at the DB level.
 
-Routing: `/quiz/grade/[grade]`, `/quiz/grade/[grade]/subjects/[subjectId]`, and
-`/quiz/papers/[paperId]` all use static literal path segments (`grade`, `subjects`, `papers`)
-ahead of their dynamic ones, rather than putting a second dynamic segment directly under
-`/quiz/`, because Next.js doesn't allow two different dynamic segment names at the same path
-position — `/quiz/[subTopicId]` (untouched, still used by the Dashboard's
-Recommended-practice/Progress's per-topic Practice links) already occupies that slot. `/quiz/papers/
-[paperId]` deliberately stays a *sibling* of `/quiz/grade/...` rather than nesting under it
-(e.g. not `/quiz/grade/[grade]/subjects/[subjectId]/papers/[paperId]`) — a paper's own `grade`
-and `subjectId` are intrinsic to the paper row itself (now returned by `getQuizForPaper`, used
-to link back to the right `/quiz/grade/[grade]/subjects/[subjectId]`), so the paper-taking page
+Routing: `/papers/grade/[grade]` and `/papers/grade/[grade]/subjects/[subjectId]` use static
+literal path segments (`grade`, `subjects`) ahead of their dynamic ones. `/quiz/papers/[paperId]`
+(paper-taking, still under `/quiz` — see above) deliberately stays a *sibling* of
+`/papers/grade/...` rather than nesting under it (e.g. not
+`/papers/grade/[grade]/subjects/[subjectId]/papers/[paperId]`) — a paper's own `grade` and
+`subjectId` are intrinsic to the paper row itself (returned by `getQuizForPaper`, used to link
+back to the right `/papers/grade/[grade]/subjects/[subjectId]`), so the paper-taking page
 doesn't need them threaded through the URL to render correctly regardless of which grade the
-student was browsing when they opened it.
+student was browsing when they opened it. (Historically, back when this browsing flow lived
+under `/quiz/grade/...`, the static `grade`/`subjects` segments were also what let it coexist
+with `/quiz/[subTopicId]` at the same path position — Next.js doesn't allow two different
+dynamic segment names at the same slot. That's no longer a factor now that the browsing flow
+is under its own `/papers` root, but the static-segment structure itself didn't need to
+change.)
 
 `src/lib/quiz.ts` has paper-parallel functions (`getQuizForPaper`, `ensurePaperAttemptStarted`,
 `finalizePaperAttempt`) alongside the existing sub-topic ones (`getQuizForSubTopic`,
@@ -480,14 +507,14 @@ running total) is covered separately in `tests/mastery.test.ts`.
 
 ## Progress tab
 
-Progress uses the **exact same Grade → Subject → ... shape as Practice**, not a different
+Progress uses the **exact same Grade → Subject → ... shape as Papers**, not a different
 navigation pattern for the same two grades:
-1. `/progress` — pick a grade, identical UI/copy pattern to Practice's own grade picker
-   (`src/app/quiz/page.tsx`): the student's own `profile.grade` is highlighted "Your grade"
+1. `/progress` — pick a grade, identical UI/copy pattern to Papers' own grade picker
+   (`src/app/papers/page.tsx`): the student's own `profile.grade` is highlighted "Your grade"
    but either card is a real link, and picking one never writes to `student_profiles.grade`.
    A Grade 11 student can view Grade 10 progress if they've been practicing those papers —
-   same free-browsing rule as Practice, not a separate one.
-2. `/progress/grade/[grade]` — pick a subject, identical to Practice's subject step.
+   same free-browsing rule as Papers, not a separate one.
+2. `/progress/grade/[grade]` — pick a subject, identical to Papers' subject step.
 3. `/progress/grade/[grade]/subjects/[subjectId]` — the topic breakdown, rebuilt to match a
    student-provided mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
    - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total

@@ -1,12 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import {
-  getCompletedQuizzes,
-  getProgressStats,
-  getSubTopicStatusesForGrade,
-  type SubTopicStatusLabel,
-} from "@/lib/dashboard";
+import { getCompletedQuizzes, getProgressStats, type SubTopicStatusLabel } from "@/lib/dashboard";
 import { getSubjectById, isValidGrade } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { StepBreadcrumb } from "@/components/step-breadcrumb";
@@ -50,20 +45,16 @@ export default async function ProgressTopicsPage({
     notFound();
   }
 
-  const [stats, statuses, completedQuizzes] = await Promise.all([
+  const [stats, completedQuizzes] = await Promise.all([
     getProgressStats(appUser.id, grade, subjectId),
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
   ]);
-
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
 
   return (
     <AppShell
       active="progress"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <StepBreadcrumb
@@ -75,10 +66,10 @@ export default async function ProgressTopicsPage({
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
           You haven&apos;t tried any Grade {grade} {subject.name} papers yet —{" "}
           <Link
-            href={`/quiz/grade/${grade}/subjects/${subjectId}`}
+            href={`/papers/grade/${grade}/subjects/${subjectId}`}
             className="font-medium text-progress underline"
           >
-            head to Practice
+            head to Papers
           </Link>{" "}
           to get started.
         </div>

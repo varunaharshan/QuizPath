@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 
 const GRADES = ["10", "11"] as const;
 
-export default async function PracticeGradePage() {
+export default async function PapersGradePage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -17,19 +17,13 @@ export default async function PracticeGradePage() {
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getCompletedQuizzes(appUser.id),
-  ]);
-
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+  const completedQuizzes = await getCompletedQuizzes(appUser.id);
 
   return (
     <AppShell
-      active="practice"
+      active="papers"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
@@ -41,7 +35,7 @@ export default async function PracticeGradePage() {
           return (
             <Link
               key={grade}
-              href={`/quiz/grade/${grade}`}
+              href={`/papers/grade/${grade}`}
               className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5 text-sm font-semibold last:border-b-0 hover:bg-app-surface-muted"
             >
               <span className="flex items-center gap-2.5">

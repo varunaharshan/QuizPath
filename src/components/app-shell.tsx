@@ -2,8 +2,13 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
-export type ActiveNav = "dashboard" | "practice" | "progress" | "profile";
+export type ActiveNav = "dashboard" | "papers" | "practice" | "progress" | "profile";
 
+// "Papers" is today's existing Grade -> Subject -> Papers browsing flow
+// (see src/app/papers/page.tsx), just under its own nav item now. "Practice"
+// is a new, separate nav item whose own behavior hasn't been designed yet —
+// it points at the same /papers destination as a stopgap until that's
+// defined, rather than a broken link or a throwaway placeholder page.
 const NAV_ITEMS: {
   key: ActiveNav;
   href: string;
@@ -12,7 +17,8 @@ const NAV_ITEMS: {
   section: "Overview" | "Learning" | "Account";
 }[] = [
   { key: "dashboard", href: "/dashboard", label: "Dashboard", icon: "⌂", section: "Overview" },
-  { key: "practice", href: "/quiz", label: "Practice", icon: "✎", section: "Learning" },
+  { key: "papers", href: "/papers", label: "Papers", icon: "📄", section: "Learning" },
+  { key: "practice", href: "/papers", label: "Practice", icon: "✎", section: "Learning" },
   { key: "progress", href: "/progress", label: "Progress", icon: "☰", section: "Learning" },
   { key: "profile", href: "/profile", label: "Profile", icon: "◉", section: "Account" },
 ];
@@ -23,14 +29,12 @@ export function AppShell({
   active,
   studentName,
   grade,
-  practiceCount,
   isActiveLearner,
   children,
 }: {
   active: ActiveNav;
   studentName: string;
   grade: "10" | "11";
-  practiceCount: number;
   isActiveLearner: boolean;
   children: ReactNode;
 }) {
@@ -109,15 +113,6 @@ export function AppShell({
                   >
                     <span className="w-[18px] shrink-0 text-center text-[15px]">{item.icon}</span>
                     {item.label}
-                    {item.key === "practice" && practiceCount > 0 && (
-                      <span
-                        className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          isActive ? "bg-white text-progress" : "bg-app-surface-muted text-ink-secondary"
-                        }`}
-                      >
-                        {practiceCount}
-                      </span>
-                    )}
                   </Link>
                 );
               })}

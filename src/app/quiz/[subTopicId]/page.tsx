@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { ensureSubTopicAttemptStarted, getExistingAnswers, getQuizForSubTopic } from "@/lib/quiz";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getCompletedQuizzes } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 import { QuizForm } from "@/components/quiz-form";
 import { saveSubTopicAnswer, submitSubTopicQuiz } from "./actions";
@@ -35,11 +35,7 @@ export default async function QuizPage({
   const attemptId = await ensureSubTopicAttemptStarted(appUser.id, subTopicId);
   const existingAnswers = await getExistingAnswers(attemptId);
 
-  const [statuses, completedQuizzes] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getCompletedQuizzes(appUser.id),
-  ]);
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
+  const completedQuizzes = await getCompletedQuizzes(appUser.id);
 
   const boundSaveAnswer = async (mcqId: string, selectedOption: number) => {
     "use server";
@@ -55,12 +51,11 @@ export default async function QuizPage({
       active="practice"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <div className="-m-7 min-h-full bg-white p-7">
         <div className="mb-4">
-          <Link href="/quiz" className="text-[13px] text-quiz-grey-text hover:underline">
+          <Link href="/papers" className="text-[13px] text-quiz-grey-text hover:underline">
             ← Choose a different sub-topic
           </Link>
           <h1 className="mt-2 text-lg font-bold text-quiz-navy">{subTopic.name}</h1>

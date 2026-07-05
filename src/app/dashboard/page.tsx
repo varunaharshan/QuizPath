@@ -5,7 +5,6 @@ import {
   getCompletedQuizzes,
   getContinueAttempt,
   getProgressStats,
-  getSubTopicStatusesForGrade,
   rankRecommendedPracticeTopics,
 } from "@/lib/dashboard";
 import { getPracticeSubjects } from "@/lib/papers";
@@ -28,14 +27,12 @@ export default async function DashboardPage() {
   const subjects = await getPracticeSubjects();
   const subject = subjects[0] as { id: string; name: string } | undefined;
 
-  const [statuses, continueAttempt, completedQuizzes, stats] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+  const [continueAttempt, completedQuizzes, stats] = await Promise.all([
     getContinueAttempt(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id, { grade: profile.grade, limit: 3 }),
     subject ? getProgressStats(appUser.id, profile.grade, subject.id) : null,
   ]);
 
-  const practiceCount = statuses.filter((s) => s.label !== "mastered").length;
   const recommended = stats ? rankRecommendedPracticeTopics(stats.topics, 2) : [];
   const progressHref = subject
     ? `/progress/grade/${profile.grade}/subjects/${subject.id}`
@@ -48,7 +45,6 @@ export default async function DashboardPage() {
       active="dashboard"
       studentName={displayName}
       grade={profile.grade}
-      practiceCount={practiceCount}
       isActiveLearner={completedQuizzes.length > 0}
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Welcome back, {firstName}</h1>
@@ -99,8 +95,8 @@ export default async function DashboardPage() {
           ) : (
             <p className="m-0 text-sm text-ink-secondary">
               No in-progress quizzes.{" "}
-              <Link href="/quiz" className="font-medium text-progress underline">
-                Head to Practice
+              <Link href="/papers" className="font-medium text-progress underline">
+                Head to Papers
               </Link>{" "}
               to get started.
             </p>
