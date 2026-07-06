@@ -819,8 +819,99 @@ constraint anywhere.
   to tag, so it's expected to show up here rather than being forced into a made-up keyword.
   Run this after `db:seed` (or after adding new questions) to keep `keywords` populated;
   seeding does not call it automatically.
-- No admin UI to hand-add/edit a question's keywords yet — out of scope for this pass, to
-  be scoped separately once there's an actual admin panel (see "What's NOT built yet").
+- No admin UI to hand-add/edit a question's keywords yet — that's now built (see "Admin"
+  below), but only for the topic hierarchy, not per-question keyword tags.
+
+## Admin
+
+A second, admin-only area of the app — same repo, same database, same Clerk login, no
+second auth system. `users.role` (`user_role` enum: `student` | `admin`, `NOT NULL DEFAULT
+'student'`) gates it. Every existing row backfills to `student` on migration, the same
+pattern already used for `student_profiles.medium`.
+
+- **Post-login routing** (`src/app/page.tsx`) checks `appUser.role` *before* the existing
+  `student_profiles` lookup — an admin is redirected to `/admin` and never touches
+  onboarding at all, since grade/medium is a student-only concept. This is the only change
+  to the existing student login flow; there's no second sign-in page or Clerk config.
+- **`requireAdminUser()`** (`src/lib/current-app-user.ts`) is the one guard, called from
+  two places: `src/app/admin/layout.tsx` (blocks *rendering* any `/admin/*` page to a
+  non-admin) and the top of every Server Action in `src/app/admin/topics/actions.ts`
+  (blocks *invoking* the action directly, which a layout-level check alone can't do).
+  Not signed in → `/` (sign-in); signed in but not an admin → `/dashboard` (their own
+  home, not a generic error page). The check runs as a plain Server Component/Server
+  Action DB read, not in `proxy.ts` — `pg`'s Node.js driver isn't Edge-runtime compatible,
+  which is exactly why `src/db/index.ts` is `server-only`-guarded in the first place (see
+  "Stack choices").
+- **`src/app/admin/layout.tsx`** is a real Next.js layout — a deliberate difference from
+  the student side, where every page repeats its own `getOrCreateAppUser()`/redirect
+  check and wraps itself in `<AppShell>` (a plain component, not a layout file). Centralizing
+  the guard in a layout means a future `/admin/*` page can't forget it. `<AdminShell>`
+  (`src/components/admin-shell.tsx`) is a **completely separate component from
+  `<AppShell>`** — no shared imports, no shared nav data, per the explicit requirement not
+  to touch the student sidebar. It's intentionally minimal (one nav item, "Topics") since
+  Topics is the only admin section so far; `src/app/admin/page.tsx` just redirects to
+  `/admin/topics` rather than being a placeholder landing page.
+- **Known gap, not fixed by this pass**: an admin who manually navigates to a student URL
+  like `/dashboard` isn't blocked — they'd hit the existing `if (!profile) redirect
+  ("/onboarding")` check and land in onboarding, which doesn't really make sense for an
+  admin. Only the root-page post-login routing and the `/admin/*` guard were in scope;
+  guarding every individual student page against an admin wandering in wasn't.
+
+### Topics management (`/admin/topics`)
+
+CRUD over the existing content hierarchy — **no schema changes** beyond `users.role`.
+"Topic" in the admin UI means `modules`, and "sub-topic" means `sub_topics`: the schema
+only has two levels under a subject, and student-facing copy elsewhere already calls
+`sub_topics` "topics" colloquially (e.g. Practice by Topic), so the admin UI's own labels
+are deliberately explicit about which table is which to avoid that ambiguity. Subject-level
+CRUD (create/rename/delete a `subjects` row) isn't included — only topic/sub-topic within
+an existing subject, per scope.
+
+- **`src/lib/admin-topics.ts`** — `getSubjectsForAdmin()` and
+  `getTopicsForSubjectGrade(subjectId, grade)`, the latter returning every `module` for that
+  subject+grade in `sort_order` (modules already had this column; no new field needed for
+  reordering), each with its `sub_topics` (also in `sort_order`) and a **live** question
+  count per sub-topic (published *and* draft `mcqs`, summed up to the topic level too) —
+  not a cached count, since it's also what the delete-confirmation warning shows.
+- **`src/app/admin/topics/page.tsx`** reuses the exact cascading-dropdown-filter shape
+  already established by Papers/Progress (`?grade=&subjectId=` in `searchParams`, a
+  `"use client"` filter form doing `router.push` on change —
+  `src/components/admin-topics-filter-form.tsx` mirrors `<ProgressFilterForm>` almost
+  verbatim) — same free-browsing-choice rule (invalid/missing values fall back to a
+  default, never 404).
+- **Create/rename** are plain `<form action={...}>` submissions to Server Actions in
+  `src/app/admin/topics/actions.ts` (`createModule`, `renameModule`, `createSubTopic`,
+  `renameSubTopic`), reading `FormData` directly and validating manually — the same shape
+  as `onboarding/actions.ts`/`profile/actions.ts`, just with a hidden `id` input instead of
+  a signed-in user's own id.
+- **Reordering** is two named submit buttons (`name="direction" value="up"/"down"`) inside
+  one hidden-input form, each with its own `formAction` pointing at `reorderModule` /
+  `reorderSubTopic` — no drag-and-drop library, matching this app's near-zero-client-JS
+  default. Each action re-fetches the item's siblings (scoped to the same subject+grade for
+  modules, the same module for sub-topics), finds the adjacent one in `sort_order`, and
+  swaps the two `sort_order` values in a transaction; a no-op at either boundary rather than
+  wrapping around.
+- **Delete "warns, doesn't block"**: `mcqs.sub_topic_id` and `sub_topics.module_id` are both
+  `onDelete: cascade` already (unchanged), so a delete would silently cascade-remove
+  questions if nothing intercepted it. `<ConfirmSubmitButton>`
+  (`src/components/confirm-submit-button.tsx`) is a small reusable Client Component — the
+  one piece of client JS in this feature — that gates the surrounding form's submission on
+  `window.confirm()`, with a message built server-side from the real question count (e.g.
+  "has 3 sub-topic(s) and 10 question(s) attached... Continue?"). This mirrors the existing
+  `window.confirm()` precedent already used for the quiz-taking partial-submit gate (see
+  "Quiz-taking visual design") rather than building a custom modal. `deleteModule` /
+  `deleteSubTopic` themselves don't re-check the count — the warning is a UI-level
+  confirmation step, not a hard block.
+
+Integration coverage: `tests/admin-topics.test.ts` — `getTopicsForSubjectGrade`'s
+`sort_order`-based ordering (inserted out of order, asserted back in order) at both the
+topic and sub-topic level, its published+draft question-count aggregation (per sub-topic
+and summed to the topic), its strict grade scoping in both directions, and its empty-input
+case; `getSubjectsForAdmin` against a real inserted subject. The Server Actions themselves
+(`actions.ts`) aren't directly unit-tested — matching this codebase's existing convention
+of not testing `onboarding`/`profile`'s actions directly either, since they're thin
+FormData-validation-plus-a-DB-write wrappers around already-tested query logic, and testing
+them would need mocking Clerk's `currentUser()`, which nothing else in this suite does.
 
 ## What's NOT built yet
 

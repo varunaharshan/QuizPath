@@ -16,6 +16,7 @@ import {
 import { relations, sql } from "drizzle-orm";
 
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
+export const userRoleEnum = pgEnum("user_role", ["student", "admin"]);
 export const gradeEnum = pgEnum("grade", ["10", "11"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published"]);
 export const mcqDifficultyEnum = pgEnum("mcq_difficulty", ["easy", "medium", "hard"]);
@@ -43,6 +44,11 @@ export const users = pgTable("users", {
   name: varchar("name", { length: 200 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   status: userStatusEnum("status").notNull().default("active"),
+  // Gates access to /admin/* (see src/lib/current-app-user.ts
+  // requireAdminUser and src/app/admin/layout.tsx). NOT NULL with a default
+  // so every existing row backfills to "student" on migration, same pattern
+  // as student_profiles.medium.
+  role: userRoleEnum("role").notNull().default("student"),
 });
 
 export const studentProfiles = pgTable("student_profiles", {

@@ -1,5 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { studentProfiles, users } from "@/db/schema";
 
@@ -40,4 +41,24 @@ export async function getStudentProfile(userId: string): Promise<StudentProfile 
     where: eq(studentProfiles.userId, userId),
   });
   return profile ?? null;
+}
+
+/**
+ * Guards every /admin/* page (called from src/app/admin/layout.tsx) *and*
+ * every admin Server Action (src/app/admin/topics/actions.ts) — the layout
+ * check alone only stops a non-admin from seeing the rendered page, not
+ * from invoking a Server Action directly, so both call this rather than
+ * duplicating the role check. Not signed in -> "/" (sign-in); signed in but
+ * not an admin -> "/dashboard" (their own home), rather than a generic
+ * error, since this is a legitimate signed-in user just in the wrong role.
+ */
+export async function requireAdminUser(): Promise<AppUser> {
+  const appUser = await getOrCreateAppUser();
+  if (!appUser) {
+    redirect("/");
+  }
+  if (appUser.role !== "admin") {
+    redirect("/dashboard");
+  }
+  return appUser;
 }

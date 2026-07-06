@@ -11,6 +11,11 @@ export default async function Home() {
   if (userId) {
     const appUser = await getOrCreateAppUser();
     if (appUser) {
+      // Admins skip grade/medium onboarding entirely — that's a student-only
+      // concept, so the role check runs before the student-profile lookup.
+      if (appUser.role === "admin") {
+        redirect("/admin");
+      }
       const profile = await getStudentProfile(appUser.id);
       redirect(profile ? "/dashboard" : "/onboarding");
     }
