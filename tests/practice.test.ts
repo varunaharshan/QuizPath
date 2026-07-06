@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
 import type { SubTopicStatus } from "@/lib/dashboard";
-import { groupWeakAreasBySubject, searchSubTopicIdsByKeyword, weakAreas } from "@/lib/practice";
+import { groupTopicsBySubject, groupWeakAreasBySubject, searchSubTopicIdsByKeyword, weakAreas } from "@/lib/practice";
 
 function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
   return {
@@ -42,6 +42,34 @@ describe("weakAreas", () => {
 
   it("returns an empty list when nothing needs work", () => {
     expect(weakAreas([status({ label: "mastered", score: 90 })])).toEqual([]);
+  });
+});
+
+describe("groupTopicsBySubject", () => {
+  it("groups every topic by subject regardless of label, preserving each group's original order", () => {
+    const sci1 = status({ name: "Sci1", subjectId: "sci", subjectName: "Science", label: "mastered", score: 90 });
+    const sci2 = status({ name: "Sci2", subjectId: "sci", subjectName: "Science", label: "not_started", score: null });
+    const biz1 = status({ name: "Biz1", subjectId: "biz", subjectName: "Business Studies", label: "needs_work", score: 30 });
+
+    const groups = groupTopicsBySubject([sci1, sci2, biz1]);
+
+    const science = groups.find((g) => g.subjectId === "sci");
+    expect(science?.topics.map((t) => t.name)).toEqual(["Sci1", "Sci2"]);
+    const business = groups.find((g) => g.subjectId === "biz");
+    expect(business?.topics.map((t) => t.name)).toEqual(["Biz1"]);
+  });
+
+  it("sorts groups by subject name for a stable, deterministic tab order", () => {
+    const biz = status({ name: "B", subjectId: "biz", subjectName: "Business Studies" });
+    const geo = status({ name: "G", subjectId: "geo", subjectName: "Geography" });
+    const sci = status({ name: "S", subjectId: "sci", subjectName: "Science" });
+
+    const groups = groupTopicsBySubject([sci, biz, geo]);
+    expect(groups.map((g) => g.subjectName)).toEqual(["Business Studies", "Geography", "Science"]);
+  });
+
+  it("returns an empty list for an empty input", () => {
+    expect(groupTopicsBySubject([])).toEqual([]);
   });
 });
 

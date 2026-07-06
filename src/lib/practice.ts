@@ -15,6 +15,37 @@ export function weakAreas(topics: SubTopicStatus[]): SubTopicStatus[] {
     .sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
 }
 
+export type SubjectTopicGroup = {
+  subjectId: string;
+  subjectName: string;
+  topics: SubTopicStatus[];
+};
+
+// Groups every sub-topic for a grade by subject for Practice by Topic's
+// subject-tab card grid — unlike groupWeakAreasBySubject, this keeps every
+// topic (not just needs_work ones) and doesn't slice or average anything,
+// since the whole point of By Topic is browsing everything, filtered by
+// subject rather than by weakness. Order within each group is preserved
+// exactly as passed in (getSubTopicStatusesForGrade's existing syllabus
+// order: module sortOrder, then sub-topic sortOrder), so cards still read
+// top-to-bottom in unit order once grouped. Groups themselves are sorted by
+// subject name, giving a stable, deterministic tab order.
+export function groupTopicsBySubject(topics: SubTopicStatus[]): SubjectTopicGroup[] {
+  const bySubject = new Map<string, { subjectName: string; topics: SubTopicStatus[] }>();
+  for (const topic of topics) {
+    const group = bySubject.get(topic.subjectId);
+    if (group) {
+      group.topics.push(topic);
+    } else {
+      bySubject.set(topic.subjectId, { subjectName: topic.subjectName, topics: [topic] });
+    }
+  }
+
+  return [...bySubject.entries()]
+    .map(([subjectId, { subjectName, topics: subjectTopics }]) => ({ subjectId, subjectName, topics: subjectTopics }))
+    .sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+}
+
 export type WeakAreaSubjectGroup = {
   subjectId: string;
   subjectName: string;

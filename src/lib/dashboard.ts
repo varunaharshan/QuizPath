@@ -263,6 +263,37 @@ export async function getCompletedQuizzes(
   });
 }
 
+// Practice by Topic defaults its subject tab to whichever subject the
+// student most recently completed a quiz in (paper or sub-topic, for this
+// grade) — falling back to the first subject (the page's own responsibility,
+// not this function's) when there's no completed-attempt history yet.
+// Mirrors getContinueAttempt's join shape (leftJoin subTopics/modules/papers,
+// or(modules.grade, papers.grade)) since it needs the same "resolve subject
+// regardless of paper vs topic-practice" logic, just for the most recent
+// *completed* attempt instead of the most recent *incomplete* one.
+export async function getMostRecentlyPracticedSubjectId(
+  studentId: string,
+  grade: "10" | "11",
+): Promise<string | null> {
+  const [row] = await db
+    .select({ subTopicSubjectId: modules.subjectId, paperSubjectId: papers.subjectId })
+    .from(quizAttempts)
+    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        or(eq(modules.grade, grade), eq(papers.grade, grade)),
+      ),
+    )
+    .orderBy(desc(quizAttempts.completedAt))
+    .limit(1);
+
+  return row?.subTopicSubjectId ?? row?.paperSubjectId ?? null;
+}
+
 export type TopicProgress = {
   id: string;
   name: string;

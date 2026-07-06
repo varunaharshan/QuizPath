@@ -7,10 +7,11 @@ import { ensurePaperAttemptStarted, ensureSubTopicAttemptStarted, saveQuizAnswer
 import {
   getCompletedQuizzes,
   getContinueAttempt,
+  getMostRecentlyPracticedSubjectId,
   rankRecommendedPracticeTopics,
   type TopicProgress,
 } from "@/lib/dashboard";
-import { submitFullSubTopicQuiz } from "./helpers";
+import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
 
 // Confirms the Dashboard's "continue where you left off" card and "recent
 // activity" list stay scoped to whichever grade is asked for, even when an
@@ -169,7 +170,6 @@ describe("dashboard grade scoping", () => {
   afterAll(async () => {
     await db.delete(subjects).where(eq(subjects.id, subjectId));
     await db.delete(users).where(eq(users.id, studentId));
-    await pool.end();
   });
 
   it("getContinueAttempt picks the most recently started in-progress paper for the requested grade", async () => {
@@ -231,6 +231,82 @@ describe("dashboard grade scoping", () => {
   });
 });
 
+// Backs Practice by Topic's default subject tab (see CLAUDE.md "Practice
+// (Weak Areas, By Topic, By Keyword)") — uses two distinct subjects (one
+// resolved via a sub-topic attempt, one via a paper attempt) so the test
+// actually exercises subject *resolution*, not just grade scoping (which
+// the shared "dashboard grade scoping" fixture above already covers with a
+// single subject).
+describe("getMostRecentlyPracticedSubjectId", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectAId: string;
+  let subjectBId: string;
+  let subTopicAId: string;
+  let paperBId: string;
+  let mcqAId: string;
+  let studentId: string;
+
+  beforeAll(async () => {
+    const [subjectA] = await db.insert(subjects).values({ name: `Test MostRecent Subject A ${runId}` }).returning();
+    subjectAId = subjectA.id;
+    const [subjectB] = await db.insert(subjects).values({ name: `Test MostRecent Subject B ${runId}` }).returning();
+    subjectBId = subjectB.id;
+
+    const [moduleA] = await db
+      .insert(modules)
+      .values({ subjectId: subjectAId, grade: "10", name: `Test MostRecent Module A ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [subTopicA] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleA.id, name: `Test MostRecent Sub-topic A ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopicAId = subTopicA.id;
+
+    const [mcqA] = await db
+      .insert(mcqs)
+      .values({ subTopicId: subTopicAId, questionText: "1 + 1 = ?", options: ["1", "2"], correctOption: 1, status: "published" })
+      .returning({ id: mcqs.id });
+    mcqAId = mcqA.id;
+
+    const [paperB] = await db
+      .insert(papers)
+      .values({ subjectId: subjectBId, grade: "10", medium: "english", paperType: "provincial", title: `Test MostRecent Paper B ${runId}`, status: "published" })
+      .returning();
+    paperBId = paperB.id;
+
+    const [mcqB] = await db
+      .insert(mcqs)
+      .values({ paperId: paperBId, questionText: "2 + 2 = ?", options: ["3", "4"], correctOption: 1, status: "published" })
+      .returning({ id: mcqs.id });
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-mostrecent-auth-${runId}`, email: `test-mostrecent-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    // Complete subject A's sub-topic attempt first, so subject B's paper
+    // attempt (completed after) is the more recent of the two.
+    await submitFullSubTopicQuiz({ studentId, subTopicId: subTopicAId, answers: { [mcqAId]: 1 } });
+    await submitFullPaperQuiz({ studentId, paperId: paperBId, answers: { [mcqB.id]: 1 } });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectAId));
+    await db.delete(subjects).where(eq(subjects.id, subjectBId));
+    await db.delete(users).where(eq(users.id, studentId));
+  });
+
+  it("resolves the subject of the most recently completed attempt, whether it's a sub-topic or a paper", async () => {
+    expect(await getMostRecentlyPracticedSubjectId(studentId, "10")).toBe(subjectBId);
+  });
+
+  it("returns null when the student has no completed attempts for that grade", async () => {
+    expect(await getMostRecentlyPracticedSubjectId(studentId, "11")).toBeNull();
+  });
+});
+
 describe("rankRecommendedPracticeTopics", () => {
   function topic(overrides: Partial<TopicProgress>): TopicProgress {
     return {
@@ -287,4 +363,12 @@ describe("rankRecommendedPracticeTopics", () => {
     const ranked = rankRecommendedPracticeTopics([notStarted1, notStarted2, oneWeak], 2);
     expect(ranked.map((t) => t.name)).toEqual(["Weak", "NotStarted1"]);
   });
+});
+
+// A single file-level pool.end(), run once after every describe above has
+// finished, rather than inside any one describe's own afterAll — this file
+// now has two describes that hit the database, and closing the pool inside
+// the first one's afterAll would break the second's beforeAll.
+afterAll(async () => {
+  await pool.end();
 });

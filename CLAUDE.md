@@ -614,10 +614,46 @@ new quiz-serving logic either.
     the page renders every (not just top-3) weak sub-topic for that one subject via the
     existing `<TopicPracticeList>`, with a "← All subjects" link back to the tiled view. The
     page header/subtitle and the sidebar are unchanged in both modes.
-- **`/practice/by-topic`** — every sub-topic for the grade (not just weak ones), same list
-  presentation. No subject tabs, unlike the mockup — Science is the only subject today (see
-  "Single-tenant MVP"), so a tab bar with one permanently-selected tab would be pure
-  decoration; add tabs back once there's a real second subject.
+- **`/practice/by-topic`** — every sub-topic for the grade (not just weak ones), presented as
+  a **subject-tab switcher + sub-topic card grid**, matching a GradeBoost-style reference
+  mockup (a different redesign pass than Weak Areas' subject tiles above, though it reuses the
+  same card visual language). Unlike every other cascading filter in this app (Papers,
+  Progress, Weak Areas' own "View All"), switching tabs here is **pure client state, no
+  navigation** — the spec calls for switching subjects with no page reload, so
+  `<TopicCardGrid>` (`src/components/topic-card-grid.tsx`) is a `"use client"` component that
+  receives every subject's sub-topics pre-fetched from the Server Component page and just
+  toggles which group is visible via `useState`, rather than re-fetching per tab click.
+  - `groupTopicsBySubject()` (`src/lib/practice.ts`) is a new pure function, directly
+    unit-tested, that buckets *every* sub-topic (not filtered to weak ones, unlike
+    `groupWeakAreasBySubject`) by `subjectId`, preserving each group's existing syllabus order
+    (`getSubTopicStatusesForGrade`'s module-sortOrder-then-sub-topic-sortOrder ordering is
+    untouched) and sorting the groups themselves by subject name for a stable tab order.
+  - **`<TopicCardGrid>` deliberately never imports anything runtime from `@/lib/dashboard` or
+    `@/lib/practice`**, even though it renders `SubTopicStatus`-shaped data — both modules
+    transitively import `@/db`, which is `server-only`-guarded (see "Database" above), so a
+    Client Component importing either would fail at build time. Instead the page (a Server
+    Component) precomputes each card's icon via the existing `iconForModule` and passes plain
+    `TopicCardData`/`SubjectTopicTab` objects (types local to `topic-card-grid.tsx`) down as
+    props — the same "thin Client Component driven by Server Component data" shape as
+    `<QuizForm>`/`<PapersFilterForm>`.
+  - The default active tab is whichever subject the student most recently **completed** a
+    quiz in for this grade — `getMostRecentlyPracticedSubjectId()` (`src/lib/dashboard.ts`)
+    mirrors `getContinueAttempt`'s join shape (`leftJoin` through `subTopics`/`modules`/
+    `papers`, `or(modules.grade, papers.grade)`) to resolve the subject regardless of whether
+    the latest completed attempt was a sub-topic quiz or a paper, but keyed off
+    `completedAt` instead of the in-progress row `getContinueAttempt` looks for. Falls back to
+    the first subject (alphabetical, from `groupTopicsBySubject`'s own ordering) when the
+    student has no completed-attempt history yet for that grade.
+  - Each card shows the sub-topic name, its parent module name (so the syllabus grouping
+    context survives the move from rows to cards), and either "`N` questions · `score`%
+    accuracy" or "Not started" (never a different card style for unstarted topics — same
+    card layout either way, matching the spec). The Practice button is full-width at the
+    card's bottom, still linking to the existing `/quiz/[subTopicId]` route.
+  - Only Science has real data today, so only its tab renders — `getPracticeSubjects()`
+    (this page doesn't call it directly; tabs are derived straight from
+    `groupTopicsBySubject`'s output, so a subject with zero sub-topics for this grade simply
+    produces no tab) needs no per-subject hardcoding for Business Studies/Geography to appear
+    once they have sub-topic data.
 - **`/practice/by-keyword`** — a plain GET `<form>` (no client JS: the search box just
   reloads the page with `?q=`) over `searchSubTopicIdsByKeyword(grade, query)` in
   `src/lib/practice.ts`. This is a deliberate scope reduction from the mockup's "Top
@@ -626,15 +662,22 @@ new quiz-serving logic either.
   names, module names, and published question text (`ilike` across a join, returning matching
   sub-topic IDs that the page then filters its already-fetched statuses down to — only one
   place, `getSubTopicStatusesForGrade`, ever computes the mastery data itself). A blank query
-  browses every topic for the grade (same list as By Topic) rather than showing nothing,
-  matching the mockup's persistent topic list that's visible before any search runs.
+  browses every topic for the grade via the existing flat `<TopicPracticeList>` (the same
+  presentation this page always used) rather than showing nothing, matching the mockup's
+  persistent topic list that's visible before any search runs — deliberately *not* By Topic's
+  new card grid, since redesigning By Keyword's own presentation was out of scope for this
+  pass.
 
 Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly,
 `groupWeakAreasBySubject`'s per-subject bucketing/averaging/slicing/sort-order and its
-empty-input case, and `searchSubTopicIdsByKeyword` against a real seeded
+empty-input case, `groupTopicsBySubject`'s per-subject bucketing/order-preservation/subject-
+name sort and its empty-input case, and `searchSubTopicIdsByKeyword` against a real seeded
 sub-topic/module/question set (matches by name, by module name, and by question text; never
 matches a different grade even with an identical keyword; a blank query returns nothing
-rather than everything).
+rather than everything). `tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId`
+against a two-subject fixture (one resolved via a sub-topic attempt, one via a paper attempt,
+so subject *resolution* is actually exercised, not just grade scoping) and its no-history
+null case.
 
 ## What's NOT built yet
 
