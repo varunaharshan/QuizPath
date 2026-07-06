@@ -1,16 +1,20 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { searchSubTopicIdsByKeyword } from "@/lib/practice";
+import { getCompletedQuizzes, getSubTopicStatusesForGrade, iconForModule, iconForSubject } from "@/lib/dashboard";
+import { getTopKeywords, groupTopicsBySubject, searchSubTopicIdsByKeyword } from "@/lib/practice";
 import { AppShell } from "@/components/app-shell";
-import { TopicPracticeList } from "@/components/topic-practice-list";
+import { TopicCard } from "@/components/topic-card";
 
 // A plain GET <form> (no client JS) — the search box just reloads this page
-// with ?q=, which is enough for a simple substring search with no live
-// suggestions/autocomplete. See src/lib/practice.ts for what "keyword
-// search" actually means here: existing sub-topic/module names and
-// published question text, not a dedicated keyword taxonomy (none exists
-// in the schema).
+// with ?q=. Matching is a real search over the keywords backfill (see
+// src/lib/practice.ts searchSubTopicIdsByKeyword) — sub-topic/module names
+// and published question text still count too, but a question's own
+// keywords tags are what let a search like "Microorganisms" surface a topic
+// whose name never mentions the word. Results are grouped by subject then
+// topic (src/lib/practice.ts groupTopicsBySubject), reusing the same
+// <TopicCard> used by Practice by Topic, so a keyword spanning multiple
+// topics shows each as its own card rather than merging them.
 export default async function ByKeywordPage({
   searchParams,
 }: {
@@ -29,16 +33,27 @@ export default async function ByKeywordPage({
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q.trim() : "";
 
-  const [statuses, completedQuizzes] = await Promise.all([
+  const [statuses, completedQuizzes, topKeywords] = await Promise.all([
     getSubTopicStatusesForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
+    getTopKeywords(profile.grade),
   ]);
 
-  // No query yet: browse every topic, same as By Topic — a useful default
-  // rather than an empty page, and matches the mockup's persistent topic
-  // list that's visible before any search is run.
   const matchingIds = query ? await searchSubTopicIdsByKeyword(profile.grade, query) : null;
-  const results = matchingIds ? statuses.filter((s) => matchingIds.has(s.id)) : statuses;
+  const matchedGroups = matchingIds
+    ? groupTopicsBySubject(statuses.filter((s) => matchingIds.has(s.id))).map((group) => ({
+        subjectId: group.subjectId,
+        subjectName: group.subjectName,
+        topics: group.topics.map((topic) => ({
+          id: topic.id,
+          name: topic.name,
+          moduleName: topic.moduleName,
+          icon: iconForModule(topic.moduleName),
+          score: topic.score,
+          questionsAnswered: topic.questionsAnswered,
+        })),
+      }))
+    : [];
 
   return (
     <AppShell
@@ -49,7 +64,7 @@ export default async function ByKeywordPage({
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Practice by Keyword</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Search for a keyword, or browse every topic below.
+        Search for a keyword, or browse the top keywords below.
       </p>
 
       <form className="mb-4.5 flex max-w-[640px] gap-2.5">
@@ -57,7 +72,7 @@ export default async function ByKeywordPage({
           type="text"
           name="q"
           defaultValue={query}
-          placeholder="Search e.g. photosynthesis, Ohm's law…"
+          placeholder="Search e.g. Photosynthesis, Ohm's Law…"
           className="flex-1 rounded-md border border-app-border bg-white px-3 py-2 text-[13.5px] text-ink"
         />
         <button
@@ -68,15 +83,45 @@ export default async function ByKeywordPage({
         </button>
       </form>
 
-      <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
-        <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
-          {query ? `Results for "${query}"` : "All topics"}
+      {!query ? (
+        <div>
+          <h2 className="m-0 mb-2.5 text-[13.5px] font-bold text-navy-900">Top Keywords</h2>
+          {topKeywords.length === 0 ? (
+            <p className="m-0 text-sm text-ink-secondary">No keywords are available yet for this grade.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {topKeywords.map((kw) => (
+                <Link
+                  key={kw.keyword}
+                  href={`/practice/by-keyword?q=${encodeURIComponent(kw.keyword)}`}
+                  className="rounded-full border border-app-border bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-ink hover:bg-app-surface-muted"
+                >
+                  {kw.keyword} <span className="font-normal text-ink-secondary">· {kw.count}</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
-        <TopicPracticeList
-          topics={results}
-          emptyMessage={query ? `No topics matched "${query}".` : "No topics are available yet for this grade."}
-        />
-      </div>
+      ) : matchedGroups.length === 0 ? (
+        <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
+          <p className="p-4 text-sm text-ink-secondary">No topics matched &quot;{query}&quot;.</p>
+        </div>
+      ) : (
+        <div>
+          {matchedGroups.map((group) => (
+            <div key={group.subjectId} className="mb-4.5">
+              <div className="mb-2.5 text-[13.5px] font-bold text-navy-900">
+                {iconForSubject(group.subjectName)} {group.subjectName}
+              </div>
+              <div className="grid grid-cols-1 gap-4.5 sm:grid-cols-2 lg:grid-cols-3">
+                {group.topics.map((topic) => (
+                  <TopicCard key={topic.id} topic={topic} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </AppShell>
   );
 }

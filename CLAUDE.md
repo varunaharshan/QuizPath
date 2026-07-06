@@ -654,30 +654,74 @@ new quiz-serving logic either.
     `groupTopicsBySubject`'s output, so a subject with zero sub-topics for this grade simply
     produces no tab) needs no per-subject hardcoding for Business Studies/Geography to appear
     once they have sub-topic data.
-- **`/practice/by-keyword`** — a plain GET `<form>` (no client JS: the search box just
-  reloads the page with `?q=`) over `searchSubTopicIdsByKeyword(grade, query)` in
-  `src/lib/practice.ts`. This is a deliberate scope reduction from the mockup's "Top
-  Keywords" feature: there's no keywords table or tag column anywhere in the schema, so
-  "keyword search" here means a case-insensitive substring match against existing sub-topic
-  names, module names, and published question text (`ilike` across a join, returning matching
-  sub-topic IDs that the page then filters its already-fetched statuses down to — only one
-  place, `getSubTopicStatusesForGrade`, ever computes the mastery data itself). A blank query
-  browses every topic for the grade via the existing flat `<TopicPracticeList>` (the same
-  presentation this page always used) rather than showing nothing, matching the mockup's
-  persistent topic list that's visible before any search runs — deliberately *not* By Topic's
-  new card grid, since redesigning By Keyword's own presentation was out of scope for this
-  pass.
+- **`/practice/by-keyword`** — a real search over `mcqs.keywords` now (see "Question
+  keyword tagging" below), not just a name/text substring match. Still a plain GET `<form>`
+  (no client JS: the search box just reloads the page with `?q=`).
+  `searchSubTopicIdsByKeyword(grade, query)` (`src/lib/practice.ts`) matches against four
+  things — sub-topic name, module name, published question text, and each published
+  question's own `keywords` tags — so a search like "Photosynthesis" surfaces a sub-topic
+  whose name never mentions the word, as long as one of its questions is tagged with it.
+  Matching is done in JS over one grade-scoped fetch (not SQL `ilike`) since checking each
+  element of a `keywords` array reads more naturally that way, and it keeps all four match
+  conditions in one place. Results are grouped by subject then topic via the same
+  `groupTopicsBySubject()` used by By Topic — a keyword spanning multiple topics (or
+  subjects) surfaces each as its own `<TopicCard>` rather than merging them, reusing the
+  same card component (`src/components/topic-card.tsx`, extracted out of
+  `<TopicCardGrid>` so both a Client Component and this plain Server Component can render
+  it — see "Practice by Topic" above for why it can't import runtime code from
+  `@/lib/dashboard`/`@/lib/practice`).
+  - **Before any search runs**, the page shows a **Top Keywords** section instead of
+    browsing every topic (a deliberate change from the page's earlier default) —
+    `getTopKeywords(grade, limit)` ranks real keyword frequency across this grade's
+    published question bank (JS tally over a grade-scoped fetch, same reasoning as the
+    search itself), grade-scoped so every pill is guaranteed to produce a result when
+    clicked. Each pill is a plain link to `/practice/by-keyword?q=<keyword>`, no client JS.
 
 Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly,
 `groupWeakAreasBySubject`'s per-subject bucketing/averaging/slicing/sort-order and its
 empty-input case, `groupTopicsBySubject`'s per-subject bucketing/order-preservation/subject-
-name sort and its empty-input case, and `searchSubTopicIdsByKeyword` against a real seeded
-sub-topic/module/question set (matches by name, by module name, and by question text; never
-matches a different grade even with an identical keyword; a blank query returns nothing
-rather than everything). `tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId`
-against a two-subject fixture (one resolved via a sub-topic attempt, one via a paper attempt,
-so subject *resolution* is actually exercised, not just grade scoping) and its no-history
-null case.
+name sort and its empty-input case, `searchSubTopicIdsByKeyword` against a real seeded
+sub-topic/module/question set (matches by name, by module name, by question text, and by a
+question's own `keywords` tag even when nothing else mentions it; never matches a different
+grade even with an identical keyword; a blank query returns nothing rather than everything),
+and `getTopKeywords` (frequency ranking, published-only, grade-scoped, respects `limit`).
+`tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId` against a two-subject
+fixture (one resolved via a sub-topic attempt, one via a paper attempt, so subject
+*resolution* is actually exercised, not just grade scoping) and its no-history null case.
+
+### Question keyword tagging
+
+`mcqs.keywords` (`text[]`, `NOT NULL DEFAULT '{}'`) holds 0-3 free-form search tags per
+question (e.g. "Photosynthesis", "Ohm's Law"). Deliberately **not** a separate
+keyword-to-topic mapping table — a keyword's topic association is purely implicit, coming
+from whichever sub-topic(s) its tagged questions happen to belong to, so the same keyword
+can end up spanning multiple topics with no schema change and no "one keyword, one topic"
+constraint anywhere.
+
+- `src/lib/keyword-extraction.ts`'s `extractKeywords()` is a pure, directly-unit-tested
+  function (`tests/keyword-extraction.test.ts`) that derives keywords from a question's own
+  content: (1) the correct-answer text, when it reads as a short noun phrase rather than a
+  full clause or formula (e.g. "Excretion", "Ionic bond" — accepted; "Does not produce a new
+  substance", "Mass × acceleration" — rejected and skipped) — except for a "which of the
+  following is NOT..." question, where the correct answer is deliberately excluded since
+  it's the *odd one out*, not the topic itself; (2) a small curated glossary of Grade
+  10/11 Science exam terms matched against the question text (e.g. "Newton's second law",
+  "catalyst", "hydrostatic pressure"); (3) the question's own sub-topic name, as a broad
+  fallback when there's still room and a sub-topic exists (untagged paper questions have
+  none). Not a generic NLP pipeline — a small heuristic calibrated against this app's actual
+  seeded question bank, but generalizable to future questions using similar vocabulary.
+- `src/db/backfill-keywords.ts` (`npm run db:backfill-keywords`) is the one-off, safely
+  re-runnable script that applies `extractKeywords()` to every row in `mcqs` and updates
+  `keywords` — always recomputes every row from scratch (no "skip if already tagged" check,
+  since there's no admin UI yet to hand-edit keywords a re-run could clobber). Logs a
+  summary (total processed, updated, left with no keywords) plus the id/text/sub-topic of
+  any question `extractKeywords()` couldn't derive anything for, for manual review — e.g.
+  the seeded placeholder "What is 2 + 2?" filler question genuinely has no science content
+  to tag, so it's expected to show up here rather than being forced into a made-up keyword.
+  Run this after `db:seed` (or after adding new questions) to keep `keywords` populated;
+  seeding does not call it automatically.
+- No admin UI to hand-add/edit a question's keywords yet — out of scope for this pass, to
+  be scoped separately once there's an actual admin panel (see "What's NOT built yet").
 
 ## What's NOT built yet
 
@@ -690,9 +734,9 @@ note — the Progress tab is the one place that now surfaces the fuller
 Grade+Subject+confidence view.
 
 Also deferred, from the same GradeBoost-style reference mockup that the Papers/Practice
-sidebar split and the Practice sub-pages were adapted from: a real keyword taxonomy (Practice
-by Keyword currently does a substring search over existing content instead — see "Practice"
-above), a pooled/mixed quiz spanning multiple sub-topics at once ("Practice All Weak Areas"),
+sidebar split and the Practice sub-pages were adapted from: an admin UI to hand-add/edit a
+question's keywords (tagging is currently backfill-script-only — see "Question keyword
+tagging" above), a pooled/mixed quiz spanning multiple sub-topics at once ("Practice All Weak Areas"),
 Incorrect Questions (retry a history of previously-wrong answers), Bookmarked Questions,
 Analytics (score trends over time, avg. time per question), Search Questions (full question
 bank search), Revision Notes, streaks/gamification, an Exam Board field, and notification

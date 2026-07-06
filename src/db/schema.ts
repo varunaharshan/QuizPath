@@ -130,6 +130,15 @@ export const mcqs = pgTable("mcqs", {
   difficulty: mcqDifficultyEnum("difficulty").notNull().default("medium"),
   status: contentStatusEnum("status").notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Free-form search tags (e.g. "Microorganisms", "Ohm's Law"), 0-3 per
+  // question. Deliberately a plain array column on the question itself, not
+  // a separate keyword-to-topic mapping table — a keyword's topic
+  // association is purely implicit (whichever sub-topic(s) its tagged
+  // questions happen to belong to), so the same keyword can end up spanning
+  // multiple topics with no schema change. Backfilled via
+  // src/db/backfill-keywords.ts; see CLAUDE.md "What's NOT built yet" for
+  // why there's no admin UI to hand-edit these yet.
+  keywords: text("keywords").array().notNull().default(sql`'{}'::text[]`),
 });
 
 export const quizAttempts = pgTable(

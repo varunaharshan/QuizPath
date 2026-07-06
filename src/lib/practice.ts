@@ -1,4 +1,4 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, modules, subTopics } from "@/db/schema";
 import type { SubTopicStatus } from "./dashboard";
@@ -95,31 +95,80 @@ export function groupWeakAreasBySubject(topics: SubTopicStatus[], limit = 3): We
 }
 
 // By Keyword searches existing content directly — sub-topic names, module
-// names, and published question text — rather than a dedicated keyword
-// taxonomy, since no keywords table/column exists in the schema. Returns
-// the set of matching sub-topic IDs; callers filter their own
-// already-fetched SubTopicStatus[] down to this set rather than this
-// function returning statuses itself, so there's only one place
-// (getSubTopicStatusesForGrade) that computes mastery.
+// names, published question text, and (since the keywords backfill) each
+// published question's own keywords tags — rather than a dedicated keyword
+// taxonomy table, since no keyword-to-topic mapping exists in the schema by
+// design (see CLAUDE.md "Practice by Keyword": a keyword's topic association
+// is purely implicit, from whichever question(s) happen to carry that tag).
+// Matching is done in JS over one broad, grade-scoped fetch rather than SQL
+// ilike, since a tag search needs to check each element of the keywords
+// array anyway — this keeps all four match conditions (name/module
+// name/question text/keyword tag) in one readable place instead of splitting
+// the keyword-array check into a separate raw-SQL fragment. Returns the set
+// of matching sub-topic IDs; callers filter their own already-fetched
+// SubTopicStatus[] down to this set rather than this function returning
+// statuses itself, so there's only one place (getSubTopicStatusesForGrade)
+// that computes mastery.
 export async function searchSubTopicIdsByKeyword(
   grade: "10" | "11",
   query: string,
 ): Promise<Set<string>> {
-  const trimmed = query.trim();
+  const trimmed = query.trim().toLowerCase();
   if (!trimmed) return new Set();
-  const pattern = `%${trimmed}%`;
 
   const rows = await db
-    .selectDistinct({ id: subTopics.id })
+    .select({
+      id: subTopics.id,
+      subTopicName: subTopics.name,
+      moduleName: modules.name,
+      questionText: mcqs.questionText,
+      keywords: mcqs.keywords,
+    })
     .from(subTopics)
     .innerJoin(modules, eq(modules.id, subTopics.moduleId))
     .leftJoin(mcqs, and(eq(mcqs.subTopicId, subTopics.id), eq(mcqs.status, "published")))
-    .where(
-      and(
-        eq(modules.grade, grade),
-        or(ilike(subTopics.name, pattern), ilike(modules.name, pattern), ilike(mcqs.questionText, pattern)),
-      ),
-    );
+    .where(eq(modules.grade, grade));
 
-  return new Set(rows.map((r) => r.id));
+  const matches = new Set<string>();
+  for (const row of rows) {
+    const nameMatch =
+      row.subTopicName.toLowerCase().includes(trimmed) || row.moduleName.toLowerCase().includes(trimmed);
+    const textMatch = row.questionText?.toLowerCase().includes(trimmed) ?? false;
+    const keywordMatch = row.keywords?.some((k) => k.toLowerCase().includes(trimmed)) ?? false;
+    if (nameMatch || textMatch || keywordMatch) matches.add(row.id);
+  }
+  return matches;
+}
+
+export type TopKeyword = {
+  keyword: string;
+  count: number;
+};
+
+// Powers By Keyword's default "Top Keywords" section (shown before the
+// student types anything) — real frequency across this grade's published
+// question bank, not placeholder data. Scoped to the grade (unlike a global
+// count) so every pill is guaranteed to produce at least one result when
+// clicked: a keyword only tagged on a different grade's questions would
+// otherwise show up but search to empty. Ties broken alphabetically for a
+// stable, deterministic order.
+export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<TopKeyword[]> {
+  const rows = await db
+    .select({ keywords: mcqs.keywords })
+    .from(mcqs)
+    .innerJoin(subTopics, eq(subTopics.id, mcqs.subTopicId))
+    .innerJoin(modules, eq(modules.id, subTopics.moduleId))
+    .where(and(eq(modules.grade, grade), eq(mcqs.status, "published")));
+
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const keyword of row.keywords) {
+      counts.set(keyword, (counts.get(keyword) ?? 0) + 1);
+    }
+  }
+
+  return [...counts.entries()]
+    .map(([keyword, count]) => ({ keyword, count }))
+    .sort((a, b) => b.count - a.count || a.keyword.localeCompare(b.keyword))
+    .slice(0, limit);
 }

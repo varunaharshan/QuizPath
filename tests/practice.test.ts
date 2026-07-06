@@ -4,7 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
 import type { SubTopicStatus } from "@/lib/dashboard";
-import { groupTopicsBySubject, groupWeakAreasBySubject, searchSubTopicIdsByKeyword, weakAreas } from "@/lib/practice";
+import {
+  getTopKeywords,
+  groupTopicsBySubject,
+  groupWeakAreasBySubject,
+  searchSubTopicIdsByKeyword,
+  weakAreas,
+} from "@/lib/practice";
 
 function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
   return {
@@ -112,8 +118,10 @@ describe("searchSubTopicIdsByKeyword", () => {
   let subTopicByNameId: string;
   let subTopicByModuleId: string;
   let subTopicByQuestionId: string;
+  let subTopicByKeywordId: string;
   let subTopicUnrelatedId: string;
   let otherGradeSubTopicId: string;
+  let keywordTag: string;
 
   beforeAll(async () => {
     const [subject] = await db
@@ -151,9 +159,15 @@ describe("searchSubTopicIdsByKeyword", () => {
       .returning();
     subTopicByQuestionId = byQuestion.id;
 
+    const [byKeyword] = await db
+      .insert(subTopics)
+      .values({ moduleId, name: `Unrelated topic name C ${runId}`, sortOrder: 3 })
+      .returning();
+    subTopicByKeywordId = byKeyword.id;
+
     const [unrelated] = await db
       .insert(subTopics)
-      .values({ moduleId, name: `Cash flow basics ${runId}`, sortOrder: 3 })
+      .values({ moduleId, name: `Cash flow basics ${runId}`, sortOrder: 4 })
       .returning();
     subTopicUnrelatedId = unrelated.id;
 
@@ -162,6 +176,8 @@ describe("searchSubTopicIdsByKeyword", () => {
       .values({ moduleId: otherGradeModule.id, name: `Photosynthesis in Grade 11 ${runId}`, sortOrder: 0 })
       .returning();
     otherGradeSubTopicId = otherGrade.id;
+
+    keywordTag = `Microorganisms ${runId}`;
 
     await db.insert(mcqs).values([
       {
@@ -178,12 +194,19 @@ describe("searchSubTopicIdsByKeyword", () => {
         correctOption: 0,
         status: "published",
       },
+      {
+        subTopicId: subTopicByKeywordId,
+        questionText: `What do decomposers break down? ${runId}`,
+        options: ["A", "B"],
+        correctOption: 0,
+        status: "published",
+        keywords: [keywordTag],
+      },
     ]);
   });
 
   afterAll(async () => {
     await db.delete(subjects).where(eq(subjects.id, subjectId));
-    await pool.end();
   });
 
   it("matches by sub-topic name (case-insensitive)", async () => {
@@ -200,6 +223,12 @@ describe("searchSubTopicIdsByKeyword", () => {
   it("matches by module name even when neither the sub-topic's own name nor its questions mention the keyword", async () => {
     const ids = await searchSubTopicIdsByKeyword("10", "Unit");
     expect(ids.has(subTopicByModuleId)).toBe(true);
+  });
+
+  it("matches by a question's own keywords tag, even when neither the sub-topic name, module name, nor question text mention it", async () => {
+    const ids = await searchSubTopicIdsByKeyword("10", keywordTag);
+    expect(ids.has(subTopicByKeywordId)).toBe(true);
+    expect(ids.has(subTopicUnrelatedId)).toBe(false);
   });
 
   it("never matches a different grade's sub-topic, even with the same keyword", async () => {
@@ -219,4 +248,88 @@ describe("searchSubTopicIdsByKeyword", () => {
     const ids = await searchSubTopicIdsByKeyword("10", "nonexistent-keyword-xyz");
     expect(ids.size).toBe(0);
   });
+});
+
+describe("getTopKeywords", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let tagA: string;
+  let tagB: string;
+  let tagC: string;
+  let tagOtherGrade: string;
+
+  beforeAll(async () => {
+    const [subject] = await db
+      .insert(subjects)
+      .values({ name: `Test TopKeywords Subject ${runId}` })
+      .returning();
+    subjectId = subject.id;
+
+    const [testModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Test TopKeywords Module ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [otherGradeModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `Test TopKeywords Other Grade Module ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [subTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: testModule.id, name: `Test TopKeywords Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [otherGradeSubTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: otherGradeModule.id, name: `Test TopKeywords Other Grade Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+
+    tagA = `TagA ${runId}`;
+    tagB = `TagB ${runId}`;
+    tagC = `TagC ${runId}`;
+    tagOtherGrade = `TagOtherGrade ${runId}`;
+
+    await db.insert(mcqs).values([
+      // tagA appears on 2 published questions, tagB on 1 -> tagA should rank first.
+      { subTopicId: subTopic.id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagA] },
+      { subTopicId: subTopic.id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagA, tagB] },
+      // A draft question's keywords must not count toward the frequency.
+      { subTopicId: subTopic.id, questionText: "Q3", options: ["A", "B"], correctOption: 0, status: "draft", keywords: [tagC] },
+      // A different grade's keyword must never leak into this grade's top list.
+      { subTopicId: otherGradeSubTopic.id, questionText: "Q4", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagOtherGrade] },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+  });
+
+  it("ranks by frequency, counting only published questions for the requested grade", async () => {
+    const top = await getTopKeywords("10", 10);
+    const byTag = new Map(top.map((k) => [k.keyword, k.count]));
+
+    expect(byTag.get(tagA)).toBe(2);
+    expect(byTag.get(tagB)).toBe(1);
+    expect(byTag.has(tagC)).toBe(false); // draft, excluded
+    expect(byTag.has(tagOtherGrade)).toBe(false); // different grade, excluded
+
+    const indexA = top.findIndex((k) => k.keyword === tagA);
+    const indexB = top.findIndex((k) => k.keyword === tagB);
+    expect(indexA).toBeLessThan(indexB);
+  });
+
+  it("respects the limit parameter", async () => {
+    const top = await getTopKeywords("10", 1);
+    expect(top).toHaveLength(1);
+    expect(top[0].keyword).toBe(tagA);
+  });
+});
+
+// A single file-level pool.end(), run once after every describe above has
+// finished, rather than inside any one describe's own afterAll — this file
+// has two describes that hit the database, and closing the pool inside the
+// first one's afterAll would break the second's beforeAll.
+afterAll(async () => {
+  await pool.end();
 });
