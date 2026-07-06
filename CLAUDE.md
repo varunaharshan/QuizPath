@@ -579,12 +579,41 @@ new quiz-serving logic either.
   ones actually attempted — `not_started` topics aren't "weak," just untried, same reasoning
   `rankRecommendedPracticeTopics` already uses on the Dashboard), sorted lowest score first
   (most urgent). `weakAreas()` in `src/lib/practice.ts` is the pure filter+sort, directly
-  unit-tested. The mockup's "Practice All Weak Areas" button (one mixed quiz pooling
-  questions across several sub-topics at once) is deliberately **not** built — every quiz
-  attempt today is scoped to exactly one sub-topic or one paper
+  unit-tested and unchanged by the redesign below. The mockup's "Practice All Weak Areas"
+  button (one mixed quiz pooling questions across several sub-topics at once) is deliberately
+  **not** built — every quiz attempt today is scoped to exactly one sub-topic or one paper
   (`quiz_attempts_exactly_one_target`), and a cross-sub-topic pooled attempt would be a real
   quiz-engine change, not a UI addition. Each weak topic still gets its own individual
   Practice button.
+  - The page presents `weakAreas()`'s output as a **grid of subject tiles**, not one flat
+    list, matching a GradeBoost-style reference screenshot. `SubTopicStatus`
+    (`src/lib/dashboard.ts`) gained `subjectId`/`subjectName` fields — every module has a
+    non-nullable `subject_id`, so `getSubTopicStatusesForGrade` now also selects `with:
+    { subject: true }` on its `modules` query, resolving these for free; this is additive
+    (existing fields/behavior unchanged), so every other caller of `SubTopicStatus`
+    (Progress, By Topic, By Keyword, the Dashboard) is unaffected. `groupWeakAreasBySubject()`
+    (`src/lib/practice.ts`) is a new pure function, directly unit-tested, that buckets
+    `weakAreas()`'s already-filtered/sorted list by `subjectId`: each group's `accuracy` is
+    the average score across *every* needs_work topic in that subject (not just the ones
+    shown), `topics` is sliced to the top 3 lowest-scoring (already sorted ascending by
+    `weakAreas()`), and `totalCount` preserves the true count for "View All." Groups are
+    sorted weakest-subject-first. A subject with zero needs_work topics simply never
+    produces a group, so the grid never renders an empty placeholder tile — this is also
+    why only Science shows today (the only subject with real weak-area data) and the
+    component needs no per-subject hardcoding for Business Studies/Geography/etc. to appear
+    once they have data.
+  - `<WeakAreaSubjectTile>` (`src/components/weak-area-subject-tile.tsx`) renders one tile:
+    a header (`iconForSubject(subjectName)` — a new cosmetic per-subject emoji lookup in
+    `src/lib/dashboard.ts`, mirroring the existing per-module `iconForModule` since
+    `subjects` has no icon column — + subject name + rounded accuracy %) with a "View All"
+    link, then each preview topic's name / "score% accuracy · N questions" / a Practice
+    button linking to `/quiz/[subTopicId]`, styled after the Dashboard's existing
+    "Recommended practice" card rows rather than a new visual pattern.
+  - "View All" navigates to `/practice/weak-areas?subjectId=`, the same page reading its own
+    query string (the Papers/Progress filter-form pattern, not a new route) — when present,
+    the page renders every (not just top-3) weak sub-topic for that one subject via the
+    existing `<TopicPracticeList>`, with a "← All subjects" link back to the tiled view. The
+    page header/subtitle and the sidebar are unchanged in both modes.
 - **`/practice/by-topic`** — every sub-topic for the grade (not just weak ones), same list
   presentation. No subject tabs, unlike the mockup — Science is the only subject today (see
   "Single-tenant MVP"), so a tab bar with one permanently-selected tab would be pure
@@ -600,10 +629,12 @@ new quiz-serving logic either.
   browses every topic for the grade (same list as By Topic) rather than showing nothing,
   matching the mockup's persistent topic list that's visible before any search runs.
 
-Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly, and
-`searchSubTopicIdsByKeyword` against a real seeded sub-topic/module/question set (matches by
-name, by module name, and by question text; never matches a different grade even with an
-identical keyword; a blank query returns nothing rather than everything).
+Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly,
+`groupWeakAreasBySubject`'s per-subject bucketing/averaging/slicing/sort-order and its
+empty-input case, and `searchSubTopicIdsByKeyword` against a real seeded
+sub-topic/module/question set (matches by name, by module name, and by question text; never
+matches a different grade even with an identical keyword; a blank query returns nothing
+rather than everything).
 
 ## What's NOT built yet
 

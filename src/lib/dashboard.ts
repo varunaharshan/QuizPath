@@ -17,6 +17,12 @@ export type SubTopicStatus = {
   id: string;
   name: string;
   moduleName: string;
+  // Every module belongs to exactly one subject (modules.subject_id is
+  // NOT NULL), so these are always populated — added for Weak Areas'
+  // subject-grouped tiles (src/lib/practice.ts groupWeakAreasBySubject),
+  // which need a subject identity per row that moduleName alone can't give.
+  subjectId: string;
+  subjectName: string;
   score: number | null;
   label: SubTopicStatusLabel;
   questionsAnswered: number;
@@ -38,7 +44,7 @@ export async function getSubTopicStatusesForGrade(
   const gradeModules = await db.query.modules.findMany({
     where: subjectId ? and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)) : eq(modules.grade, grade),
     orderBy: modules.sortOrder,
-    with: { subTopics: { orderBy: subTopics.sortOrder } },
+    with: { subTopics: { orderBy: subTopics.sortOrder }, subject: true },
   });
 
   const scores = await db
@@ -57,6 +63,8 @@ export async function getSubTopicStatusesForGrade(
         id: subTopic.id,
         name: subTopic.name,
         moduleName: gradeModule.name,
+        subjectId: gradeModule.subject.id,
+        subjectName: gradeModule.subject.name,
         score: mastery?.score ?? null,
         label: mastery ? masteryLabelForScore(mastery.score) : "not_started",
         questionsAnswered: mastery?.questionsAnswered ?? 0,
@@ -426,5 +434,21 @@ export function iconForModule(moduleName: string): string {
   if (lower.includes("electric")) return "⚡";
   if (lower.includes("thermo")) return "🔥";
   if (lower.includes("measurement") || lower.includes("physical world")) return "📏";
+  return "📘";
+}
+
+// Same idea as iconForModule but keyed on subject name, for the Weak Areas
+// subject tiles' header icon (subjects table has no icon column). Only
+// Science is seeded today; the other branches are here so Business
+// Studies/Geography/etc. tiles get a sensible icon the moment they exist,
+// with no code change needed at that point.
+export function iconForSubject(subjectName: string): string {
+  const lower = subjectName.toLowerCase();
+  if (lower.includes("science")) return "🧪";
+  if (lower.includes("business")) return "💼";
+  if (lower.includes("geography")) return "🌍";
+  if (lower.includes("math")) return "📐";
+  if (lower.includes("history")) return "📜";
+  if (lower.includes("english") || lower.includes("language")) return "🗣️";
   return "📘";
 }

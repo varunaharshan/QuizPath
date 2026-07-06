@@ -4,13 +4,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
 import type { SubTopicStatus } from "@/lib/dashboard";
-import { searchSubTopicIdsByKeyword, weakAreas } from "@/lib/practice";
+import { groupWeakAreasBySubject, searchSubTopicIdsByKeyword, weakAreas } from "@/lib/practice";
 
 function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
   return {
     id: randomUUID(),
     name: "Topic",
     moduleName: "Module",
+    subjectId: "subject-1",
+    subjectName: "Science",
     score: null,
     label: "not_started",
     questionsAnswered: 0,
@@ -40,6 +42,38 @@ describe("weakAreas", () => {
 
   it("returns an empty list when nothing needs work", () => {
     expect(weakAreas([status({ label: "mastered", score: 90 })])).toEqual([]);
+  });
+});
+
+describe("groupWeakAreasBySubject", () => {
+  it("buckets weak topics by subject, each accuracy-averaged and sorted weakest-subject-first", () => {
+    const scienceWeak1 = status({ name: "S1", label: "needs_work", score: 20, subjectId: "sci", subjectName: "Science" });
+    const scienceWeak2 = status({ name: "S2", label: "needs_work", score: 40, subjectId: "sci", subjectName: "Science" });
+    const businessWeak = status({ name: "B1", label: "needs_work", score: 55, subjectId: "biz", subjectName: "Business Studies" });
+
+    const groups = groupWeakAreasBySubject([scienceWeak1, scienceWeak2, businessWeak]);
+
+    expect(groups.map((g) => g.subjectName)).toEqual(["Science", "Business Studies"]);
+    expect(groups[0].accuracy).toBe(30);
+    expect(groups[0].totalCount).toBe(2);
+    expect(groups[1].accuracy).toBe(55);
+  });
+
+  it("slices each subject's topics to the given limit but keeps the true totalCount", () => {
+    const topics = [10, 20, 30, 40].map((score) =>
+      status({ name: `T${score}`, label: "needs_work", score, subjectId: "sci", subjectName: "Science" }),
+    );
+
+    const groups = groupWeakAreasBySubject(topics, 2);
+
+    expect(groups[0].topics).toHaveLength(2);
+    expect(groups[0].topics.map((t) => t.name)).toEqual(["T10", "T20"]);
+    expect(groups[0].totalCount).toBe(4);
+  });
+
+  it("never produces a tile for a subject with no weak topics", () => {
+    const groups = groupWeakAreasBySubject([]);
+    expect(groups).toEqual([]);
   });
 });
 
