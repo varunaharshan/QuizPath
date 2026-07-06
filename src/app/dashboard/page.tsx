@@ -65,17 +65,25 @@ export default async function DashboardPage() {
     }),
   );
 
+  // Topic Performance is a "top performers" preview (not the full syllabus
+  // list By Topic already owns) — the 3 highest-scoring attempted topics
+  // per subject, descending. Not-started topics have no score to rank by,
+  // so they're excluded here rather than padding the preview out to 3.
   const topicTabs: SubjectTopicTab[] = topicGroups.map((group) => ({
     subjectId: group.subjectId,
     subjectName: group.subjectName,
-    topics: group.topics.map((topic) => ({
-      id: topic.id,
-      name: topic.name,
-      moduleName: topic.moduleName,
-      icon: iconForModule(topic.moduleName),
-      score: topic.score,
-      questionsAnswered: topic.questionsAnswered,
-    })),
+    topics: group.topics
+      .filter((t) => t.score !== null)
+      .sort((a, b) => b.score! - a.score!)
+      .slice(0, 3)
+      .map((topic) => ({
+        id: topic.id,
+        name: topic.name,
+        moduleName: topic.moduleName,
+        icon: iconForModule(topic.moduleName),
+        score: topic.score,
+        questionsAnswered: topic.questionsAnswered,
+      })),
   }));
   const defaultTopicSubjectId =
     topicTabs.find((t) => t.subjectId === mostRecentSubjectId)?.subjectId ?? topicTabs[0]?.subjectId ?? null;
@@ -171,23 +179,73 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-[14px] border border-app-border bg-white p-4.5">
-          <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Topic Performance</h3>
-          {defaultTopicSubjectId ? (
-            <DashboardTopicTable groups={topicTabs} defaultSubjectId={defaultTopicSubjectId} />
-          ) : (
-            <p className="m-0 text-sm text-ink-secondary">No topics are available yet for this grade.</p>
-          )}
-          <div className="mt-3 text-center">
-            <Link href="/practice/by-topic" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
-              View all topics →
-            </Link>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="flex flex-col gap-4">
+          <div className="rounded-[14px] border border-app-border bg-white p-4.5">
+            <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Topic Performance</h3>
+            {defaultTopicSubjectId ? (
+              <DashboardTopicTable groups={topicTabs} defaultSubjectId={defaultTopicSubjectId} />
+            ) : (
+              <p className="m-0 text-sm text-ink-secondary">No topics are available yet for this grade.</p>
+            )}
+            <div className="mt-3 text-center">
+              <Link href="/practice/by-topic" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+                View all topics →
+              </Link>
+            </div>
+          </div>
+
+          <div className="rounded-[14px] border border-app-border bg-white p-4.5">
+            <div className="mb-3.5 flex items-center justify-between">
+              <h3 className="m-0 text-[15.5px] font-bold text-ink">Your Weak Areas</h3>
+              <Link href="/practice/weak-areas" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+                View all
+              </Link>
+            </div>
+            {weakGroups.length === 0 ? (
+              <p className="m-0 text-sm text-ink-secondary">No weak areas right now — nice work!</p>
+            ) : (
+              weakGroups.map((group) => (
+                <div key={group.subjectId} className="flex items-center gap-3 border-b border-app-border py-2.5 last:border-b-0">
+                  <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-dash-purple-bg text-[15px]">
+                    {iconForSubject(group.subjectName)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="m-0 text-[13.5px] font-semibold text-ink">{group.subjectName}</p>
+                    <p className="m-0 text-[11.5px] text-ink-secondary">
+                      {group.totalCount} weak topic{group.totalCount === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                      group.accuracy < 40 ? "bg-dash-red-bg text-dash-red" : "bg-dash-amber-bg text-dash-amber"
+                    }`}
+                  >
+                    {Math.round(group.accuracy)}%
+                  </span>
+                </div>
+              ))
+            )}
+            <div className="mt-3.5 flex gap-2.5 rounded-xl bg-dash-amber-bg p-3.5 text-[12.5px]">
+              💡{" "}
+              <span>
+                Focus on these topics to improve your scores!
+                <br />
+                <Link href="/practice/weak-areas" className="font-semibold text-dash-amber hover:underline">
+                  Practice Weak Areas
+                </Link>
+              </span>
+            </div>
           </div>
         </div>
 
         <div className="rounded-[14px] border border-app-border bg-white p-4.5">
-          <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Recent Test Activity</h3>
+          <div className="mb-3.5 flex items-center justify-between">
+            <h3 className="m-0 text-[15.5px] font-bold text-ink">Recent Test Activity</h3>
+            <Link href="/papers" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+              View all
+            </Link>
+          </div>
           {completedQuizzes.length === 0 ? (
             <p className="m-0 text-sm text-ink-secondary">You haven&apos;t completed any quizzes yet.</p>
           ) : (
@@ -226,43 +284,10 @@ export default async function DashboardPage() {
               </tbody>
             </table>
           )}
-        </div>
-
-        <div className="rounded-[14px] border border-app-border bg-white p-4.5">
-          <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Your Weak Areas</h3>
-          {weakGroups.length === 0 ? (
-            <p className="m-0 text-sm text-ink-secondary">No weak areas right now — nice work!</p>
-          ) : (
-            weakGroups.map((group) => (
-              <div key={group.subjectId} className="flex items-center gap-3 border-b border-app-border py-2.5 last:border-b-0">
-                <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-dash-purple-bg text-[15px]">
-                  {iconForSubject(group.subjectName)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="m-0 text-[13.5px] font-semibold text-ink">{group.subjectName}</p>
-                  <p className="m-0 text-[11.5px] text-ink-secondary">
-                    {group.totalCount} weak topic{group.totalCount === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                    group.accuracy < 40 ? "bg-dash-red-bg text-dash-red" : "bg-dash-amber-bg text-dash-amber"
-                  }`}
-                >
-                  {Math.round(group.accuracy)}%
-                </span>
-              </div>
-            ))
-          )}
-          <div className="mt-3.5 flex gap-2.5 rounded-xl bg-dash-amber-bg p-3.5 text-[12.5px]">
-            💡{" "}
-            <span>
-              Focus on these topics to improve your scores!
-              <br />
-              <Link href="/practice/weak-areas" className="font-semibold text-dash-amber hover:underline">
-                Practice Weak Areas
-              </Link>
-            </span>
+          <div className="mt-3 text-center">
+            <Link href="/papers" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+              Go to Past Papers →
+            </Link>
           </div>
         </div>
       </div>

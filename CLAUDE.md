@@ -422,6 +422,14 @@ layout at all), not carried forward or renamed.
   topic within that subject's own topic list (a plain `reduce`, not a new tested function —
   trivial enough not to warrant extracting); falls back to "Not started yet" when no topic in
   that subject has been attempted.
+- **Layout below the chart is 2 columns, not 3** (revised after an initial pass shipped a
+  3-column row matching the mockup literally — the user then asked for Weak Areas to sit
+  directly under Topic Performance instead of beside Recent Test Activity, which needed a
+  real layout change, not just a card reorder): a left column stacking **Topic Performance**
+  above **Your Weak Areas**, and a right column with **Recent Test Activity** alone (taller,
+  matching the combined height of the two stacked left cards). `lg:items-start` on the
+  grid keeps the right column's height from being stretched to match the (taller) left
+  column by default grid stretching.
 - **Topic Performance** — subject-tab switcher + accuracy table, reusing the exact tab-state
   mechanic `<TopicCardGrid>` established for Practice by Topic (pure client state, no
   navigation; `groupTopicsBySubject(getSubTopicStatusesForGrade(studentId, grade))` — every
@@ -430,20 +438,24 @@ layout at all), not carried forward or renamed.
   than reusing `<TopicCardGrid>` directly, since the visual shape (table vs. card grid) and
   active-tab color (`dash-blue` here vs. `navy-900` on Practice by Topic) both genuinely
   differ — only the tab-switching mechanic and the `SubjectTopicTab` data shape are shared.
-  Shows up to 5 topics per tab in syllabus order, with "View all topics →" to `/practice/by-topic`
-  for the complete list.
+  Shows the **top 3 highest-scoring attempted topics per subject** (not syllabus order, and
+  not a fixed 5) — a "where am I doing well" preview complementing Weak Areas' "where am I
+  struggling" one below it; topics with no score yet are excluded from the ranking rather
+  than padding the preview out. "View all topics →" links to `/practice/by-topic` for the
+  complete, syllabus-ordered list.
 - **Recent Test Activity** — `getCompletedQuizzes(studentId, { grade, limit: 5 })`, unchanged
   except `CompletedQuiz` gained a `durationMinutes` field (`completedAt − startedAt`, in
   minutes) for the mockup's "Time" column. This is wall-clock elapsed time, **not** active
   study time — save-and-resume means a student can start an attempt, walk away, and finish it
   days later, and that whole gap counts here. Shown anyway (real data beats no data), with
-  this caveat documented rather than hidden.
+  this caveat documented rather than hidden. Both a header "View all" link and a footer
+  "Go to Past Papers →" link point at `/papers` — there's no dedicated full-history view yet,
+  so both intentionally land on the same destination rather than one being a dead end.
 - **Your Weak Areas** — one row per subject via the existing `groupWeakAreasBySubject(weakAreas(statuses))`
   (unmodified), showing `totalCount` as "N weak topics" and `accuracy` as a badge (red below
   40%, amber 40-59% — the same 40% tier `rankRecommendedPracticeTopics` used to use, before it
-  was removed as dead code by this pass; see below). "View all" isn't a link here since the
-  mockup's own weak-areas card doesn't have one at the card-head level — the tip box at the
-  bottom links to `/practice/weak-areas` instead, matching the mockup exactly.
+  was removed as dead code by this pass; see below). A header "View all" link and the tip
+  box's "Practice Weak Areas" link both go to `/practice/weak-areas`.
 - **`getContinueAttempt` and `rankRecommendedPracticeTopics` were deleted** (along with their
   tests) rather than left unused — both were exclusively called by the two dropped sections
   above and had no other callers.
