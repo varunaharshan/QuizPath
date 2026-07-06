@@ -5,10 +5,12 @@ import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
 import type { SubTopicStatus } from "@/lib/dashboard";
 import {
+  getKeywordSuggestions,
   getTopKeywords,
   groupTopicsBySubject,
   groupWeakAreasBySubject,
   searchSubTopicIdsByKeyword,
+  searchSubTopicIdsByKeywords,
   weakAreas,
 } from "@/lib/practice";
 
@@ -24,6 +26,10 @@ function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
     questionsAnswered: 0,
     ...overrides,
   };
+}
+
+function normalize(text: string): string {
+  return text.trim().toLowerCase();
 }
 
 describe("weakAreas", () => {
@@ -248,6 +254,18 @@ describe("searchSubTopicIdsByKeyword", () => {
     const ids = await searchSubTopicIdsByKeyword("10", "nonexistent-keyword-xyz");
     expect(ids.size).toBe(0);
   });
+
+  it("searchSubTopicIdsByKeywords ORs matches across every provided term", async () => {
+    const ids = await searchSubTopicIdsByKeywords("10", ["gas", keywordTag]);
+    expect(ids.has(subTopicByQuestionId)).toBe(true); // matched by "gas" alone
+    expect(ids.has(subTopicByKeywordId)).toBe(true); // matched by keywordTag alone
+    expect(ids.has(subTopicUnrelatedId)).toBe(false); // matches neither term
+  });
+
+  it("searchSubTopicIdsByKeywords returns an empty set for an empty list of terms", async () => {
+    const ids = await searchSubTopicIdsByKeywords("10", []);
+    expect(ids.size).toBe(0);
+  });
 });
 
 describe("getTopKeywords", () => {
@@ -326,10 +344,91 @@ describe("getTopKeywords", () => {
   });
 });
 
+describe("getKeywordSuggestions", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let uniqueTag: string;
+  let dupUpper: string;
+  let dupLower: string;
+  let draftOnlyTag: string;
+  let otherGradeTag: string;
+
+  beforeAll(async () => {
+    const [subject] = await db
+      .insert(subjects)
+      .values({ name: `Test KeywordSuggestions Subject ${runId}` })
+      .returning();
+    subjectId = subject.id;
+
+    const [testModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Test KeywordSuggestions Module ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [otherGradeModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `Test KeywordSuggestions Other Grade Module ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [subTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: testModule.id, name: `Test KeywordSuggestions Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [otherGradeSubTopic] = await db
+      .insert(subTopics)
+      .values({
+        moduleId: otherGradeModule.id,
+        name: `Test KeywordSuggestions Other Grade Sub-topic ${runId}`,
+        sortOrder: 0,
+      })
+      .returning();
+
+    uniqueTag = `UniqueTag ${runId}`;
+    dupUpper = `Frequency ${runId}`;
+    dupLower = `frequency ${runId}`;
+    draftOnlyTag = `DraftOnlyTag ${runId}`;
+    otherGradeTag = `OtherGradeTag ${runId}`;
+
+    await db.insert(mcqs).values([
+      { subTopicId: subTopic.id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published", keywords: [uniqueTag] },
+      // dupUpper (2 questions) outnumbers dupLower (1 question) -> dupUpper should win as the merged display form.
+      { subTopicId: subTopic.id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupUpper] },
+      { subTopicId: subTopic.id, questionText: "Q3", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupUpper] },
+      { subTopicId: subTopic.id, questionText: "Q4", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupLower] },
+      { subTopicId: subTopic.id, questionText: "Q5", options: ["A", "B"], correctOption: 0, status: "draft", keywords: [draftOnlyTag] },
+      { subTopicId: otherGradeSubTopic.id, questionText: "Q6", options: ["A", "B"], correctOption: 0, status: "published", keywords: [otherGradeTag] },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+  });
+
+  it("merges near-duplicate casings into a single suggestion, keeping the most frequent casing", async () => {
+    const suggestions = await getKeywordSuggestions("10");
+    const matches = suggestions.filter((s) => normalize(s) === normalize(dupUpper));
+    expect(matches).toEqual([dupUpper]); // exactly one entry, in the more-frequent casing
+  });
+
+  it("excludes draft-only keywords and a different grade's keywords", async () => {
+    const suggestions = await getKeywordSuggestions("10");
+    expect(suggestions).not.toContain(draftOnlyTag);
+    expect(suggestions).not.toContain(otherGradeTag);
+    expect(suggestions).toContain(uniqueTag);
+  });
+
+  it("sorts alphabetically", async () => {
+    const suggestions = await getKeywordSuggestions("10");
+    const sorted = [...suggestions].sort((a, b) => a.localeCompare(b));
+    expect(suggestions).toEqual(sorted);
+  });
+});
+
 // A single file-level pool.end(), run once after every describe above has
 // finished, rather than inside any one describe's own afterAll — this file
-// has two describes that hit the database, and closing the pool inside the
-// first one's afterAll would break the second's beforeAll.
+// has several describes that hit the database, and closing the pool inside
+// any one of their own afterAlls would break a later describe's beforeAll.
 afterAll(async () => {
   await pool.end();
 });

@@ -140,19 +140,32 @@ export async function searchSubTopicIdsByKeyword(
   return matches;
 }
 
+// Multi-tag version of searchSubTopicIdsByKeyword — ORs the matches across
+// every provided term (the keyword-tag autocomplete's already-committed
+// chips, plus whatever's still typed but not yet committed) rather than
+// requiring one combined string. A topic needs only one of the terms to
+// match, mirroring a typical multi-select filter rather than requiring
+// every term to be satisfied at once. Reuses the existing single-term
+// function as-is rather than duplicating its matching logic.
+export async function searchSubTopicIdsByKeywords(grade: "10" | "11", queries: string[]): Promise<Set<string>> {
+  const results = await Promise.all(queries.map((query) => searchSubTopicIdsByKeyword(grade, query)));
+  const union = new Set<string>();
+  for (const result of results) {
+    for (const id of result) union.add(id);
+  }
+  return union;
+}
+
 export type TopKeyword = {
   keyword: string;
   count: number;
 };
 
-// Powers By Keyword's default "Top Keywords" section (shown before the
-// student types anything) — real frequency across this grade's published
-// question bank, not placeholder data. Scoped to the grade (unlike a global
-// count) so every pill is guaranteed to produce at least one result when
-// clicked: a keyword only tagged on a different grade's questions would
-// otherwise show up but search to empty. Ties broken alphabetically for a
-// stable, deterministic order.
-export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<TopKeyword[]> {
+// Shared by getTopKeywords and getKeywordSuggestions below — both need the
+// same raw per-keyword frequency count for a grade, just presented
+// differently (top-N by popularity vs. a full, near-duplicate-merged list
+// for autocomplete).
+async function tallyKeywordsForGrade(grade: "10" | "11"): Promise<Map<string, number>> {
   const rows = await db
     .select({ keywords: mcqs.keywords })
     .from(mcqs)
@@ -166,9 +179,49 @@ export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<To
       counts.set(keyword, (counts.get(keyword) ?? 0) + 1);
     }
   }
+  return counts;
+}
 
+// Powers By Keyword's default "Top Keywords" section (shown before the
+// student types anything) — real frequency across this grade's published
+// question bank, not placeholder data. Scoped to the grade (unlike a global
+// count) so every pill is guaranteed to produce at least one result when
+// clicked: a keyword only tagged on a different grade's questions would
+// otherwise show up but search to empty. Ties broken alphabetically for a
+// stable, deterministic order.
+export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<TopKeyword[]> {
+  const counts = await tallyKeywordsForGrade(grade);
   return [...counts.entries()]
     .map(([keyword, count]) => ({ keyword, count }))
     .sort((a, b) => b.count - a.count || a.keyword.localeCompare(b.keyword))
     .slice(0, limit);
+}
+
+// Backs the keyword-tag autocomplete input (src/components/keyword-tag-input.tsx)
+// — the full distinct-keyword list for a grade, small enough (low hundreds
+// today) to load client-side once rather than hitting a search endpoint per
+// keystroke. Near-duplicate casings (e.g. "Frequency" / "frequency") are
+// merged into a single suggestion — summed count, and the most-frequent
+// casing wins as the display form — so the dropdown doesn't silently list
+// them as unrelated entries. This is a presentation-layer fix only: the
+// underlying mcqs.keywords rows still carry whatever casing was written,
+// which stays a known data-quality issue worth a cleanup pass later (see
+// CLAUDE.md "Question keyword tagging"). Sorted alphabetically rather than
+// by frequency (unlike getTopKeywords) so near-duplicate spellings that
+// aren't exact case-insensitive matches (e.g. a plural variant) still land
+// next to each other for a human scanning the list, without attempting
+// risky stemming/pluralization logic.
+export async function getKeywordSuggestions(grade: "10" | "11"): Promise<string[]> {
+  const counts = await tallyKeywordsForGrade(grade);
+
+  const byNormalized = new Map<string, { display: string; displayCount: number }>();
+  for (const [keyword, count] of counts) {
+    const normalized = keyword.trim().toLowerCase();
+    const existing = byNormalized.get(normalized);
+    if (!existing || count > existing.displayCount) {
+      byNormalized.set(normalized, { display: keyword, displayCount: count });
+    }
+  }
+
+  return [...byNormalized.values()].map(({ display }) => display).sort((a, b) => a.localeCompare(b));
 }

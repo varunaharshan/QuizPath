@@ -654,16 +654,17 @@ new quiz-serving logic either.
     `groupTopicsBySubject`'s output, so a subject with zero sub-topics for this grade simply
     produces no tab) needs no per-subject hardcoding for Business Studies/Geography to appear
     once they have sub-topic data.
-- **`/practice/by-keyword`** — a real search over `mcqs.keywords` now (see "Question
-  keyword tagging" below), not just a name/text substring match. Still a plain GET `<form>`
-  (no client JS: the search box just reloads the page with `?q=`).
-  `searchSubTopicIdsByKeyword(grade, query)` (`src/lib/practice.ts`) matches against four
-  things — sub-topic name, module name, published question text, and each published
-  question's own `keywords` tags — so a search like "Photosynthesis" surfaces a sub-topic
-  whose name never mentions the word, as long as one of its questions is tagged with it.
-  Matching is done in JS over one grade-scoped fetch (not SQL `ilike`) since checking each
-  element of a `keywords` array reads more naturally that way, and it keeps all four match
-  conditions in one place. Results are grouped by subject then topic via the same
+- **`/practice/by-keyword`** — a real, multi-tag search over `mcqs.keywords` now (see
+  "Question keyword tagging" below), not just a single name/text substring match.
+  `searchSubTopicIdsByKeyword(grade, query)` (`src/lib/practice.ts`) matches one term
+  against four things — sub-topic name, module name, published question text, and each
+  published question's own `keywords` tags — so a search like "Photosynthesis" surfaces a
+  sub-topic whose name never mentions the word, as long as one of its questions is tagged
+  with it. `searchSubTopicIdsByKeywords(grade, queries)` ORs that same matching across every
+  tag the student has added (a topic needs only one of the selected tags, not all of them —
+  a faceted-filter feel, not a strict AND). Matching is done in JS over one grade-scoped
+  fetch (not SQL `ilike`) since checking each element of a `keywords` array reads more
+  naturally that way. Results are grouped by subject then topic via the same
   `groupTopicsBySubject()` used by By Topic — a keyword spanning multiple topics (or
   subjects) surfaces each as its own `<TopicCard>` rather than merging them, reusing the
   same card component (`src/components/topic-card.tsx`, extracted out of
@@ -673,9 +674,47 @@ new quiz-serving logic either.
   - **Before any search runs**, the page shows a **Top Keywords** section instead of
     browsing every topic (a deliberate change from the page's earlier default) —
     `getTopKeywords(grade, limit)` ranks real keyword frequency across this grade's
-    published question bank (JS tally over a grade-scoped fetch, same reasoning as the
-    search itself), grade-scoped so every pill is guaranteed to produce a result when
-    clicked. Each pill is a plain link to `/practice/by-keyword?q=<keyword>`, no client JS.
+    published question bank, grade-scoped so every pill is guaranteed to produce a result
+    when clicked. Each pill is a plain link to `/practice/by-keyword?tags=<keyword>`.
+  - The search box is `<KeywordTagInput>` (`src/components/keyword-tag-input.tsx`) — a
+    multi-tag combobox with client-side autocomplete, the one piece of client JS on this
+    page (a deliberate departure from its previous "no client JS needed" search box, since
+    genuine type-ahead interactivity needs it). Typing filters the *full* list of this
+    grade's distinct keywords, fetched once from `GET /api/keywords?grade=` and cached
+    client-side for 5 minutes (`src/app/api/keywords/route.ts`, backed by
+    `getKeywordSuggestions(grade)` in `src/lib/practice.ts`) — a full-list client-side load
+    rather than a per-keystroke search endpoint, since the distinct-keyword count is small
+    (116 in the seeded dev DB; "low hundreds to a few thousand" was the agreed threshold for
+    this approach over a server-side trigram/full-text search). Picking a suggestion (click,
+    or Enter when one is keyboard-highlighted) adds it as a chip and clears the input for the
+    next entry; typing a term that isn't in the list still works as a free-text search term
+    if the student presses Enter or clicks Search directly (a hidden input mirrors the live,
+    uncommitted input value alongside each chip's own hidden input, so it rides along in the
+    submitted `?tags=` query string with zero extra `onSubmit` wiring) — multiple selected
+    tags combine via OR, per `searchSubTopicIdsByKeywords` above. Full ARIA combobox
+    semantics (`role="combobox"`, `aria-expanded`, `aria-controls`, `aria-activedescendant`,
+    a `role="listbox"`/`role="option"` dropdown) back arrow-key navigation, Enter-to-select,
+    and Escape-to-close-without-selecting, not just mouse interaction.
+  - `getKeywordSuggestions(grade)` merges near-duplicate *casings* of the same keyword (e.g.
+    "Frequency" / "frequency") into one suggestion — summed count, most-frequent casing
+    wins as the display form — purely as a presentation-layer fix for the autocomplete
+    dropdown; the underlying `mcqs.keywords` rows still carry whatever casing was written.
+    This is a known data-quality gap worth a real cleanup pass later (e.g. once an admin UI
+    exists to review/merge tags), not something this backfill/UI pass fixes at the source.
+    Non-casing near-duplicates (e.g. a plural like "Frequencies") aren't merged — attempting
+    that heuristically (stemming/pluralization) risks false positives (e.g. "Species",
+    "Physics") for too little benefit, so `getKeywordSuggestions` just sorts alphabetically
+    (unlike `getTopKeywords`'s frequency-first order) so near-spellings land next to each
+    other for a human scanning the list, without pretending to solve the problem outright.
+  - The suggestion list's matching/ranking/highlighting logic
+    (`src/lib/keyword-tag-input-logic.ts`: `filterSuggestions`, `splitHighlightMatch`,
+    `addTag`, `dedupeTags`, `normalizeKeyword`) is pulled out of the component and directly
+    unit-tested (`tests/keyword-tag-input-logic.test.ts`), the same "no component-rendering
+    harness, so pure logic gets extracted and tested instead" pattern `quiz-ui.ts` already
+    established for `<QuizForm>`. `filterSuggestions` ranks prefix matches ahead of
+    mid-string matches (e.g. typing "micro" surfaces "Microorganisms" before a hypothetical
+    "Endophotosynthesis-like" mid-string hit) — a standard autocomplete convention layered on
+    top of the spec's plain substring-match requirement, not a replacement for it.
 
 Integration coverage: `tests/practice.test.ts` — `weakAreas`'s filtering/sorting directly,
 `groupWeakAreasBySubject`'s per-subject bucketing/averaging/slicing/sort-order and its
@@ -684,7 +723,11 @@ name sort and its empty-input case, `searchSubTopicIdsByKeyword` against a real 
 sub-topic/module/question set (matches by name, by module name, by question text, and by a
 question's own `keywords` tag even when nothing else mentions it; never matches a different
 grade even with an identical keyword; a blank query returns nothing rather than everything),
-and `getTopKeywords` (frequency ranking, published-only, grade-scoped, respects `limit`).
+`searchSubTopicIdsByKeywords`'s OR-across-terms behavior and its empty-list case,
+`getTopKeywords` (frequency ranking, published-only, grade-scoped, respects `limit`), and
+`getKeywordSuggestions` (near-duplicate-casing merge keeping the more-frequent form,
+published-only, grade-scoped, alphabetical order). `tests/keyword-tag-input-logic.test.ts`
+covers the autocomplete's pure matching/ranking/highlight-splitting/dedup logic directly.
 `tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId` against a two-subject
 fixture (one resolved via a sub-topic attempt, one via a paper attempt, so subject
 *resolution* is actually exercised, not just grade scoping) and its no-history null case.
