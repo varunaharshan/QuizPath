@@ -63,6 +63,24 @@
   --color-quiz-purple-text: #4a3fae;
   --color-quiz-border: #e2ded2;
   --color-quiz-option-border: #dedad0;
+
+  /* Dashboard content-area palette — matches docs' GradeBoost-style
+     reference mockup's exact :root variables 1:1 (like the quiz-taking
+     palette above), used only within the Dashboard page's restyled main
+     content (stat cards, subject chart, topic table, weak areas card).
+     The AppShell topbar/sidebar/context bar and every other page keep the
+     app-shell palette above untouched — this is a third, deliberately
+     distinct palette for one specific screen, not a replacement. */
+  --color-dash-blue: #2b5cff;
+  --color-dash-blue-bg: #e9edff;
+  --color-dash-green: #1fb579;
+  --color-dash-green-bg: #e5f8ef;
+  --color-dash-purple: #7c5cfc;
+  --color-dash-purple-bg: #efeaff;
+  --color-dash-amber: #f5a524;
+  --color-dash-amber-bg: #fef2df;
+  --color-dash-red: #f0483e;
+  --color-dash-red-bg: #fde9e7;
 }
 
 @media (prefers-color-scheme: dark) {

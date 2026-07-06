@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   masteryScores,
@@ -7,6 +7,7 @@ import {
   papers,
   quizAttemptAnswers,
   quizAttempts,
+  subjects,
   subTopics,
 } from "@/db/schema";
 import { masteryLabelForScore, type MasteryLabel } from "./quiz";
@@ -74,101 +75,6 @@ export async function getSubTopicStatusesForGrade(
   return statuses;
 }
 
-export type ContinueAttempt = {
-  type: "paper" | "topic_practice";
-  // The paper's id (for a paper attempt) or the sub-topic's id (for a
-  // topic-practice attempt) — whichever the Resume button should link to.
-  id: string;
-  name: string;
-  source: string;
-  totalQuestions: number;
-  questionsDone: number;
-};
-
-// The student's most recently *started but not yet completed* attempt for
-// their own grade — genuinely resumable. Written generally over both paper
-// and sub-topic attempts rather than hardcoding "paper only" — since both
-// flows now have real start/resume semantics (ensurePaperAttemptStarted /
-// ensureSubTopicAttemptStarted in src/lib/quiz.ts), either can be the
-// in-progress row this returns.
-//
-// `questionsDone` is a real live count from quiz_attempt_answers (each
-// answer is saved incrementally as the student picks it — see "Save and
-// resume" in CLAUDE.md), not a placeholder — matching the mockup's "24 of 40
-// questions done" progress bar rather than the earlier always-0 deviation
-// from it.
-export async function getContinueAttempt(
-  studentId: string,
-  grade: "10" | "11",
-): Promise<ContinueAttempt | null> {
-  const [incomplete] = await db
-    .select({
-      id: quizAttempts.id,
-      subTopicId: quizAttempts.subTopicId,
-      paperId: quizAttempts.paperId,
-    })
-    .from(quizAttempts)
-    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
-    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
-    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
-    .where(
-      and(
-        eq(quizAttempts.studentId, studentId),
-        isNull(quizAttempts.completedAt),
-        or(eq(modules.grade, grade), eq(papers.grade, grade)),
-      ),
-    )
-    .orderBy(desc(quizAttempts.startedAt))
-    .limit(1);
-  if (!incomplete) return null;
-
-  const savedAnswers = await db
-    .select({ id: quizAttemptAnswers.id })
-    .from(quizAttemptAnswers)
-    .where(eq(quizAttemptAnswers.quizAttemptId, incomplete.id));
-  const questionsDone = savedAnswers.length;
-
-  if (incomplete.paperId) {
-    const paper = await db.query.papers.findFirst({ where: eq(papers.id, incomplete.paperId) });
-    if (!paper) return null;
-
-    const questions = await db
-      .select({ id: mcqs.id })
-      .from(mcqs)
-      .where(and(eq(mcqs.paperId, paper.id), eq(mcqs.status, "published")));
-
-    return {
-      type: "paper",
-      id: paper.id,
-      name: paper.title,
-      source: paper.source ?? `${paper.paperType.charAt(0).toUpperCase()}${paper.paperType.slice(1)} paper`,
-      totalQuestions: questions.length,
-      questionsDone,
-    };
-  }
-
-  if (incomplete.subTopicId) {
-    const subTopic = await db.query.subTopics.findFirst({ where: eq(subTopics.id, incomplete.subTopicId) });
-    if (!subTopic) return null;
-
-    const questions = await db
-      .select({ id: mcqs.id })
-      .from(mcqs)
-      .where(and(eq(mcqs.subTopicId, subTopic.id), eq(mcqs.status, "published")));
-
-    return {
-      type: "topic_practice",
-      id: subTopic.id,
-      name: subTopic.name,
-      source: "Practice quiz",
-      totalQuestions: questions.length,
-      questionsDone,
-    };
-  }
-
-  return null;
-}
-
 export type CompletedQuiz = {
   attemptId: string;
   title: string;
@@ -180,6 +86,13 @@ export type CompletedQuiz = {
   completedAt: Date;
   correctCount: number;
   total: number;
+  // Wall-clock time between starting and completing the attempt, in
+  // minutes — NOT a measure of active study time. Save-and-resume lets a
+  // student start an attempt, close the tab, and finish it days later;
+  // that gap counts here too, since quiz_attempts has no separate "time
+  // actively engaged" tracking. Shown as a best-effort "Time" column on the
+  // Dashboard's Recent Test Activity table with that caveat in mind.
+  durationMinutes: number;
 };
 
 // Every completed attempt, sub-topic or paper — resolves whichever title
@@ -200,6 +113,7 @@ export async function getCompletedQuizzes(
       id: quizAttempts.id,
       subTopicId: quizAttempts.subTopicId,
       paperId: quizAttempts.paperId,
+      startedAt: quizAttempts.startedAt,
       completedAt: quizAttempts.completedAt,
     })
     .from(quizAttempts)
@@ -259,6 +173,7 @@ export async function getCompletedQuizzes(
       completedAt: attempt.completedAt!,
       correctCount: counts.correct,
       total: counts.total,
+      durationMinutes: Math.max(0, Math.round((attempt.completedAt!.getTime() - attempt.startedAt.getTime()) / 60000)),
     };
   });
 }
@@ -425,35 +340,180 @@ export async function getProgressStats(
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
 }
 
-// Ranks topics for the Dashboard's "Recommended practice" card: topics
-// closest to crossing the 60% "needs work" threshold from below (40-59%)
-// come first, since they're closest to being fixed; topics further below
-// that (<40%) fall back to lowest-score-first (most urgent); topics with
-// zero questions answered rank last — there's no evidence yet that they
-// specifically need remedial practice, just that they haven't been tried.
-// Already-`in_progress`/`mastered` topics are excluded entirely (they're not
-// in need of recommended work). A pure function over already-fetched
-// `ProgressStats.topics`, independent of any particular grade/subject query,
-// so it's directly testable without a database.
-export function rankRecommendedPracticeTopics(topics: TopicProgress[], limit = 2): TopicProgress[] {
-  const candidates = topics.filter((t) => t.label === "needs_work" || t.label === "not_started");
+export type OverallStats = {
+  quizzesCompleted: number;
+  totalQuestionsAnswered: number;
+  totalCorrectAnswers: number;
+  averageScore: number | null;
+};
 
-  const tierOf = (t: TopicProgress): 0 | 1 | 2 => {
-    if (t.score === null) return 2; // not started -> last
-    if (t.score >= 40) return 0; // 40-59% -> closest to crossing 60%, first
-    return 1; // <40% -> lowest-score-first fallback tier
-  };
+// Account-wide (every subject, not just one) cumulative stats for the
+// Dashboard's restyled stat row — sits above a per-subject breakdown rather
+// than being scoped to one subject itself, unlike getProgressStats (which
+// is deliberately grade+subject scoped, for the Progress tab, and is left
+// untouched here). Mirrors getProgressStats's own aggregation approach
+// (cumulative correct/total across every completed attempt for the grade)
+// just without a subject filter.
+export async function getOverallStats(studentId: string, grade: "10" | "11"): Promise<OverallStats> {
+  const attempts = await db
+    .select({ id: quizAttempts.id })
+    .from(quizAttempts)
+    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
+    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        or(eq(modules.grade, grade), eq(papers.grade, grade)),
+      ),
+    );
 
-  const ranked = [...candidates].sort((a, b) => {
-    const tierA = tierOf(a);
-    const tierB = tierOf(b);
-    if (tierA !== tierB) return tierA - tierB;
-    if (tierA === 0) return (b.score ?? 0) - (a.score ?? 0); // 40-59%: descending, closest-to-60 first
-    if (tierA === 1) return (a.score ?? 0) - (b.score ?? 0); // <40%: ascending, most urgent first
-    return 0; // not started: stable order among themselves
-  });
+  const quizzesCompleted = attempts.length;
+  let totalQuestionsAnswered = 0;
+  let totalCorrectAnswers = 0;
 
-  return ranked.slice(0, limit);
+  if (quizzesCompleted > 0) {
+    const attemptIds = attempts.map((a) => a.id);
+    const allAnswers = await db
+      .select({ isCorrect: quizAttemptAnswers.isCorrect })
+      .from(quizAttemptAnswers)
+      .where(inArray(quizAttemptAnswers.quizAttemptId, attemptIds));
+    totalQuestionsAnswered = allAnswers.length;
+    totalCorrectAnswers = allAnswers.filter((a) => a.isCorrect).length;
+  }
+
+  const averageScore =
+    totalQuestionsAnswered === 0 ? null : Math.round((totalCorrectAnswers / totalQuestionsAnswered) * 10000) / 100;
+
+  return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore };
+}
+
+function startOfWeekUTC(date: Date): Date {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = start.getUTCDay(); // 0=Sun..6=Sat
+  const daysSinceMonday = (day + 6) % 7;
+  start.setUTCDate(start.getUTCDate() - daysSinceMonday);
+  return start;
+}
+
+function addDaysUTC(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
+const TREND_WEEKS = 7;
+
+export type SubjectAccuracyPoint = {
+  weekStart: Date;
+  // Cumulative-to-date accuracy as of the end of this week — null when the
+  // student has no completed attempts in this subject yet at all (never 0%,
+  // matching this app's usual "no data yet" vs "scored zero" distinction).
+  accuracy: number | null;
+};
+
+export type SubjectAccuracyTrend = {
+  subjectId: string;
+  subjectName: string;
+  points: SubjectAccuracyPoint[];
+};
+
+// Real historical accuracy trend per subject for the Dashboard's "Subject
+// Performance" chart — the raw data (quiz_attempts.completedAt +
+// quiz_attempt_answers) already exists, but no prior aggregation bucketed
+// it over time (every other stat in this app is a single cumulative
+// total-to-date, not a series), so this is new: weekly (Monday-start UTC)
+// buckets over the last TREND_WEEKS weeks, one series per subject that has
+// at least one completed attempt in this grade. Each point is CUMULATIVE
+// accuracy up to the end of that week (a running "how has my overall
+// accuracy evolved" line), not that week's accuracy in isolation — a
+// single quiet or unlucky week can't make the trend swing wildly, which
+// matters given a student may only have a handful of attempts total.
+// Subjects are resolved via two separate queries (sub-topic attempts via
+// their module, paper attempts via the paper itself) and merged in JS,
+// mirroring getCompletedQuizzes's existing approach — simpler than a
+// single query needing the subjects table joined in twice.
+export async function getSubjectAccuracyTrends(studentId: string, grade: "10" | "11"): Promise<SubjectAccuracyTrend[]> {
+  const subTopicAttempts = await db
+    .select({
+      id: quizAttempts.id,
+      completedAt: quizAttempts.completedAt,
+      subjectId: modules.subjectId,
+      subjectName: subjects.name,
+    })
+    .from(quizAttempts)
+    .innerJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
+    .innerJoin(modules, eq(modules.id, subTopics.moduleId))
+    .innerJoin(subjects, eq(subjects.id, modules.subjectId))
+    .where(
+      and(eq(quizAttempts.studentId, studentId), eq(modules.grade, grade), isNotNull(quizAttempts.completedAt)),
+    );
+
+  const paperAttempts = await db
+    .select({
+      id: quizAttempts.id,
+      completedAt: quizAttempts.completedAt,
+      subjectId: papers.subjectId,
+      subjectName: subjects.name,
+    })
+    .from(quizAttempts)
+    .innerJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .innerJoin(subjects, eq(subjects.id, papers.subjectId))
+    .where(and(eq(quizAttempts.studentId, studentId), eq(papers.grade, grade), isNotNull(quizAttempts.completedAt)));
+
+  const allAttempts = [...subTopicAttempts, ...paperAttempts];
+  if (allAttempts.length === 0) return [];
+
+  const attemptIds = allAttempts.map((a) => a.id);
+  const answers = await db
+    .select({ quizAttemptId: quizAttemptAnswers.quizAttemptId, isCorrect: quizAttemptAnswers.isCorrect })
+    .from(quizAttemptAnswers)
+    .where(inArray(quizAttemptAnswers.quizAttemptId, attemptIds));
+
+  const countsByAttempt = new Map<string, { correct: number; total: number }>();
+  for (const answer of answers) {
+    const counts = countsByAttempt.get(answer.quizAttemptId) ?? { correct: 0, total: 0 };
+    counts.total += 1;
+    if (answer.isCorrect) counts.correct += 1;
+    countsByAttempt.set(answer.quizAttemptId, counts);
+  }
+
+  const bySubject = new Map<
+    string,
+    { subjectName: string; attempts: { completedAt: Date; correct: number; total: number }[] }
+  >();
+  for (const attempt of allAttempts) {
+    if (!attempt.completedAt) continue;
+    const counts = countsByAttempt.get(attempt.id) ?? { correct: 0, total: 0 };
+    const entry = { completedAt: attempt.completedAt, correct: counts.correct, total: counts.total };
+    const group = bySubject.get(attempt.subjectId);
+    if (group) group.attempts.push(entry);
+    else bySubject.set(attempt.subjectId, { subjectName: attempt.subjectName, attempts: [entry] });
+  }
+
+  const thisWeekStart = startOfWeekUTC(new Date());
+  const weekStarts: Date[] = [];
+  for (let i = TREND_WEEKS - 1; i >= 0; i--) {
+    weekStarts.push(addDaysUTC(thisWeekStart, -7 * i));
+  }
+
+  const trends: SubjectAccuracyTrend[] = [];
+  for (const [subjectId, { subjectName, attempts }] of bySubject) {
+    const points: SubjectAccuracyPoint[] = weekStarts.map((weekStart) => {
+      const cutoff = addDaysUTC(weekStart, 7);
+      const upToDate = attempts.filter((a) => a.completedAt < cutoff);
+      const correct = upToDate.reduce((sum, a) => sum + a.correct, 0);
+      const total = upToDate.reduce((sum, a) => sum + a.total, 0);
+      return {
+        weekStart,
+        accuracy: total === 0 ? null : Math.round((correct / total) * 10000) / 100,
+      };
+    });
+    trends.push({ subjectId, subjectName, points });
+  }
+
+  return trends.sort((a, b) => a.subjectName.localeCompare(b.subjectName));
 }
 
 // A rough subject-matter icon per module, purely cosmetic (matches a

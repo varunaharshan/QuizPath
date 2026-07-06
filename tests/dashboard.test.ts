@@ -3,13 +3,12 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, papers, quizAttempts, subjects, subTopics, users } from "@/db/schema";
-import { ensurePaperAttemptStarted, ensureSubTopicAttemptStarted, saveQuizAnswer } from "@/lib/quiz";
+import { ensurePaperAttemptStarted, ensureSubTopicAttemptStarted, finalizeSubTopicAttempt, saveQuizAnswer } from "@/lib/quiz";
 import {
   getCompletedQuizzes,
-  getContinueAttempt,
   getMostRecentlyPracticedSubjectId,
-  rankRecommendedPracticeTopics,
-  type TopicProgress,
+  getOverallStats,
+  getSubjectAccuracyTrends,
 } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
 
@@ -24,11 +23,9 @@ describe("dashboard grade scoping", () => {
   let grade10ModuleId: string;
   let grade11ModuleId: string;
   let grade10SubTopicId: string;
-  let grade10SubTopic2Id: string;
   let grade11SubTopicId: string;
   let grade10McqIds: string[];
   let grade11McqIds: string[];
-  let grade10SubTopic2McqId: string;
   let grade10PaperAId: string;
   let grade10PaperBId: string;
   let otherGradePaperId: string;
@@ -59,12 +56,6 @@ describe("dashboard grade scoping", () => {
       .returning();
     grade10SubTopicId = grade10SubTopic.id;
 
-    const [grade10SubTopic2] = await db
-      .insert(subTopics)
-      .values({ moduleId: grade10ModuleId, name: `Test Dashboard Sub-topic 10b ${runId}`, sortOrder: 1 })
-      .returning();
-    grade10SubTopic2Id = grade10SubTopic2.id;
-
     const [grade11SubTopic] = await db
       .insert(subTopics)
       .values({ moduleId: grade11ModuleId, name: `Test Dashboard Sub-topic 11 ${runId}`, sortOrder: 0 })
@@ -78,12 +69,6 @@ describe("dashboard grade scoping", () => {
       ])
       .returning({ id: mcqs.id });
     grade10McqIds = grade10Inserted.map((m) => m.id);
-
-    const [grade10SubTopic2Mcq] = await db
-      .insert(mcqs)
-      .values({ subTopicId: grade10SubTopic2Id, questionText: "3 + 3 = ?", options: ["5", "6", "7"], correctOption: 1, status: "published" })
-      .returning({ id: mcqs.id });
-    grade10SubTopic2McqId = grade10SubTopic2Mcq.id;
 
     const grade11Inserted = await db
       .insert(mcqs)
@@ -172,42 +157,6 @@ describe("dashboard grade scoping", () => {
     await db.delete(users).where(eq(users.id, studentId));
   });
 
-  it("getContinueAttempt picks the most recently started in-progress paper for the requested grade", async () => {
-    const grade10Continue = await getContinueAttempt(studentId, "10");
-    expect(grade10Continue?.type).toBe("paper");
-    expect(grade10Continue?.id).toBe(grade10PaperBId); // B started after A
-
-    const grade11Continue = await getContinueAttempt(studentId, "11");
-    expect(grade11Continue?.type).toBe("paper");
-    expect(grade11Continue?.id).toBe(otherGradePaperId);
-  });
-
-  it("getContinueAttempt picks up an in-progress topic-practice attempt too, regardless of type, when it's the most recent", async () => {
-    // Sub-topic quizzes now have real start/resume semantics (mirroring
-    // papers), so an in-progress row can be produced through the actual
-    // public API rather than needing a raw insert.
-    const attemptId = await ensureSubTopicAttemptStarted(studentId, grade10SubTopic2Id);
-
-    let grade10Continue = await getContinueAttempt(studentId, "10");
-    expect(grade10Continue?.type).toBe("topic_practice");
-    expect(grade10Continue?.id).toBe(grade10SubTopic2Id);
-    expect(grade10Continue?.source).toBe("Practice quiz");
-    expect(grade10Continue?.questionsDone).toBe(0);
-
-    // Saving an answer incrementally must be reflected live in questionsDone
-    // — this is what lets the Dashboard show real "X of Y done" progress.
-    await saveQuizAnswer({
-      studentId,
-      attemptId,
-      mcqId: grade10SubTopic2McqId,
-      selectedOption: 1,
-    });
-    grade10Continue = await getContinueAttempt(studentId, "10");
-    expect(grade10Continue?.questionsDone).toBe(1);
-
-    await db.delete(quizAttempts).where(eq(quizAttempts.id, attemptId));
-  });
-
   it("getCompletedQuizzes labels each row by attempt type and excludes off-grade/incomplete attempts", async () => {
     const grade10Completed = await getCompletedQuizzes(studentId, { grade: "10" });
     const grade10Entry = grade10Completed.find((q) => q.title === `Test Dashboard Sub-topic 10 ${runId}`);
@@ -228,6 +177,16 @@ describe("dashboard grade scoping", () => {
     const titles = all.map((q) => q.title);
     expect(titles).toContain(`Test Dashboard Sub-topic 10 ${runId}`);
     expect(titles).toContain(`Test Dashboard Sub-topic 11 ${runId}`);
+  });
+
+  it("computes durationMinutes as the elapsed time between starting and completing the attempt", async () => {
+    const all = await getCompletedQuizzes(studentId, { grade: "10" });
+    const entry = all.find((q) => q.title === `Test Dashboard Sub-topic 10 ${runId}`);
+    // Submitted immediately after starting in this test, so the elapsed
+    // wall-clock time is tiny — just confirm it's a non-negative number,
+    // not the exact value (which depends on real test-run timing).
+    expect(entry?.durationMinutes).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(entry?.durationMinutes)).toBe(true);
   });
 });
 
@@ -305,63 +264,168 @@ describe("getMostRecentlyPracticedSubjectId", () => {
   it("returns null when the student has no completed attempts for that grade", async () => {
     expect(await getMostRecentlyPracticedSubjectId(studentId, "11")).toBeNull();
   });
+
+  it("getOverallStats aggregates across every subject for the grade, not just one", async () => {
+    // Both attempts are 1/1 correct (see beforeAll's answers), across two
+    // different subjects — getOverallStats must combine both rather than
+    // reflecting only whichever subject getProgressStats would be scoped to.
+    const stats = await getOverallStats(studentId, "10");
+    expect(stats.quizzesCompleted).toBe(2);
+    expect(stats.totalQuestionsAnswered).toBe(2);
+    expect(stats.totalCorrectAnswers).toBe(2);
+    expect(stats.averageScore).toBe(100);
+  });
+
+  it("getOverallStats returns zeroed stats and a null average for a grade with no completed attempts", async () => {
+    const stats = await getOverallStats(studentId, "11");
+    expect(stats).toEqual({
+      quizzesCompleted: 0,
+      totalQuestionsAnswered: 0,
+      totalCorrectAnswers: 0,
+      averageScore: null,
+    });
+  });
 });
 
-describe("rankRecommendedPracticeTopics", () => {
-  function topic(overrides: Partial<TopicProgress>): TopicProgress {
-    return {
-      id: randomUUID(),
-      name: "Topic",
-      questionsAnswered: 0,
-      correctCount: 0,
-      score: null,
-      label: "not_started",
-      ...overrides,
-    };
-  }
+// getSubjectAccuracyTrends backs the Dashboard's "Subject Performance"
+// chart — real weekly-bucketed cumulative accuracy, not placeholder data.
+// completedAt is backdated via a direct db.update after finalizing each
+// attempt through the real quiz-taking API, since there's no way to submit
+// an attempt "in the past" through the public functions.
+describe("getSubjectAccuracyTrends", () => {
+  const runId = randomUUID().slice(0, 8);
+  const subjectName = `Test Trend Subject ${runId}`;
+  let subjectId: string;
+  let subTopicId: string;
+  let mcq1Id: string;
+  let mcq2Id: string;
+  let otherGradeSubTopicId: string;
+  let otherGradeMcqId: string;
+  let studentId: string;
 
-  it("prioritizes the 40-59% band (closest to crossing 60%) over lower scores and not-started topics", () => {
-    const closeToThreshold = topic({ name: "Close", score: 55, label: "needs_work" });
-    const veryWeak = topic({ name: "VeryWeak", score: 10, label: "needs_work" });
-    const notStarted = topic({ name: "NotStarted", score: null, label: "not_started" });
-    const mastered = topic({ name: "Mastered", score: 95, label: "mastered" });
-    const inProgress = topic({ name: "InProgress", score: 70, label: "in_progress" });
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: subjectName }).returning();
+    subjectId = subject.id;
 
-    const ranked = rankRecommendedPracticeTopics(
-      [notStarted, veryWeak, mastered, inProgress, closeToThreshold],
-      2,
+    const [testModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Test Trend Module ${runId}`, sortOrder: 0 })
+      .returning();
+    const [subTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: testModule.id, name: `Test Trend Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopicId = subTopic.id;
+
+    const [mcq1] = await db
+      .insert(mcqs)
+      .values({ subTopicId, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+    mcq1Id = mcq1.id;
+    const [mcq2] = await db
+      .insert(mcqs)
+      .values({ subTopicId, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+    mcq2Id = mcq2.id;
+
+    const [otherGradeModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `Test Trend Other Grade Module ${runId}`, sortOrder: 0 })
+      .returning();
+    const [otherGradeSubTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: otherGradeModule.id, name: `Test Trend Other Grade Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    otherGradeSubTopicId = otherGradeSubTopic.id;
+    const [otherGradeMcq] = await db
+      .insert(mcqs)
+      .values({
+        subTopicId: otherGradeSubTopicId,
+        questionText: "Q3",
+        options: ["A", "B"],
+        correctOption: 0,
+        status: "published",
+      })
+      .returning({ id: mcqs.id });
+    otherGradeMcqId = otherGradeMcq.id;
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-trend-auth-${runId}`, email: `test-trend-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    // Attempt 1: 1/2 correct, backdated to exactly 3 weeks before the
+    // current ISO week's Monday, so it lands in a known bucket.
+    const attempt1Id = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    await saveQuizAnswer({ studentId, attemptId: attempt1Id, mcqId: mcq1Id, selectedOption: 0 }); // correct
+    await saveQuizAnswer({ studentId, attemptId: attempt1Id, mcqId: mcq2Id, selectedOption: 1 }); // wrong
+    await finalizeSubTopicAttempt({ studentId, attemptId: attempt1Id });
+
+    const now = new Date();
+    const daysSinceMonday = (now.getUTCDay() + 6) % 7;
+    const thisWeekStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday),
     );
+    const backdated = new Date(thisWeekStart);
+    backdated.setUTCDate(backdated.getUTCDate() - 21);
+    await db.update(quizAttempts).set({ completedAt: backdated }).where(eq(quizAttempts.id, attempt1Id));
 
-    // mastered/in_progress excluded entirely; closeToThreshold (40-59%) beats
-    // veryWeak (<40%) beats notStarted (last).
-    expect(ranked.map((t) => t.name)).toEqual(["Close", "VeryWeak"]);
+    // Attempt 2 (a retake): 2/2 correct, completed "now" (this week).
+    const attempt2Id = await ensureSubTopicAttemptStarted(studentId, subTopicId);
+    await saveQuizAnswer({ studentId, attemptId: attempt2Id, mcqId: mcq1Id, selectedOption: 0 });
+    await saveQuizAnswer({ studentId, attemptId: attempt2Id, mcqId: mcq2Id, selectedOption: 0 });
+    await finalizeSubTopicAttempt({ studentId, attemptId: attempt2Id });
+
+    // A grade-11 attempt for the same student/subject — must never leak
+    // into the grade-10 trend's numbers.
+    const otherGradeAttemptId = await ensureSubTopicAttemptStarted(studentId, otherGradeSubTopicId);
+    await saveQuizAnswer({ studentId, attemptId: otherGradeAttemptId, mcqId: otherGradeMcqId, selectedOption: 0 });
+    await finalizeSubTopicAttempt({ studentId, attemptId: otherGradeAttemptId });
   });
 
-  it("within the 40-59% band, ranks closer to 60% first (descending)", () => {
-    const t42 = topic({ name: "42", score: 42, label: "needs_work" });
-    const t58 = topic({ name: "58", score: 58, label: "needs_work" });
-    const t50 = topic({ name: "50", score: 50, label: "needs_work" });
-
-    const ranked = rankRecommendedPracticeTopics([t42, t58, t50], 3);
-    expect(ranked.map((t) => t.name)).toEqual(["58", "50", "42"]);
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+    await db.delete(users).where(eq(users.id, studentId));
   });
 
-  it("below 40%, ranks lowest score first (most urgent)", () => {
-    const t35 = topic({ name: "35", score: 35, label: "needs_work" });
-    const t5 = topic({ name: "5", score: 5, label: "needs_work" });
-    const t20 = topic({ name: "20", score: 20, label: "needs_work" });
+  it("buckets into 7 weekly cumulative-to-date points: null before any data, then updating as attempts land", async () => {
+    const trends = await getSubjectAccuracyTrends(studentId, "10");
+    expect(trends).toHaveLength(1);
+    const trend = trends[0];
+    expect(trend.subjectName).toBe(subjectName);
+    expect(trend.points).toHaveLength(7);
 
-    const ranked = rankRecommendedPracticeTopics([t35, t5, t20], 3);
-    expect(ranked.map((t) => t.name)).toEqual(["5", "20", "35"]);
+    // No data at all before attempt 1's week.
+    expect(trend.points[0].accuracy).toBeNull();
+    expect(trend.points[1].accuracy).toBeNull();
+    expect(trend.points[2].accuracy).toBeNull();
+    // Attempt 1 (1/2 = 50%) lands in week index 3 and carries forward.
+    expect(trend.points[3].accuracy).toBe(50);
+    expect(trend.points[4].accuracy).toBe(50);
+    expect(trend.points[5].accuracy).toBe(50);
+    // This week: attempt 2 lands too -> (1+2)/(2+2) = 75%. If the grade-11
+    // attempt had leaked in, this would be 80% instead.
+    expect(trend.points[6].accuracy).toBe(75);
   });
 
-  it("ranks not-started topics last even when there are fewer than `limit` scored weak topics", () => {
-    const oneWeak = topic({ name: "Weak", score: 45, label: "needs_work" });
-    const notStarted1 = topic({ name: "NotStarted1", score: null, label: "not_started" });
-    const notStarted2 = topic({ name: "NotStarted2", score: null, label: "not_started" });
+  it("scopes strictly by grade — the grade-11 attempt only shows up when querying grade 11", async () => {
+    const grade11Trends = await getSubjectAccuracyTrends(studentId, "11");
+    expect(grade11Trends).toHaveLength(1);
+    expect(grade11Trends[0].subjectName).toBe(subjectName);
+    expect(grade11Trends[0].points.at(-1)?.accuracy).toBe(100);
+  });
 
-    const ranked = rankRecommendedPracticeTopics([notStarted1, notStarted2, oneWeak], 2);
-    expect(ranked.map((t) => t.name)).toEqual(["Weak", "NotStarted1"]);
+  it("returns an empty list for a student with no completed attempts at all", async () => {
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-trend-empty-${runId}`, email: `test-trend-empty-${runId}@example.com` })
+      .returning();
+    try {
+      expect(await getSubjectAccuracyTrends(student.id, "10")).toEqual([]);
+    } finally {
+      await db.delete(users).where(eq(users.id, student.id));
+    }
   });
 });
 

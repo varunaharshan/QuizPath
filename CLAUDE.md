@@ -349,20 +349,19 @@ adapts to OS dark mode; they're both intentionally fixed.
   (non-mastered sub-topic count) stays dropped (from when Papers/Practice first split) —
   `AppShell` still takes no `practiceCount` prop.
 - `src/lib/dashboard.ts` holds the read queries the shell/pages need: `getSubTopicStatusesForGrade`
-  (mastery status per sub-topic — backs the Progress tab and, now, the Practice sub-pages'
-  Weak Areas/By Topic views below), `getContinueAttempt`, `getCompletedQuizzes` (derives real
-  correct/total per attempt from
-  `quiz_attempt_answers` rather than reverse-engineering it from the stored percentage),
-  `getProgressStats`, and `rankRecommendedPracticeTopics`.
-- `getContinueAttempt(studentId, grade)` and `getCompletedQuizzes(studentId, { grade })` are
-  both scoped to a specific grade (via the attempt's sub-topic's module, or the attempt's
-  paper) — the Dashboard passes the student's own `profile.grade`, so an attempt from
-  browsing a *different* grade's papers in Practice never leaks into "Continue where you
-  left off" or "Recent activity," keeping the Dashboard focused on the student's actual
-  curriculum. `grade` on `getCompletedQuizzes` is optional and defaults to unfiltered — every
-  other page only needs `completedQuizzes.length > 0` for the "Active learner" pill, an
-  overall-activity signal that intentionally isn't grade-scoped. Since `quiz_attempts` status
-  resolution (`ensurePaperAttemptStarted`, `getPapersForSubject`) is keyed purely off
+  (mastery status per sub-topic — backs the Progress tab and the Practice sub-pages'
+  Weak Areas/By Topic views), `getCompletedQuizzes` (derives real correct/total per attempt
+  from `quiz_attempt_answers` rather than reverse-engineering it from the stored percentage),
+  `getProgressStats`, `getOverallStats`, and `getSubjectAccuracyTrends` (the latter two back
+  the Dashboard's restyled stat row/chart — see "Dashboard" below).
+- `getCompletedQuizzes(studentId, { grade })` is scoped to a specific grade (via the
+  attempt's sub-topic's module, or the attempt's paper) — the Dashboard passes the student's
+  own `profile.grade`, so an attempt from browsing a *different* grade's papers in Practice
+  never leaks into "Recent Test Activity," keeping the Dashboard focused on the student's
+  actual curriculum. `grade` is optional and defaults to unfiltered — every other page only
+  needs `completedQuizzes.length > 0` for the "Active learner" pill, an overall-activity
+  signal that intentionally isn't grade-scoped. Since `quiz_attempts` status resolution
+  (`ensurePaperAttemptStarted`, `getPapersForSubject`) is keyed purely off
   `paper_id`/`student_id` with no grade check at all, Practice's own Start/Resume/Retake state
   is unaffected by any of this and works identically no matter which grade's papers are being
   browsed — covered by a dedicated test in `tests/paper-flow.test.ts`.
@@ -375,41 +374,86 @@ adapts to OS dark mode; they're both intentionally fixed.
 - Module icons on the practice list are a cosmetic keyword-matched emoji (`iconForModule` in
   `src/lib/dashboard.ts`), purely decorative.
 
-Dashboard was rebuilt to match a second student-provided mockup
-(`docs/dashboard-mockup-reference.html`), reframed as a fast "where do I stand and what's
-next" glance rather than a page that duplicates the full topic table/history Progress now
-owns. Four sections, top to bottom:
-1. **Continue where you left off** — `getContinueAttempt(studentId, grade)` finds the
-   student's most recently *started but not yet completed* attempt, written generally over
-   both paper and sub-topic attempts (a left join + `or(module.grade, paper.grade)`) rather
-   than hardcoded to "paper only" — both flows now have real start/resume semantics (see
-   "Save and resume, partial submission" above), so either can be the in-progress row this
-   returns. `questionsDone` is a real live count of that attempt's saved
-   `quiz_attempt_answers` rows (matching the mockup's "24 of 40 questions done" progress
-   bar), not a placeholder — this only became possible once answers were saved
-   incrementally rather than batched at final submit. A paper's `name` is its title; its
-   `source` line prefers the paper's own `source` column (e.g. "Colombo District") falling
-   back to a capitalized `paper_type` label; a topic-practice attempt's `source` is the
-   literal string "Practice quiz" (there's no historical paper to name).
-2. **Your snapshot** — the exact same 4 KPI cards as the Progress tab (`getProgressStats`,
-   reused as-is), scoped to the student's own `profile.grade` and the one subject
-   (`getPracticeSubjects()[0]`, since Science is the only subject — see "Single-tenant MVP").
-   "View full progress →" links to `/progress?grade=&subjectId=` (see "Progress tab" below)
-   pre-filled to that exact grade+subject.
-3. **Recommended practice** — the top 2 weakest topics via `rankRecommendedPracticeTopics`, a
-   pure function (no DB access, directly unit-tested) over `ProgressStats.topics`: topics in
-   the 40-59% range rank first (closest to crossing the 60% "needs work" threshold, so
-   ranked by score descending — 59% before 40%), then topics below 40% (ascending — most
-   urgent first), then `not_started` topics last (no evidence they specifically need remedial
-   work, just that they haven't been tried) — `mastered`/`in_progress` topics are excluded
-   entirely. "See all topics →" links to the same Progress destination as the snapshot card.
-4. **Recent activity** — the last 3 completed attempts via `getCompletedQuizzes(studentId, {
-   grade, limit: 3 })`, most recent first, covering both papers and topic-practice quizzes.
-   `CompletedQuiz` gained a `type: "paper" | "topic_practice"` field so the page can prefix
-   topic-practice rows with "Practice: " (papers just show their own title) — formatting
-   stays in the page, not baked into the `title` string itself. "View all →" points at the
-   same Progress destination too: there's no dedicated full-history view yet, a known gap
-   rather than a new page built for it this pass.
+### Dashboard
+
+Restyled a second time to match a GradeBoost-style reference mockup
+(`docs/dashboard-restyle-mockup-reference.html`, a full-page HTML/CSS mockup — content area
+only was adapted; the mockup's own sidebar markup was ignored entirely, and AppShell's
+topbar/sidebar/context bar are completely unaffected by this pass). This replaced the
+previous "Continue where you left off" / "Your snapshot" / "Recommended practice" / "Recent
+activity" 4-section layout — the first two of those are dropped outright (Weak Areas below
+now covers similar ground to Recommended practice; there's no resume-nudge card in the new
+layout at all), not carried forward or renamed.
+
+- **A third, deliberately distinct color palette** (`--color-dash-*` in `globals.css`) — blue/
+  green/purple/amber/red plus soft-tint `-bg` variants, copied 1:1 from the mockup's own
+  `:root` variables, the same "new mockup gets its own exact-hex tokens" pattern the
+  quiz-taking screens already established (see "Quiz-taking visual design" above). Used only
+  within this page's restyled content; every other screen keeps the shared app-shell palette
+  (`ink`/`progress`/`mastered`/`warn`/`teal`) untouched. Card radius is `14px` here (matching
+  the mockup), not this app's usual `10px` — another intentional, screen-scoped deviation.
+- **Stat row (4 cards)**: Tests Completed / Average Score / Questions Answered / Correct
+  Answers — real numbers via a new `getOverallStats(studentId, grade)`, deliberately
+  **account-wide** (every subject for the grade), not scoped to one subject like
+  `getProgressStats` — it sits above a per-subject breakdown rather than being one subject's
+  own card. The mockup's 4th card is "Study Time"; there's no reliable source for that
+  (`quiz_attempts.started_at`/`completed_at` would badly overstate it for any attempt that
+  used save-and-resume — e.g. started, closed the tab, resumed 3 days later, and that gap
+  would count as "study time"), so Correct Answers takes that slot instead, reusing a number
+  already computed reliably.
+- **Your Subject Performance chart** — a real historical accuracy trend per subject,
+  `getSubjectAccuracyTrends(studentId, grade)`: no prior aggregation in this app bucketed
+  attempts over time (every other stat is a single cumulative total-to-date), so this is new.
+  Weekly (Monday-start UTC) buckets over the last 7 weeks, one series per subject with at
+  least one completed attempt; each point is **cumulative-to-date accuracy** (not that week's
+  accuracy in isolation), so a single quiet or unlucky week can't swing the line wildly —
+  relevant since a student may only have a handful of attempts total. Subjects are resolved
+  via two separate queries (sub-topic attempts via their module, paper attempts via the paper
+  itself) merged in JS, mirroring `getCompletedQuizzes`'s existing approach rather than
+  joining the `subjects` table in twice. `<SubjectAccuracyChart>` (a plain Server Component,
+  static inline SVG, no client JS) carries the last known cumulative value forward across
+  weeks with no new attempts rather than breaking the line, and omits leading weeks entirely
+  before a subject's first-ever attempt rather than drawing them at 0%.
+- **Subject breakdown mini-list** (beside the chart) — one row per subject that has any
+  sub-topic for this grade (from `groupTopicsBySubject`), each showing that subject's overall
+  average score via `getProgressStats(studentId, grade, subjectId)` called once per subject
+  (parallelized) — reused exactly as the Progress tab uses it, not modified, just called for
+  more than one subject. Each row's "Strongest: X" sub-label is the highest-scoring attempted
+  topic within that subject's own topic list (a plain `reduce`, not a new tested function —
+  trivial enough not to warrant extracting); falls back to "Not started yet" when no topic in
+  that subject has been attempted.
+- **Topic Performance** — subject-tab switcher + accuracy table, reusing the exact tab-state
+  mechanic `<TopicCardGrid>` established for Practice by Topic (pure client state, no
+  navigation; `groupTopicsBySubject(getSubTopicStatusesForGrade(studentId, grade))` — every
+  subject, not just one), defaulting to the most-recently-practiced subject via the existing
+  `getMostRecentlyPracticedSubjectId`. `<DashboardTopicTable>` is its own component rather
+  than reusing `<TopicCardGrid>` directly, since the visual shape (table vs. card grid) and
+  active-tab color (`dash-blue` here vs. `navy-900` on Practice by Topic) both genuinely
+  differ — only the tab-switching mechanic and the `SubjectTopicTab` data shape are shared.
+  Shows up to 5 topics per tab in syllabus order, with "View all topics →" to `/practice/by-topic`
+  for the complete list.
+- **Recent Test Activity** — `getCompletedQuizzes(studentId, { grade, limit: 5 })`, unchanged
+  except `CompletedQuiz` gained a `durationMinutes` field (`completedAt − startedAt`, in
+  minutes) for the mockup's "Time" column. This is wall-clock elapsed time, **not** active
+  study time — save-and-resume means a student can start an attempt, walk away, and finish it
+  days later, and that whole gap counts here. Shown anyway (real data beats no data), with
+  this caveat documented rather than hidden.
+- **Your Weak Areas** — one row per subject via the existing `groupWeakAreasBySubject(weakAreas(statuses))`
+  (unmodified), showing `totalCount` as "N weak topics" and `accuracy` as a badge (red below
+  40%, amber 40-59% — the same 40% tier `rankRecommendedPracticeTopics` used to use, before it
+  was removed as dead code by this pass; see below). "View all" isn't a link here since the
+  mockup's own weak-areas card doesn't have one at the card-head level — the tip box at the
+  bottom links to `/practice/weak-areas` instead, matching the mockup exactly.
+- **`getContinueAttempt` and `rankRecommendedPracticeTopics` were deleted** (along with their
+  tests) rather than left unused — both were exclusively called by the two dropped sections
+  above and had no other callers.
+
+Integration coverage: `tests/dashboard.test.ts` — `getOverallStats`'s account-wide aggregation
+across two different subjects (proving it isn't scoped to just one, unlike `getProgressStats`)
+and its all-zero/null case for an untouched grade; `getSubjectAccuracyTrends`'s weekly
+cumulative bucketing (null before any data, then updating as backdated/current attempts land,
+verified against hand-computed expected percentages per week) and its strict grade scoping in
+both directions; `getCompletedQuizzes`'s new `durationMinutes` field.
 
 ## Medium and papers
 

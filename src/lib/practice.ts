@@ -5,9 +5,8 @@ import type { SubTopicStatus } from "./dashboard";
 
 // Weak Areas lists topics the student has actually attempted and scored
 // below the "needs work" threshold — not_started topics aren't included
-// (no evidence they're specifically weak, just untried; see
-// rankRecommendedPracticeTopics in dashboard.ts for the same reasoning),
-// and mastered/in_progress topics don't need remedial practice. Sorted by
+// (no evidence they're specifically weak, just untried), and
+// mastered/in_progress topics don't need remedial practice. Sorted by
 // score ascending — lowest (most urgent) first.
 export function weakAreas(topics: SubTopicStatus[]): SubTopicStatus[] {
   return topics
