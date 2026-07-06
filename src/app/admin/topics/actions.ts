@@ -77,18 +77,13 @@ export async function deleteModule(formData: FormData) {
 
 // Swaps sort_order with the adjacent sibling within the same subject+grade
 // (modules' own natural grouping) — a no-op at either boundary rather than
-// wrapping around.
-export async function reorderModule(formData: FormData) {
+// wrapping around. moduleId/direction are bound via .bind() on the button's
+// formAction (see admin/topics/page.tsx) rather than read off FormData —
+// a plain name="direction" input on a button whose formAction is itself a
+// function conflicts with Next's auto-generated action-encoding name and
+// triggers a hydration mismatch.
+export async function reorderModule(moduleId: string, direction: "up" | "down") {
   await requireAdminUser();
-
-  const moduleId = formData.get("moduleId");
-  const direction = formData.get("direction");
-  if (typeof moduleId !== "string" || !moduleId) {
-    throw new Error("Invalid topic.");
-  }
-  if (direction !== "up" && direction !== "down") {
-    throw new Error("Invalid direction.");
-  }
 
   const current = await db.query.modules.findFirst({ where: eq(modules.id, moduleId) });
   if (!current) {
@@ -172,17 +167,10 @@ export async function deleteSubTopic(formData: FormData) {
 }
 
 // Swaps sort_order with the adjacent sibling within the same module.
-export async function reorderSubTopic(formData: FormData) {
+// subTopicId/direction are bound via .bind() on the button's formAction —
+// see reorderModule above for why.
+export async function reorderSubTopic(subTopicId: string, direction: "up" | "down") {
   await requireAdminUser();
-
-  const subTopicId = formData.get("subTopicId");
-  const direction = formData.get("direction");
-  if (typeof subTopicId !== "string" || !subTopicId) {
-    throw new Error("Invalid sub-topic.");
-  }
-  if (direction !== "up" && direction !== "down") {
-    throw new Error("Invalid direction.");
-  }
 
   const current = await db.query.subTopics.findFirst({ where: eq(subTopics.id, subTopicId) });
   if (!current) {

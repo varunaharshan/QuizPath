@@ -90,12 +90,9 @@ export default async function AdminTopicsPage({
                 <div key={topic.id} className="overflow-hidden rounded-[10px] border border-app-border bg-white">
                   <div className="flex items-center gap-2.5 border-b border-app-border bg-app-surface-muted px-4.5 py-3">
                     <form className="flex flex-col gap-0.5">
-                      <input type="hidden" name="moduleId" value={topic.id} />
                       <button
                         type="submit"
-                        formAction={reorderModule}
-                        name="direction"
-                        value="up"
+                        formAction={reorderModule.bind(null, topic.id, "up")}
                         disabled={index === 0}
                         title="Move up"
                         className="block text-xs leading-none text-ink-secondary disabled:opacity-30"
@@ -104,9 +101,7 @@ export default async function AdminTopicsPage({
                       </button>
                       <button
                         type="submit"
-                        formAction={reorderModule}
-                        name="direction"
-                        value="down"
+                        formAction={reorderModule.bind(null, topic.id, "down")}
                         disabled={index === topics.length - 1}
                         title="Move down"
                         className="block text-xs leading-none text-ink-secondary disabled:opacity-30"
@@ -162,12 +157,9 @@ export default async function AdminTopicsPage({
                             className="flex items-center gap-2.5 rounded-md border border-app-border p-2.5"
                           >
                             <form className="flex flex-col gap-0.5">
-                              <input type="hidden" name="subTopicId" value={subTopic.id} />
                               <button
                                 type="submit"
-                                formAction={reorderSubTopic}
-                                name="direction"
-                                value="up"
+                                formAction={reorderSubTopic.bind(null, subTopic.id, "up")}
                                 disabled={subIndex === 0}
                                 title="Move up"
                                 className="block text-[10px] leading-none text-ink-secondary disabled:opacity-30"
@@ -176,9 +168,7 @@ export default async function AdminTopicsPage({
                               </button>
                               <button
                                 type="submit"
-                                formAction={reorderSubTopic}
-                                name="direction"
-                                value="down"
+                                formAction={reorderSubTopic.bind(null, subTopic.id, "down")}
                                 disabled={subIndex === topic.subTopics.length - 1}
                                 title="Move down"
                                 className="block text-[10px] leading-none text-ink-secondary disabled:opacity-30"

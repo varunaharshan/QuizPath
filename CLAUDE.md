@@ -884,13 +884,20 @@ an existing subject, per scope.
   `renameSubTopic`), reading `FormData` directly and validating manually — the same shape
   as `onboarding/actions.ts`/`profile/actions.ts`, just with a hidden `id` input instead of
   a signed-in user's own id.
-- **Reordering** is two named submit buttons (`name="direction" value="up"/"down"`) inside
-  one hidden-input form, each with its own `formAction` pointing at `reorderModule` /
-  `reorderSubTopic` — no drag-and-drop library, matching this app's near-zero-client-JS
-  default. Each action re-fetches the item's siblings (scoped to the same subject+grade for
-  modules, the same module for sub-topics), finds the adjacent one in `sort_order`, and
-  swaps the two `sort_order` values in a transaction; a no-op at either boundary rather than
-  wrapping around.
+- **Reordering** is two submit buttons per row, each with its own `formAction` bound via
+  `.bind(null, id, "up"/"down")` (e.g. `reorderModule.bind(null, topic.id, "up")`) — no
+  drag-and-drop library, matching this app's near-zero-client-JS default. `reorderModule`/
+  `reorderSubTopic` take `(id, direction)` as plain positional arguments rather than reading
+  a `FormData` field: an earlier version used a shared hidden-input form plus a manual
+  `name="direction" value="up"/"down"` pair on each button, but pairing a manual `name` with
+  a `formAction` that's itself a function (rather than a URL string) conflicts with Next's
+  own auto-generated action-encoding field of the same shape, which produced a React warning
+  ("Cannot specify a `name` prop for a button that specifies a function as a `formAction`")
+  and a hydration mismatch on load. Binding both arguments directly onto the action instead
+  needs no extra `name`/`value`/hidden-input plumbing at all. Each action re-fetches the
+  item's siblings (scoped to the same subject+grade for modules, the same module for
+  sub-topics), finds the adjacent one in `sort_order`, and swaps the two `sort_order` values
+  in a transaction; a no-op at either boundary rather than wrapping around.
 - **Delete "warns, doesn't block"**: `mcqs.sub_topic_id` and `sub_topics.module_id` are both
   `onDelete: cascade` already (unchanged), so a delete would silently cascade-remove
   questions if nothing intercepted it. `<ConfirmSubmitButton>`
