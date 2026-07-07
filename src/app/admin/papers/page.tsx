@@ -93,6 +93,12 @@ export default async function AdminPapersPage({
                     <td className="px-3.5 py-2.5">
                       <div className="flex justify-end gap-2">
                         <Link
+                          href={`/admin/papers/${paper.id}/questions`}
+                          className="rounded-md border border-app-border bg-white px-3 py-1.5 text-[12.5px] font-semibold hover:bg-app-surface-muted"
+                        >
+                          View Questions
+                        </Link>
+                        <Link
                           href={`/admin/papers/${paper.id}/edit`}
                           className="rounded-md border border-app-border bg-white px-3 py-1.5 text-[12.5px] font-semibold hover:bg-app-surface-muted"
                         >

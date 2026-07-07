@@ -878,10 +878,12 @@ constraint anywhere.
   to tag, so it's expected to show up here rather than being forced into a made-up keyword.
   Run this after `db:seed` (or after adding new questions) to keep `keywords` populated;
   seeding does not call it automatically.
-- No admin UI to hand-add/edit a question's keywords yet — that's now built for the topic
-  hierarchy (see "Admin" below) and, as of Questions Bulk Upload, for setting keywords at
-  *import time* via the CSV's Keywords column. There's still no UI to edit an individual
-  already-existing question's keywords one at a time.
+- No admin UI to hand-add/edit a question's keywords existed at first — that's now built for
+  the topic hierarchy (see "Admin" below), for setting keywords at *import time* via Bulk
+  Upload's CSV Keywords column, and, as of Paper Questions Management, for editing an
+  individual already-existing question's keywords too — but only for a question attached to
+  a paper (see "Paper Questions Management" below for the current gap: no *global*
+  question-bank view for a question with no paper).
 
 ## Admin
 
@@ -1129,6 +1131,87 @@ name matching, multiple simultaneous errors) plus its fully-valid resolved-row s
 `validateBulkRows`' batch behavior. As with Topics/Papers, `bulkImportQuestions` itself isn't
 directly unit-tested (same Clerk-mocking rationale).
 
+`isWellFormedUrl`, `resolveOption`, and `parseCorrectAnswerPosition` are exported from
+`src/lib/bulk-upload.ts` (rather than kept private) specifically so Paper Questions
+Management's own edit action (below) can reuse the exact same option/URL/correct-answer
+validation rules instead of redefining them a second time.
+
+### Paper Questions Management (`/admin/papers/[paperId]/questions`)
+
+This is the "admin question editor" that Bulk Upload's own docs (and CLAUDE.md's own
+"What's NOT built yet") previously flagged as missing — before this, editing an
+already-imported question meant re-running Bulk Upload with corrected data, and there was
+no way to see a paper's questions as a set at all. Reached via a new "View Questions" link
+per row on `/admin/papers` (alongside the existing Edit/Delete) — no new sidebar entry, since
+this hangs entirely off a specific paper's own context rather than being a top-level section.
+
+- **Edit is a dedicated page per question**
+  (`/admin/papers/[paperId]/questions/[mcqId]/edit`), not inline-in-table editing — the same
+  "several fields at once" reasoning that already put Papers' own edit on a dedicated page
+  rather than Topics' single-field inline rename. A question here has a cascading
+  Topic→Sub-topic dropdown pair plus per-option image fields; a table row genuinely couldn't
+  fit that without becoming unusable, especially on a paper with many questions.
+- **The edit form covers the full field set**, not just Topic/Sub-topic/images: question
+  text, Question Image URL, all four options (each with its own text field *and* Image URL
+  field, exactly mirroring Bulk Upload's CSV columns — an Image URL takes priority over the
+  text field when both are populated, via the same `resolveOption()` bulk-upload already
+  established), Correct Answer (a strict `1`-`4` position select, reusing
+  `parseCorrectAnswerPosition()`), Difficulty, and Keywords (comma-separated, same
+  split/trim/drop-empty rule as Bulk Upload). This was a deliberate scope decision beyond the
+  original ask (which only named Topic/Sub-topic/images) — once the edit page exists for
+  those, exposing the rest of the fields too is marginal extra work and avoids a
+  "re-run the whole Bulk Upload just to fix a typo" gap.
+- **mcqs has no standalone "Topic" column** — only `sub_topic_id`, which points at a
+  sub-topic that itself belongs to a module (topic). So "reassigning a question's Topic" is
+  purely a client-side UI convenience: the Topic `<select>` (`src/components/
+  question-edit-form.tsx`, a `"use client"` component) only narrows which Sub-topics are
+  selectable in the second `<select>`, which is the only one of the pair with a real `name`
+  attribute — changing Topic resets the selected Sub-topic to the first one under the new
+  Topic, since the old choice may no longer be valid. `updateQuestion` (`src/app/admin/
+  papers/[paperId]/questions/actions.ts`) only ever writes `subTopicId`; there's nothing
+  called "topic" in the mutation at all.
+- **The Topic dropdown is scoped to the paper's own grade+subject**
+  (`getTopicsForSubjectGrade(paper.subjectId, paper.grade)`, reused as-is from Topics
+  management), matching how Bulk Upload already resolves Topic/Sub-topic — this prevents a
+  question ending up tagged under a mismatched grade or subject's topic. If no topics exist
+  yet for that grade+subject, the edit page shows a message pointing at `/admin/topics`
+  instead of rendering a broken empty dropdown.
+- **Image fields are URL-paste only this pass** — no file upload to Supabase Storage.
+  This app has zero Supabase Storage integration today (no SDK, no env vars, no bucket), and
+  building real upload would mean a new dependency, new env vars, and a bucket the admin
+  would need to create in their own Supabase dashboard — not something that could be
+  verified end-to-end in this environment without real credentials. Deferred as clearly
+  flagged follow-up work; pasting an existing image URL already works today via the same
+  `{type, content}` shape.
+- **Verification tracking reuses the existing `mcqs.verification_status` column** from Bulk
+  Upload — no new schema needed. Rather than folding it into the bigger edit form, it's a
+  single inline toggle button per row on the list page (`setVerificationStatus`, bound via
+  `.bind(null, mcqId, "verified"/"unverified", paperId)` on the button's `formAction` — the
+  same pattern Topics' reorder buttons already established, to avoid pairing a manual `name`
+  attribute with a function `formAction`), since flipping one boolean flag doesn't need a
+  whole page.
+- **Delete is the same "warn, don't block" `<ConfirmSubmitButton>` pattern** as
+  Topics/Papers — `mcqs` is a leaf table here (nothing cascades further from deleting one
+  question).
+- **The list table shows a condensed view, not all four options** — question text, the
+  *correct* option only (rendered via `<QuestionOptionPreview>`, a small shared Server
+  Component that renders a `[Image]` link for image-type options or plain text otherwise —
+  also reused on the edit page's... no, only the list page uses it today; the edit form
+  shows raw URL/text inputs instead, since those need to be editable, not just previewed),
+  Topic, Sub-topic, Difficulty, Keywords, and the verification pill — showing all four full
+  options per row would make the table too wide to be "scannable." The full option set is
+  only visible/editable on the dedicated edit page.
+
+Integration coverage: `tests/admin-questions.test.ts` — `getPaperForQuestionsAdmin`'s
+paper+subject-name lookup and not-found `null` case; `getQuestionsForPaper`'s strict
+per-paper scoping (a question belonging to a different paper never leaks in) and correct
+null-handling for an untagged (no sub-topic) question; `getQuestionForEdit`'s full detail
+shape and not-found case. As with every other admin Server Action file, `updateQuestion`/
+`deleteQuestion`/`setVerificationStatus` themselves aren't directly unit-tested (same
+Clerk-mocking rationale) — verified instead via a temporary scratch test during development
+(since deleted) that exercised all three against this environment's real dev database,
+including a cross-topic sub-topic reassignment and a mixed text/image options update.
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
@@ -1140,14 +1223,18 @@ note — the Progress tab is the one place that now surfaces the fuller
 Grade+Subject+confidence view.
 
 Also deferred, from the same GradeBoost-style reference mockup that the Papers/Practice
-sidebar split and the Practice sub-pages were adapted from: an admin UI to hand-edit an
-individual *existing* question's keywords one at a time (tagging is now possible at
-bulk-upload import time, or via the backfill script — see "Question keyword tagging" and
-"Questions Bulk Upload" above — but there's no per-question edit form), a pooled/mixed quiz
-spanning multiple sub-topics at once ("Practice All Weak Areas"), Incorrect Questions (retry
-a history of previously-wrong answers), Bookmarked Questions, Analytics (score trends over
-time, avg. time per question), a question-bank browse/search view (Bulk Upload can add
-questions but there's no admin page to list/search/edit ones already in the bank — an
-admin-side question review workflow, e.g. flipping `verification_status` to `verified`, has
-no UI yet either), Revision Notes, streaks/gamification, an Exam Board field, `.xlsx` support
-for Bulk Upload, and notification toggles — none of these have any schema or UI today.
+sidebar split and the Practice sub-pages were adapted from: a pooled/mixed quiz spanning
+multiple sub-topics at once ("Practice All Weak Areas"), Incorrect Questions (retry a
+history of previously-wrong answers), Bookmarked Questions, Analytics (score trends over
+time, avg. time per question), Revision Notes, streaks/gamification, an Exam Board field,
+`.xlsx` support for Bulk Upload, real image file upload to Supabase Storage (Paper Questions
+Management's image fields are URL-paste only — see that section above for why), and
+notification toggles — none of these have any schema or UI today.
+
+Per-question editing (text, options, correct answer, difficulty, keywords, topic/sub-topic
+reassignment, images, and flipping `verification_status`) is now possible, but **only in the
+context of a paper** via `/admin/papers/[paperId]/questions` — there's still no *global*
+question-bank browse/search view across all questions regardless of which paper (or no
+paper) they belong to, and no per-question keyword editing outside that same page (keywords
+are one of the fields Paper Questions Management's edit form covers, but a question that
+isn't attached to any paper has no entry point into that page at all).

@@ -185,8 +185,11 @@ function isDifficultyValue(value: string): value is "easy" | "medium" | "hard" {
 // a server round-trip (browsers can't reliably read cross-origin fetch
 // results for arbitrary image hosts) and would turn this into a live
 // outbound request to an admin-supplied URL on every review; deliberately
-// out of scope for this pass.
-function isWellFormedUrl(value: string): boolean {
+// out of scope for this pass. Exported for reuse by the per-question admin
+// edit form's own server-side validation (src/app/admin/papers/[paperId]/
+// questions/actions.ts), so the "is this URL well-formed" rule stays in one
+// place rather than being redefined per call site.
+export function isWellFormedUrl(value: string): boolean {
   try {
     new URL(value);
     return true;
@@ -197,8 +200,10 @@ function isWellFormedUrl(value: string): boolean {
 
 // An option is either an image (if its "Image URL" column is populated) or
 // plain text (the existing Option A-D column) — never both, and never
-// neither. Pulled into a helper since all four options resolve identically.
-function resolveOption(
+// neither. Pulled into a helper since all four options resolve identically,
+// and exported for the same per-question edit form reuse reason as
+// isWellFormedUrl above.
+export function resolveOption(
   label: string,
   text: string,
   imageUrl: string,
@@ -215,6 +220,22 @@ function resolveOption(
     return { error: `${label} is required (text or an ${label} Image URL)` };
   }
   return { option: { type: "text", content: trimmedText } };
+}
+
+// Strict, position-only: "1"-"4" mean Option A-D respectively. Deliberately
+// does not accept letters (A-D) or the option's literal text — many source
+// papers key answers by position, so this is a hard requirement rather than
+// best-effort format-sniffing across several conventions. Exported for the
+// same per-question edit form reuse reason as the two helpers above.
+export function parseCorrectAnswerPosition(value: string): { error?: string; index?: number } {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { error: "Correct answer is required" };
+  }
+  if (!/^[1-4]$/.test(trimmed)) {
+    return { error: `Correct answer must be 1-4 (position), got '${value}'` };
+  }
+  return { index: Number(trimmed) - 1 };
 }
 
 export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData): ValidatedBulkRow {
@@ -244,17 +265,16 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
     errors.push(`Invalid difficulty "${row.difficulty}" (must be easy, medium, or hard)`);
   }
 
-  // Strict, position-only: "1"-"4" mean Option A-D respectively. Deliberately
-  // does not accept letters (A-D) or the option's literal text — many source
-  // papers key answers by position, so this is a hard requirement rather
-  // than best-effort format-sniffing across several conventions.
+  // "Correct answer" itself is already covered by the required-fields loop
+  // above, so an empty value's error there isn't duplicated here.
   const correctAnswerRaw = row.correctAnswer.trim();
   let correctIndex = -1;
   if (correctAnswerRaw) {
-    if (/^[1-4]$/.test(correctAnswerRaw)) {
-      correctIndex = Number(correctAnswerRaw) - 1;
+    const parsed = parseCorrectAnswerPosition(correctAnswerRaw);
+    if (parsed.error) {
+      errors.push(parsed.error);
     } else {
-      errors.push(`Correct answer must be 1-4 (position), got '${row.correctAnswer}'`);
+      correctIndex = parsed.index!;
     }
   }
 
