@@ -819,8 +819,10 @@ constraint anywhere.
   to tag, so it's expected to show up here rather than being forced into a made-up keyword.
   Run this after `db:seed` (or after adding new questions) to keep `keywords` populated;
   seeding does not call it automatically.
-- No admin UI to hand-add/edit a question's keywords yet — that's now built (see "Admin"
-  below), but only for the topic hierarchy, not per-question keyword tags.
+- No admin UI to hand-add/edit a question's keywords yet — that's now built for the topic
+  hierarchy (see "Admin" below) and, as of Questions Bulk Upload, for setting keywords at
+  *import time* via the CSV's Keywords column. There's still no UI to edit an individual
+  already-existing question's keywords one at a time.
 
 ## Admin
 
@@ -920,6 +922,138 @@ of not testing `onboarding`/`profile`'s actions directly either, since they're t
 FormData-validation-plus-a-DB-write wrappers around already-tested query logic, and testing
 them would need mocking Clerk's `currentUser()`, which nothing else in this suite does.
 
+### Papers Management (`/admin/papers`)
+
+CRUD over the existing `papers` table — no schema changes here at all (the one schema
+change this pass needed, `mcqs.verification_status`, belongs to Bulk Upload below).
+
+- **`src/lib/admin-papers.ts`** — `getPapersForAdmin(filters)` (optional `subjectId`/
+  `grade`/`search`, joined to `subjects` for display name, with a live per-paper question
+  count the same "not cached, also backs the delete warning" way `admin-topics.ts` computes
+  its counts) and `getPaperForAdmin(paperId)` for the edit page.
+- **Unlike every other filtered list in this app (Papers browsing, Progress, Practice, even
+  Topics management), all three filters here are optional** — "All Subjects"/"All Grades" are
+  real, default states, not just a fallback for invalid input. An admin managing content wants
+  the full picture first and narrows from there, unlike a student whose browsing is always
+  anchored to one definite subject+grade. `<AdminPapersFilterForm>`
+  (`src/components/admin-papers-filter-form.tsx`) is structurally the same cascading
+  `router.push`-on-change pattern as `<AdminTopicsFilterForm>`, plus a plain text search box
+  (its own small `<form>` inside the same component, submitted on Enter/click rather than
+  live-navigating on every keystroke) that does a case-insensitive substring match against
+  the paper's title via `ilike`.
+- **Create is its own page (`/admin/papers/new`), not an inline row form** — unlike Topics'
+  single-field inline rename, a paper has several fields at once (name, grade, subject, paper
+  type, year), so it gets a dedicated form page the same way the quiz-taking pages get their
+  own routes, with a plain `<form action={createPaper}>` reading `FormData` directly. **Edit
+  is likewise its own page (`/admin/papers/[paperId]/edit`)**, same shape as create,
+  pre-filled, plus an editable Status (Draft/Published) field that Create doesn't have — new
+  papers always start as `draft` (matching `papers.status`'s own schema default and this
+  app's general "content starts unpublished" convention), and publishing is something you do
+  after reviewing it via Edit, not a create-time choice. A real resource lookup by id, so an
+  unknown `paperId` 404s (`notFound()`) rather than falling back to a default the way a free
+  browsing choice (grade/subjectId in the URL) would.
+- **Paper Type only offers the 3 real `paper_type` enum values** (provincial/district/school,
+  via `PAPER_TYPE_LABELS`/`isValidPaperType` reused as-is from `src/lib/papers.ts`) — a
+  reference mockup's dropdown additionally had a fictional "Past Paper (Year)" option, which
+  doesn't correspond to any real enum value and was dropped, the same call already made and
+  documented for the student-facing Papers filter form's own Paper Type dropdown (see "Medium
+  and papers").
+- **Medium isn't a form field at all** — the create/edit forms don't collect it (out of
+  scope), so it's resolved server-side the same way the rest of the app already treats a
+  content subject's medium: `subject.fixedMedium ?? "english"` (`resolveMedium()` in
+  `src/app/admin/papers/actions.ts`), re-resolved on every edit too in case the subject
+  itself changes.
+- **Delete is the same "warn, don't block" `<ConfirmSubmitButton>` pattern as Topics** —
+  cascades to `mcqs` per the existing `mcqs.paper_id` `onDelete: cascade` FK; `deletePaper`
+  itself doesn't re-check the count, the confirmation message (built from the live
+  `questionCount`) is the only gate.
+
+Integration coverage: `tests/admin-papers.test.ts` — `getPapersForAdmin`'s unfiltered
+listing with live counts, and filtering by subject, by grade, by search, and by all three at
+once; `getPaperForAdmin`'s single-paper lookup and its not-found `null` case. As with Topics,
+the Server Actions themselves aren't directly unit-tested (same Clerk-mocking rationale).
+
+### Questions Bulk Upload (`/admin/questions/bulk-upload`)
+
+A CSV-only (no `.xlsx` this pass — flagged as addable later without restructuring) 3-step
+import flow, entirely client-side parse-and-validate with a single all-or-nothing commit at
+the end.
+
+- **New column: `mcqs.verification_status`** (`mcq_verification_status` enum:
+  `unverified | verified`, `NOT NULL DEFAULT 'unverified'`) — deliberately separate from the
+  existing `status` (draft/published): a question can be published-but-unreviewed or
+  draft-but-already-verified, they're independent gates. Every existing row backfills to
+  `unverified` (nobody has been through a review step that doesn't exist yet either),
+  matching the same enum-plus-default backfill pattern as `users.role`/
+  `student_profiles.medium`.
+- **`src/lib/bulk-upload.ts` is the pure, `@/db`-free logic layer** — `parseBulkCsv` (via the
+  new `papaparse` dependency), `validateBulkRow`/`validateBulkRows`, `generateTemplateCsv`,
+  and every related type. Zero import of `@/db` (or anything that transitively imports it)
+  anywhere in this file is deliberate: `<BulkUploadForm>` (a `"use client"` component) imports
+  straight from here so the entire parse-and-validate step runs in the browser and only the
+  final, already-valid resolved rows are ever sent to the server — the same "Client Components
+  can't import server-only-guarded code" constraint already established for
+  `keyword-tag-input-logic.ts`/`topic-card-grid.tsx`.
+- **Template columns**: Question Text, Option A–D, Correct Answer, Subject, **Grade**, Topic,
+  Sub-topic, Difficulty, Keywords, Paper Reference. Grade is a real column (not just implied)
+  — topic/sub-topic names aren't guaranteed unique across Grade 10 vs. 11 (this codebase's own
+  seeded data already has modules that share a name across grades), so resolving a topic
+  without knowing which grade's module to look inside would risk silently matching the wrong
+  one. Header matching in `parseBulkCsv` is case/whitespace-tolerant (and tolerates
+  "sub-topic"/"sub topic"/"subtopic" spelling variants) rather than requiring an exact string
+  match, since a human hand-editing a downloaded template in a spreadsheet app can easily
+  introduce trivial header differences that shouldn't fail the whole file.
+- **Validation** (`validateBulkRow`, per row): every required field present; grade is `10` or
+  `11`; difficulty is `easy`/`medium`/`hard`; the correct answer text matches one of the four
+  options; subject/topic/sub-topic names resolve to a real row (topic scoped to the matched
+  subject **and** the row's own grade; sub-topic scoped to the matched topic) — all
+  name-matching is case-insensitive/trimmed, since this is expected to be run by content staff
+  hand-filling a spreadsheet; an optional paper reference, if given, must match an existing
+  paper's title within the same subject+grade. Keywords are split on commas, trimmed, and
+  empty entries dropped — no minimum/maximum count enforced (the "0-3 typical" convention
+  documented on the `keywords` column is a soft norm, not a hard rule anywhere in the schema,
+  so this doesn't invent one). A row's `resolved` object (the real ids/values ready to insert)
+  is only ever populated when `errors` is empty.
+- **Review & Validate shows every row, not a sample** — a scrollable table inside the page
+  (not paginated), each row's own error list joined into one message (e.g. "Topic 'X' not
+  found; Invalid difficulty..."), the row highlighted if invalid. A summary strip above shows
+  total/valid/error counts.
+- **All-or-nothing, at both the UI gate and the DB transaction**: Confirm Import stays
+  disabled while any row has an error — there is deliberately no "import the N valid rows,
+  skip the rest" path; a file with any errors must be fixed and re-uploaded whole. On
+  confirm, `bulkImportQuestions` (`src/app/admin/questions/bulk-upload/actions.ts`) inserts
+  every resolved row inside one `db.transaction()`, so even a late failure (e.g. a stale
+  reference — the reference data was fetched once at page load) rolls back the entire batch
+  rather than leaving a partial import. Imported rows get `verificationStatus: "unverified"`
+  explicitly and rely on `status`'s own schema default (`"draft"`) rather than setting it —
+  both gates start closed.
+- **`bulkImportQuestions` is called directly from `<BulkUploadForm>`, not through a
+  `<form action>`** — there's no `FormData` shape that naturally fits "an array of rows," so
+  this reuses the same "Client Component calls a bound Server Action directly" shape
+  `<QuizForm>`'s per-answer auto-save already established, just without any bound/closed-over
+  arguments (nothing here is per-render-instance the way an `attemptId` is).
+- **Reference data (`getBulkUploadReferenceData` in `src/lib/admin-questions.ts`) is fetched
+  once server-side and passed down as a prop**, not fetched client-side the way
+  `/api/keywords` is — the whole parse-review-confirm flow happens within one page load with
+  no navigation in between, so there's no need for the fetch-once-cache-client-side-for-reuse
+  shape that endpoint uses; a plain Server Component prop is simpler and needed no new API
+  route at all. The template CSV download is a plain `<a href="data:text/csv,...">` (computed
+  from `generateTemplateCsv()`), not a route handler either, for the same reason.
+- **The dropzone accepts drag-and-drop and click-to-browse**, both funnelling into the same
+  `handleFile()` (reads via `File.text()`, parses, validates, moves to step 2) — the one
+  genuinely interactive piece of client JS this feature needs, matching the same bar that
+  justified `<QuizForm>`/`<KeywordTagInput>` being Client Components.
+
+Integration coverage: `tests/bulk-upload.test.ts` — `generateTemplateCsv`'s exact header
+list; `parseBulkCsv`'s well-formed-row parsing, case/spelling-tolerant header matching, and
+header-only-file empty case; `validateBulkRow` across every error case (missing fields,
+answer/option mismatch, unknown subject, unknown topic, wrong-grade topic vs. same-named
+topic in the other grade, unknown sub-topic, invalid difficulty, invalid grade, missing vs.
+found vs. not-found paper reference, keyword split/trim/dedupe-of-empties, case-insensitive
+name matching, multiple simultaneous errors) plus its fully-valid resolved-row shape;
+`validateBulkRows`' batch behavior. As with Topics/Papers, `bulkImportQuestions` itself isn't
+directly unit-tested (same Clerk-mocking rationale).
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
@@ -931,10 +1065,14 @@ note — the Progress tab is the one place that now surfaces the fuller
 Grade+Subject+confidence view.
 
 Also deferred, from the same GradeBoost-style reference mockup that the Papers/Practice
-sidebar split and the Practice sub-pages were adapted from: an admin UI to hand-add/edit a
-question's keywords (tagging is currently backfill-script-only — see "Question keyword
-tagging" above), a pooled/mixed quiz spanning multiple sub-topics at once ("Practice All Weak Areas"),
-Incorrect Questions (retry a history of previously-wrong answers), Bookmarked Questions,
-Analytics (score trends over time, avg. time per question), Search Questions (full question
-bank search), Revision Notes, streaks/gamification, an Exam Board field, and notification
-toggles — none of these have any schema or UI today.
+sidebar split and the Practice sub-pages were adapted from: an admin UI to hand-edit an
+individual *existing* question's keywords one at a time (tagging is now possible at
+bulk-upload import time, or via the backfill script — see "Question keyword tagging" and
+"Questions Bulk Upload" above — but there's no per-question edit form), a pooled/mixed quiz
+spanning multiple sub-topics at once ("Practice All Weak Areas"), Incorrect Questions (retry
+a history of previously-wrong answers), Bookmarked Questions, Analytics (score trends over
+time, avg. time per question), a question-bank browse/search view (Bulk Upload can add
+questions but there's no admin page to list/search/edit ones already in the bank — an
+admin-side question review workflow, e.g. flipping `verification_status` to `verified`, has
+no UI yet either), Revision Notes, streaks/gamification, an Exam Board field, `.xlsx` support
+for Bulk Upload, and notification toggles — none of these have any schema or UI today.
