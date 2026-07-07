@@ -20,6 +20,10 @@ export const userRoleEnum = pgEnum("user_role", ["student", "admin"]);
 export const gradeEnum = pgEnum("grade", ["10", "11"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published"]);
 export const mcqDifficultyEnum = pgEnum("mcq_difficulty", ["easy", "medium", "hard"]);
+// Separate from contentStatusEnum's draft/published gate — a bulk-imported
+// question is "unverified" (nobody has reviewed its content yet) regardless
+// of whether it's also published; see src/lib/bulk-upload.ts.
+export const mcqVerificationStatusEnum = pgEnum("mcq_verification_status", ["unverified", "verified"]);
 // Language of instruction. A student's medium is a durable profile attribute;
 // a paper's medium is the paper's own language, independent of who's reading it.
 export const mediumEnum = pgEnum("medium", ["sinhala", "tamil", "english"]);
@@ -135,6 +139,12 @@ export const mcqs = pgTable("mcqs", {
   correctOption: integer("correct_option").notNull(),
   difficulty: mcqDifficultyEnum("difficulty").notNull().default("medium"),
   status: contentStatusEnum("status").notNull().default("draft"),
+  // Whether anyone has reviewed this question's content — independent of
+  // status (draft/published). Bulk-imported questions (src/lib/bulk-upload.ts)
+  // always land as "unverified"; every other existing row backfills to
+  // "unverified" too, since none of them have gone through a review step
+  // that doesn't exist yet either.
+  verificationStatus: mcqVerificationStatusEnum("verification_status").notNull().default("unverified"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   // Free-form search tags (e.g. "Microorganisms", "Ohm's Law"), 0-3 per
   // question. Deliberately a plain array column on the question itself, not
