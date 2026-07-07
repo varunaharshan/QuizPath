@@ -293,6 +293,48 @@ they conflict with this app's existing scoring/feedback model:
   the untagged-paper-question `null` case) is covered in `tests/quiz-flow.test.ts`,
   `tests/paper-flow.test.ts`, and `tests/mastery.test.ts`.
 
+### Question option format
+
+`mcqs.options` (`jsonb`) stores an array of `{type: "text"|"image", content: string}`
+objects — `content` is either the option's literal text or an image URL, depending on
+`type`. This replaced a plain flat string array (e.g. `["3","4","5","6"]`), to support
+image-based options (e.g. a diagram) alongside plain text ones from the same column.
+`correctOption` is still a plain integer index into this array — grading
+(`saveQuizAnswer` in `src/lib/quiz.ts`) only ever compares `selectedOption === correctOption`
+positionally and never reads an option's `content`, so this change is purely about what
+gets *displayed*, not how a question is graded.
+
+- **`src/db/migrate-options-format.ts`** (`npm run db:migrate-options-format`) is the
+  one-off, safely re-runnable script that converts existing rows from the old flat-string
+  format into the new shape (`"3"` → `{type:"text", content:"3"}`). Drizzle's `$type` is a
+  compile-time assertion only, not a runtime guarantee, so a row written before this
+  migration is still a plain string array on disk regardless of what the schema now
+  declares — the script checks each row's actual shape (not the declared type) and skips
+  any row already migrated, so re-running it after seeding more old-format fixtures never
+  double-wraps anything. Run this once per environment after pulling this change.
+- **`<QuizForm>`** (`src/components/quiz-form.tsx`) renders each option by checking
+  `option.type`: a `<span>` for `"text"`, or an `<img>` for `"image"` (plain `<img>`, not
+  `next/image` — these are arbitrary admin-supplied external URLs unknown at build time, so
+  Next's image optimizer can't be pre-configured with a `remotePatterns` allowlist for them;
+  this is a deliberate choice, not an oversight, and produces one harmless `no-img-element`
+  lint warning).
+- **`src/lib/bulk-upload.ts`**'s `ResolvedBulkRow.options` wraps each of the CSV's four
+  option columns as `{type:"text", content:<trimmed text>}` — image-option support at
+  import time (an `Option A-D Image URL` column) is separate follow-up work, not part of
+  this shape migration itself.
+- **`src/db/backfill-keywords.ts`**'s correct-answer-text extraction (used by
+  `extractKeywords()` to derive a keyword from the correct answer) now reads
+  `options[correctOption].content` only when that option's `type` is `"text"` — an
+  image-type correct answer has no text to derive a keyword from, so it's treated the same
+  as "couldn't derive anything" rather than stringifying the URL.
+- **`src/db/seed.ts`**'s placeholder-question fixtures are still written as plain option
+  strings (much easier to read in bulk) and wrapped via a small local `toTextOptions()`
+  helper only at the three `db.insert(mcqs)` call sites, rather than rewriting every
+  literal array in the file.
+- Test fixtures across the suite use a shared `textOptions(...)` helper (`tests/helpers.ts`)
+  for the same reason — none of those tests exercise the text/image distinction itself,
+  just that `options` is populated and `correctOption` indexes into it correctly.
+
 ## Brand / design system
 
 Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`

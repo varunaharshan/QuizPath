@@ -20,7 +20,7 @@ import {
   saveQuizAnswer,
 } from "@/lib/quiz";
 import { getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { submitFullSubTopicQuiz } from "./helpers";
+import { submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 describe("quiz-taking flow", () => {
   const runId = randomUUID().slice(0, 8);
@@ -56,28 +56,28 @@ describe("quiz-taking flow", () => {
         {
           subTopicId,
           questionText: "2 + 2 = ?",
-          options: ["3", "4", "5", "6"],
+          options: textOptions("3", "4", "5", "6"),
           correctOption: 1,
           status: "published",
         },
         {
           subTopicId,
           questionText: "The chemical symbol for water is:",
-          options: ["O2", "H2O", "CO2", "NaCl"],
+          options: textOptions("O2", "H2O", "CO2", "NaCl"),
           correctOption: 1,
           status: "published",
         },
         {
           subTopicId,
           questionText: "The sun rises in the:",
-          options: ["West", "North", "East", "South"],
+          options: textOptions("West", "North", "East", "South"),
           correctOption: 2,
           status: "published",
         },
         {
           subTopicId,
           questionText: "Draft question that should never be served",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "draft",
         },

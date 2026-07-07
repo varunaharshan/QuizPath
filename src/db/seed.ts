@@ -18,6 +18,13 @@ import { and, eq, inArray } from "drizzle-orm";
 type Medium = "sinhala" | "tamil" | "english";
 type PaperType = "provincial" | "district" | "school";
 
+// Seed data below is written as plain option strings (much easier to read
+// in bulk) and wrapped into the real {type,content} shape only at each
+// insert site, rather than rewriting every literal array below.
+function toTextOptions(options: string[]) {
+  return options.map((content) => ({ type: "text" as const, content }));
+}
+
 // Placeholder taxonomy — a few modules/sub-topics per grade so the app has
 // something to render. The real Grade 10/11 Science curriculum gets refined
 // separately (spec section 7).
@@ -823,7 +830,7 @@ async function seedPlaceholderMcqs() {
     PLACEHOLDER_MCQS.map((q) => ({
       subTopicId: targetSubTopic.id,
       questionText: PLACEHOLDER_PREFIX + q.question,
-      options: q.options,
+      options: toTextOptions(q.options),
       correctOption: q.correctOption,
       difficulty: "medium" as const,
       status: "published" as const,
@@ -862,7 +869,7 @@ async function seedPlaceholderPapers(subjectId: string) {
         GENERIC_PLACEHOLDER_QUESTIONS.map((q) => ({
           paperId: paper.id,
           questionText: PLACEHOLDER_PREFIX + q.question,
-          options: q.options,
+          options: toTextOptions(q.options),
           correctOption: q.correctOption,
           difficulty: "medium" as const,
           status: "published" as const,
@@ -955,7 +962,7 @@ async function seedFullSyllabusPapers(subjectId: string, topicSubTopicIds: Map<s
           subTopicId,
           paperId: paper.id,
           questionText: PLACEHOLDER_PREFIX + q.question,
-          options: q.options,
+          options: toTextOptions(q.options),
           correctOption: q.correctOption,
           difficulty: "medium" as const,
           status: "published" as const,

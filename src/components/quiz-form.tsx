@@ -124,7 +124,11 @@ export function QuizForm({
                 >
                   {String.fromCharCode(65 + optionIndex)}
                 </span>
-                <span>{option}</span>
+                {option.type === "image" ? (
+                  <img src={option.content} alt={`Option ${String.fromCharCode(65 + optionIndex)}`} className="max-h-40 max-w-full" />
+                ) : (
+                  <span>{option.content}</span>
+                )}
               </label>
             );
           })}

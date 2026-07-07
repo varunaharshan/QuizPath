@@ -118,11 +118,17 @@ export type BulkUploadReferenceData = {
   papers: { id: string; title: string; subjectId: string; grade: "10" | "11" }[];
 };
 
+// Duplicated from src/db/schema.ts's QuestionOption rather than imported —
+// keeps this file's "zero import from @/db or anything that transitively
+// imports it" invariant explicit and self-contained (see file-level comment
+// above), even though schema.ts itself doesn't currently import @/db.
+export type QuestionOption = { type: "text"; content: string } | { type: "image"; content: string };
+
 export type ResolvedBulkRow = {
   subTopicId: string;
   paperId: string | null;
   questionText: string;
-  options: [string, string, string, string];
+  options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
   correctOption: number;
   difficulty: "easy" | "medium" | "hard";
   keywords: string[];
@@ -240,7 +246,12 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
       subTopicId: matchedSubTopic.id,
       paperId: matchedPaper?.id ?? null,
       questionText: row.questionText.trim(),
-      options: [row.optionA.trim(), row.optionB.trim(), row.optionC.trim(), row.optionD.trim()],
+      options: [
+        { type: "text", content: row.optionA.trim() },
+        { type: "text", content: row.optionB.trim() },
+        { type: "text", content: row.optionC.trim() },
+        { type: "text", content: row.optionD.trim() },
+      ],
       correctOption: correctIndex,
       difficulty: difficultyRaw,
       keywords: row.keywords

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
 import { getSubjectsForAdmin, getTopicsForSubjectGrade } from "@/lib/admin-topics";
+import { textOptions } from "./helpers";
 
 describe("getTopicsForSubjectGrade", () => {
   const runId = randomUUID().slice(0, 8);
@@ -55,9 +56,9 @@ describe("getTopicsForSubjectGrade", () => {
 
     // Two published questions on A1, one on A2, none on module B's (empty) sub-topics.
     await db.insert(mcqs).values([
-      { subTopicId: subTopicA1Id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published" },
-      { subTopicId: subTopicA1Id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "draft" },
-      { subTopicId: subTopicA2Id, questionText: "Q3", options: ["A", "B"], correctOption: 0, status: "published" },
+      { subTopicId: subTopicA1Id, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      { subTopicId: subTopicA1Id, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "draft" },
+      { subTopicId: subTopicA2Id, questionText: "Q3", options: textOptions("A", "B"), correctOption: 0, status: "published" },
     ]);
   });
 

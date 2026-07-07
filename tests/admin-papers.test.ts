@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, papers, subjects } from "@/db/schema";
 import { getPaperForAdmin, getPapersForAdmin } from "@/lib/admin-papers";
+import { textOptions } from "./helpers";
 
 describe("getPapersForAdmin", () => {
   const runId = randomUUID().slice(0, 8);
@@ -67,8 +68,8 @@ describe("getPapersForAdmin", () => {
 
     // Two mcqs tagged to paperA10 (via paper_id), none on the others.
     await db.insert(mcqs).values([
-      { paperId: paperA10Id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published" },
-      { paperId: paperA10Id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "draft" },
+      { paperId: paperA10Id, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      { paperId: paperA10Id, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "draft" },
     ]);
   });
 

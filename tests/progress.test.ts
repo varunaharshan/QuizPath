@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics, users } from "@/db/schema";
 import { getProgressStats, getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { submitFullSubTopicQuiz } from "./helpers";
+import { submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 // Confirms the Progress tab's Grade + Subject scoping and the KPI/topic-table
 // math: a student can view progress for their own grade or a different one
@@ -102,7 +102,7 @@ describe("Progress tab: Grade + Subject scoping and KPI math", () => {
           Array.from({ length: count }, (_, i) => ({
             subTopicId,
             questionText: `Q${i} for ${subTopicId}`,
-            options: ["A", "B"],
+            options: textOptions("A", "B"),
             correctOption: 0,
             status: "published" as const,
           })),

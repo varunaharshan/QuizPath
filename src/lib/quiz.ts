@@ -1,6 +1,14 @@
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { masteryScores, mcqs, papers, quizAttemptAnswers, quizAttempts, subTopics } from "@/db/schema";
+import {
+  masteryScores,
+  mcqs,
+  papers,
+  quizAttemptAnswers,
+  quizAttempts,
+  subTopics,
+  type QuestionOption,
+} from "@/db/schema";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -27,7 +35,7 @@ export function masteryLabelForScore(score: number): MasteryLabel {
 export type QuizQuestion = {
   id: string;
   questionText: string;
-  options: string[];
+  options: QuestionOption[];
   // The one tag shown per question in the quiz-taking UI — sourced directly
   // from the existing sub_topic_id relationship, not a separate taxonomy
   // field. Null for a paper question that isn't tagged with a sub-topic.

@@ -25,7 +25,10 @@ async function main() {
   const needsReview: { id: string; questionText: string; subTopicName: string | null }[] = [];
 
   for (const row of rows) {
-    const correctAnswerText = row.options[row.correctOption] ?? null;
+    const correctOption = row.options[row.correctOption];
+    // Only text options have anything to derive a keyword from — an
+    // image-based correct answer has no text content to extract.
+    const correctAnswerText = correctOption?.type === "text" ? correctOption.content : null;
     const keywords = extractKeywords({
       questionText: row.questionText,
       correctAnswerText,

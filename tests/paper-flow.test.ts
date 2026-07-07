@@ -11,7 +11,7 @@ import {
   saveQuizAnswer,
 } from "@/lib/quiz";
 import { getPapersForSubject } from "@/lib/papers";
-import { submitFullPaperQuiz } from "./helpers";
+import { submitFullPaperQuiz, textOptions } from "./helpers";
 
 describe("paper-based quiz flow", () => {
   const runId = randomUUID().slice(0, 8);
@@ -64,14 +64,14 @@ describe("paper-based quiz flow", () => {
         {
           paperId: otherGradePaperId,
           questionText: "10 + 10 = ?",
-          options: ["10", "15", "20", "25"],
+          options: textOptions("10", "15", "20", "25"),
           correctOption: 2,
           status: "published",
         },
         {
           paperId: otherGradePaperId,
           questionText: "20 + 20 = ?",
-          options: ["30", "35", "40", "45"],
+          options: textOptions("30", "35", "40", "45"),
           correctOption: 2,
           status: "published",
         },
@@ -82,13 +82,13 @@ describe("paper-based quiz flow", () => {
     const inserted = await db
       .insert(mcqs)
       .values([
-        { paperId, questionText: "1 + 1 = ?", options: ["1", "2", "3", "4"], correctOption: 1, status: "published" },
-        { paperId, questionText: "2 + 2 = ?", options: ["3", "4", "5", "6"], correctOption: 1, status: "published" },
-        { paperId, questionText: "3 + 3 = ?", options: ["5", "6", "7", "8"], correctOption: 1, status: "published" },
+        { paperId, questionText: "1 + 1 = ?", options: textOptions("1", "2", "3", "4"), correctOption: 1, status: "published" },
+        { paperId, questionText: "2 + 2 = ?", options: textOptions("3", "4", "5", "6"), correctOption: 1, status: "published" },
+        { paperId, questionText: "3 + 3 = ?", options: textOptions("5", "6", "7", "8"), correctOption: 1, status: "published" },
         {
           paperId,
           questionText: "Draft question that should never be served",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "draft",
         },

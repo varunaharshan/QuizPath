@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { masteryScores, mcqs, modules, papers, subjects, subTopics, users } from "@/db/schema";
 import { ensurePaperAttemptStarted, getQuizForPaper } from "@/lib/quiz";
-import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
+import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 // Confirms mastery_scores is a cumulative running ratio across every attempt
 // that touches a sub-topic — provincial/district/school paper questions and
@@ -78,14 +78,14 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
           paperId: paper1Id,
           subTopicId,
           questionText: "Paper 1 tagged question",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "published",
         },
         {
           paperId: paper1Id,
           questionText: "Paper 1 untagged filler question",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "published",
         },
@@ -101,14 +101,14 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
           paperId: paper2Id,
           subTopicId,
           questionText: "Paper 2 tagged question",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "published",
         },
         {
           paperId: paper2Id,
           questionText: "Paper 2 untagged filler question",
-          options: ["A", "B"],
+          options: textOptions("A", "B"),
           correctOption: 0,
           status: "published",
         },
@@ -122,7 +122,7 @@ describe("cumulative mastery across papers and sub-topic quizzes", () => {
       .values({
         subTopicId,
         questionText: "Direct sub-topic quiz question",
-        options: ["A", "B"],
+        options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
       })

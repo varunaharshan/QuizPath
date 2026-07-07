@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/seed.ts",
     "db:backfill-keywords": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/backfill-keywords.ts",
+    "db:migrate-options-format": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/migrate-options-format.ts",
     "db:studio": "drizzle-kit studio",
     "test": "vitest run"
   },

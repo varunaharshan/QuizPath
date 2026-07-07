@@ -88,7 +88,12 @@ describe("validateBulkRow", () => {
       subTopicId: "sub-types",
       paperId: null,
       questionText: "What is the powerhouse of the cell?",
-      options: ["Nucleus", "Mitochondria", "Ribosome", "Golgi body"],
+      options: [
+        { type: "text", content: "Nucleus" },
+        { type: "text", content: "Mitochondria" },
+        { type: "text", content: "Ribosome" },
+        { type: "text", content: "Golgi body" },
+      ],
       correctOption: 1,
       difficulty: "medium",
       keywords: ["Cell Biology", "Mitochondria"],

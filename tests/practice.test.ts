@@ -13,6 +13,7 @@ import {
   searchSubTopicIdsByKeywords,
   weakAreas,
 } from "@/lib/practice";
+import { textOptions } from "./helpers";
 
 function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
   return {
@@ -189,21 +190,21 @@ describe("searchSubTopicIdsByKeyword", () => {
       {
         subTopicId: subTopicByQuestionId,
         questionText: `What gas is released during photosynthesis? ${runId}`,
-        options: ["A", "B"],
+        options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
       },
       {
         subTopicId: subTopicUnrelatedId,
         questionText: `What is a break-even point? ${runId}`,
-        options: ["A", "B"],
+        options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
       },
       {
         subTopicId: subTopicByKeywordId,
         questionText: `What do decomposers break down? ${runId}`,
-        options: ["A", "B"],
+        options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
         keywords: [keywordTag],
@@ -310,12 +311,12 @@ describe("getTopKeywords", () => {
 
     await db.insert(mcqs).values([
       // tagA appears on 2 published questions, tagB on 1 -> tagA should rank first.
-      { subTopicId: subTopic.id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagA] },
-      { subTopicId: subTopic.id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagA, tagB] },
+      { subTopicId: subTopic.id, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [tagA] },
+      { subTopicId: subTopic.id, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [tagA, tagB] },
       // A draft question's keywords must not count toward the frequency.
-      { subTopicId: subTopic.id, questionText: "Q3", options: ["A", "B"], correctOption: 0, status: "draft", keywords: [tagC] },
+      { subTopicId: subTopic.id, questionText: "Q3", options: textOptions("A", "B"), correctOption: 0, status: "draft", keywords: [tagC] },
       // A different grade's keyword must never leak into this grade's top list.
-      { subTopicId: otherGradeSubTopic.id, questionText: "Q4", options: ["A", "B"], correctOption: 0, status: "published", keywords: [tagOtherGrade] },
+      { subTopicId: otherGradeSubTopic.id, questionText: "Q4", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [tagOtherGrade] },
     ]);
   });
 
@@ -391,13 +392,13 @@ describe("getKeywordSuggestions", () => {
     otherGradeTag = `OtherGradeTag ${runId}`;
 
     await db.insert(mcqs).values([
-      { subTopicId: subTopic.id, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published", keywords: [uniqueTag] },
+      { subTopicId: subTopic.id, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [uniqueTag] },
       // dupUpper (2 questions) outnumbers dupLower (1 question) -> dupUpper should win as the merged display form.
-      { subTopicId: subTopic.id, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupUpper] },
-      { subTopicId: subTopic.id, questionText: "Q3", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupUpper] },
-      { subTopicId: subTopic.id, questionText: "Q4", options: ["A", "B"], correctOption: 0, status: "published", keywords: [dupLower] },
-      { subTopicId: subTopic.id, questionText: "Q5", options: ["A", "B"], correctOption: 0, status: "draft", keywords: [draftOnlyTag] },
-      { subTopicId: otherGradeSubTopic.id, questionText: "Q6", options: ["A", "B"], correctOption: 0, status: "published", keywords: [otherGradeTag] },
+      { subTopicId: subTopic.id, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [dupUpper] },
+      { subTopicId: subTopic.id, questionText: "Q3", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [dupUpper] },
+      { subTopicId: subTopic.id, questionText: "Q4", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [dupLower] },
+      { subTopicId: subTopic.id, questionText: "Q5", options: textOptions("A", "B"), correctOption: 0, status: "draft", keywords: [draftOnlyTag] },
+      { subTopicId: otherGradeSubTopic.id, questionText: "Q6", options: textOptions("A", "B"), correctOption: 0, status: "published", keywords: [otherGradeTag] },
     ]);
   });
 

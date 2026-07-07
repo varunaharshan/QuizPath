@@ -10,7 +10,7 @@ import {
   getOverallStats,
   getSubjectAccuracyTrends,
 } from "@/lib/dashboard";
-import { submitFullPaperQuiz, submitFullSubTopicQuiz } from "./helpers";
+import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 // Confirms the Dashboard's "continue where you left off" card and "recent
 // activity" list stay scoped to whichever grade is asked for, even when an
@@ -65,7 +65,7 @@ describe("dashboard grade scoping", () => {
     const grade10Inserted = await db
       .insert(mcqs)
       .values([
-        { subTopicId: grade10SubTopicId, questionText: "1 + 1 = ?", options: ["1", "2", "3"], correctOption: 1, status: "published" },
+        { subTopicId: grade10SubTopicId, questionText: "1 + 1 = ?", options: textOptions("1", "2", "3"), correctOption: 1, status: "published" },
       ])
       .returning({ id: mcqs.id });
     grade10McqIds = grade10Inserted.map((m) => m.id);
@@ -73,7 +73,7 @@ describe("dashboard grade scoping", () => {
     const grade11Inserted = await db
       .insert(mcqs)
       .values([
-        { subTopicId: grade11SubTopicId, questionText: "2 + 2 = ?", options: ["3", "4", "5"], correctOption: 1, status: "published" },
+        { subTopicId: grade11SubTopicId, questionText: "2 + 2 = ?", options: textOptions("3", "4", "5"), correctOption: 1, status: "published" },
       ])
       .returning({ id: mcqs.id });
     grade11McqIds = grade11Inserted.map((m) => m.id);
@@ -118,7 +118,7 @@ describe("dashboard grade scoping", () => {
     otherGradePaperId = otherPaper.id;
 
     await db.insert(mcqs).values([
-      { paperId: otherGradePaperId, questionText: "3 + 3 = ?", options: ["5", "6", "7"], correctOption: 1, status: "published" },
+      { paperId: otherGradePaperId, questionText: "3 + 3 = ?", options: textOptions("5", "6", "7"), correctOption: 1, status: "published" },
     ]);
 
     const [student] = await db
@@ -224,7 +224,7 @@ describe("getMostRecentlyPracticedSubjectId", () => {
 
     const [mcqA] = await db
       .insert(mcqs)
-      .values({ subTopicId: subTopicAId, questionText: "1 + 1 = ?", options: ["1", "2"], correctOption: 1, status: "published" })
+      .values({ subTopicId: subTopicAId, questionText: "1 + 1 = ?", options: textOptions("1", "2"), correctOption: 1, status: "published" })
       .returning({ id: mcqs.id });
     mcqAId = mcqA.id;
 
@@ -236,7 +236,7 @@ describe("getMostRecentlyPracticedSubjectId", () => {
 
     const [mcqB] = await db
       .insert(mcqs)
-      .values({ paperId: paperBId, questionText: "2 + 2 = ?", options: ["3", "4"], correctOption: 1, status: "published" })
+      .values({ paperId: paperBId, questionText: "2 + 2 = ?", options: textOptions("3", "4"), correctOption: 1, status: "published" })
       .returning({ id: mcqs.id });
 
     const [student] = await db
@@ -319,12 +319,12 @@ describe("getSubjectAccuracyTrends", () => {
 
     const [mcq1] = await db
       .insert(mcqs)
-      .values({ subTopicId, questionText: "Q1", options: ["A", "B"], correctOption: 0, status: "published" })
+      .values({ subTopicId, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" })
       .returning({ id: mcqs.id });
     mcq1Id = mcq1.id;
     const [mcq2] = await db
       .insert(mcqs)
-      .values({ subTopicId, questionText: "Q2", options: ["A", "B"], correctOption: 0, status: "published" })
+      .values({ subTopicId, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" })
       .returning({ id: mcqs.id });
     mcq2Id = mcq2.id;
 
@@ -342,7 +342,7 @@ describe("getSubjectAccuracyTrends", () => {
       .values({
         subTopicId: otherGradeSubTopicId,
         questionText: "Q3",
-        options: ["A", "B"],
+        options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
       })

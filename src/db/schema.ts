@@ -124,6 +124,11 @@ export const papers = pgTable("papers", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// An option (and, from src/db/migrate-options-format.ts onward, a question
+// stem) can be plain text or an image URL — "type" is the discriminant,
+// "content" is either the literal text or the image's URL depending on it.
+export type QuestionOption = { type: "text"; content: string } | { type: "image"; content: string };
+
 export const mcqs = pgTable("mcqs", {
   id: uuid("id").primaryKey().defaultRandom(),
   contentItemId: uuid("content_item_id").references(() => contentItems.id, {
@@ -135,7 +140,11 @@ export const mcqs = pgTable("mcqs", {
   subTopicId: uuid("sub_topic_id").references(() => subTopics.id, { onDelete: "cascade" }),
   paperId: uuid("paper_id").references(() => papers.id, { onDelete: "cascade" }),
   questionText: text("question_text").notNull(),
-  options: jsonb("options").$type<string[]>().notNull(),
+  // Array of QuestionOption rather than plain strings — see
+  // src/db/migrate-options-format.ts for the one-off conversion of rows
+  // seeded/imported before this shape existed. correctOption still indexes
+  // into this array positionally; grading never reads an option's content.
+  options: jsonb("options").$type<QuestionOption[]>().notNull(),
   correctOption: integer("correct_option").notNull(),
   difficulty: mcqDifficultyEnum("difficulty").notNull().default("medium"),
   status: contentStatusEnum("status").notNull().default("draft"),

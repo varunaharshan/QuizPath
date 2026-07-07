@@ -7,6 +7,14 @@ import {
   type SubmitQuizResult,
 } from "@/lib/quiz";
 
+// Test fixtures insert mcqs with plain option strings — none of these tests
+// care about text vs. image options, just that options is populated and
+// correctOption indexes into it, so this is purely a shape-wrapping
+// convenience rather than exercising the text/image distinction itself.
+export function textOptions(...options: string[]) {
+  return options.map((content) => ({ type: "text" as const, content }));
+}
+
 // Test scaffolding only: most tests just need "a fully completed attempt"
 // as setup, not the incremental save/resume/partial-submit behavior itself
 // (that's what tests/quiz-flow.test.ts and tests/paper-flow.test.ts exercise
