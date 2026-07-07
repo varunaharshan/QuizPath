@@ -180,10 +180,18 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
     errors.push(`Invalid difficulty "${row.difficulty}" (must be easy, medium, or hard)`);
   }
 
-  const options = [row.optionA, row.optionB, row.optionC, row.optionD];
-  const correctIndex = options.findIndex((opt) => opt.trim() && norm(opt) === norm(row.correctAnswer));
-  if (row.correctAnswer.trim() && correctIndex === -1) {
-    errors.push(`Correct answer "${row.correctAnswer}" doesn't match any option`);
+  // Strict, position-only: "1"-"4" mean Option A-D respectively. Deliberately
+  // does not accept letters (A-D) or the option's literal text — many source
+  // papers key answers by position, so this is a hard requirement rather
+  // than best-effort format-sniffing across several conventions.
+  const correctAnswerRaw = row.correctAnswer.trim();
+  let correctIndex = -1;
+  if (correctAnswerRaw) {
+    if (/^[1-4]$/.test(correctAnswerRaw)) {
+      correctIndex = Number(correctAnswerRaw) - 1;
+    } else {
+      errors.push(`Correct answer must be 1-4 (position), got '${row.correctAnswer}'`);
+    }
   }
 
   const subject = row.subject.trim() ? ref.subjects.find((s) => norm(s.name) === norm(row.subject)) : undefined;

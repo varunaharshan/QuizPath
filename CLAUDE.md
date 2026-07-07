@@ -1004,8 +1004,12 @@ the end.
   match, since a human hand-editing a downloaded template in a spreadsheet app can easily
   introduce trivial header differences that shouldn't fail the whole file.
 - **Validation** (`validateBulkRow`, per row): every required field present; grade is `10` or
-  `11`; difficulty is `easy`/`medium`/`hard`; the correct answer text matches one of the four
-  options; subject/topic/sub-topic names resolve to a real row (topic scoped to the matched
+  `11`; difficulty is `easy`/`medium`/`hard`; Correct Answer is strictly a **position** (`1`-`4`,
+  matching Option A-D respectively) — a letter (`"C"`) or the option's own literal text is
+  rejected with an explicit `Correct answer must be 1-4 (position), got '<value>'` message
+  rather than auto-detected, since source papers consistently key answers by position and
+  silently accepting multiple formats risks masking a genuinely wrong value; subject/topic/
+  sub-topic names resolve to a real row (topic scoped to the matched
   subject **and** the row's own grade; sub-topic scoped to the matched topic) — all
   name-matching is case-insensitive/trimmed, since this is expected to be run by content staff
   hand-filling a spreadsheet; an optional paper reference, if given, must match an existing

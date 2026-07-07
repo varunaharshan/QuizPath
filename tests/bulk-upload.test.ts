@@ -30,7 +30,7 @@ function validRow(overrides: Partial<BulkUploadRow> = {}): BulkUploadRow {
     optionB: "Mitochondria",
     optionC: "Ribosome",
     optionD: "Golgi body",
-    correctAnswer: "Mitochondria",
+    correctAnswer: "2", // position 2 = Option B = "Mitochondria"
     subject: "Science",
     grade: "10",
     topic: "Chemical Reactions",
@@ -102,10 +102,31 @@ describe("validateBulkRow", () => {
     expect(result.errors).toContain("Subject is required");
   });
 
-  it("flags a correct answer that doesn't match any option", () => {
-    const result = validateBulkRow(validRow({ correctAnswer: "Chloroplast" }), REF);
+  it("resolves a position of 1, 3, or 4 to the matching option index", () => {
+    expect(validateBulkRow(validRow({ correctAnswer: "1" }), REF).resolved?.correctOption).toBe(0);
+    expect(validateBulkRow(validRow({ correctAnswer: "3" }), REF).resolved?.correctOption).toBe(2);
+    expect(validateBulkRow(validRow({ correctAnswer: "4" }), REF).resolved?.correctOption).toBe(3);
+  });
+
+  it("rejects a letter (A-D) as the correct answer, with the exact required-format message", () => {
+    const result = validateBulkRow(validRow({ correctAnswer: "C" }), REF);
     expect(result.resolved).toBeNull();
-    expect(result.errors).toContain(`Correct answer "Chloroplast" doesn't match any option`);
+    expect(result.errors).toContain(`Correct answer must be 1-4 (position), got 'C'`);
+  });
+
+  it("rejects the option's literal text as the correct answer (position-only, no text match)", () => {
+    const result = validateBulkRow(validRow({ correctAnswer: "Mitochondria" }), REF);
+    expect(result.resolved).toBeNull();
+    expect(result.errors).toContain(`Correct answer must be 1-4 (position), got 'Mitochondria'`);
+  });
+
+  it("rejects an out-of-range position", () => {
+    expect(validateBulkRow(validRow({ correctAnswer: "0" }), REF).errors).toContain(
+      `Correct answer must be 1-4 (position), got '0'`,
+    );
+    expect(validateBulkRow(validRow({ correctAnswer: "5" }), REF).errors).toContain(
+      `Correct answer must be 1-4 (position), got '5'`,
+    );
   });
 
   it("flags an unknown subject", () => {
