@@ -132,6 +132,18 @@ need to call it over the network to render itself.
 - Placeholder MCQs (`src/db/seed.ts`, 10 questions under Grade 10 → "Types of Chemical
   Reactions") are prefixed `[PLACEHOLDER TEST CONTENT]` so they're never mistaken for
   reviewed content — see spec section 7 for the real review process.
+- **`src/db/unpublish-placeholder-mcqs.ts`** (`npm run db:unpublish-placeholders`) is a
+  one-off, safely re-runnable cleanup that flips every published placeholder row to draft —
+  unpublishes rather than deletes, since these rows are still useful as local dev/test
+  fixtures. **`src/db/check-no-published-placeholders.ts`**
+  (`npm run db:check-no-published-placeholders`) is a standalone safeguard script (exits
+  non-zero and lists offenders if it finds any published placeholder row) meant to be run
+  manually before deploying, or wired into a CI step once one exists — this repo has no CI
+  configured today. Both share `findPublishedPlaceholders()`/`PLACEHOLDER_MARKER`
+  (`src/db/placeholder-check.ts`), which is directly unit-tested
+  (`tests/placeholder-guard.test.ts`) against a draft-placeholder row and a
+  published-non-placeholder row to confirm the safeguard only flags the actual violation
+  (published **and** placeholder-marked), not either condition alone.
 - Integration coverage: `tests/quiz-flow.test.ts` (vitest) runs the full select
   sub-topic → serve quiz → submit → persisted attempt/answers/mastery loop, plus the
   partial-submit/save-and-resume scenarios described below, against a dedicated
