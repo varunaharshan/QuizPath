@@ -319,9 +319,14 @@ gets *displayed*, not how a question is graded.
   this is a deliberate choice, not an oversight, and produces one harmless `no-img-element`
   lint warning).
 - **`src/lib/bulk-upload.ts`**'s `ResolvedBulkRow.options` wraps each of the CSV's four
-  option columns as `{type:"text", content:<trimmed text>}` — image-option support at
-  import time (an `Option A-D Image URL` column) is separate follow-up work, not part of
-  this shape migration itself.
+  option columns as `{type:"text", content:<trimmed text>}`, or `{type:"image", ...}` when
+  that option's own `Option A-D Image URL` column is populated instead — see "Questions
+  Bulk Upload" below for the full column/validation details.
+- `mcqs.questionImage` (nullable `jsonb`, `{type:"image", content:string} | null`) holds the
+  question stem's own diagram/figure, distinct from an image-type *option* — not stored via
+  `content_items` (that table requires a `title` and carries its own draft/published status
+  meant for something more like attached reading material, not a lightweight image
+  reference). `<QuizForm>` renders it above the question text when present.
 - **`src/db/backfill-keywords.ts`**'s correct-answer-text extraction (used by
   `extractKeywords()` to derive a keyword from the correct answer) now reads
   `options[correctOption].content` only when that option's `type` is `"text"` — an
@@ -1036,7 +1041,8 @@ the end.
   final, already-valid resolved rows are ever sent to the server — the same "Client Components
   can't import server-only-guarded code" constraint already established for
   `keyword-tag-input-logic.ts`/`topic-card-grid.tsx`.
-- **Template columns**: Question Text, Option A–D, Correct Answer, Subject, **Grade**, Topic,
+- **Template columns**: Question Text, Question Image URL, Option A–D (each immediately
+  followed by its own `Option [A-D] Image URL`), Correct Answer, Subject, **Grade**, Topic,
   Sub-topic, Difficulty, Keywords, Paper Reference. Grade is a real column (not just implied)
   — topic/sub-topic names aren't guaranteed unique across Grade 10 vs. 11 (this codebase's own
   seeded data already has modules that share a name across grades), so resolving a topic
@@ -1045,6 +1051,17 @@ the end.
   "sub-topic"/"sub topic"/"subtopic" spelling variants) rather than requiring an exact string
   match, since a human hand-editing a downloaded template in a spreadsheet app can easily
   introduce trivial header differences that shouldn't fail the whole file.
+- **Image support**: `Question Image URL` and the four `Option [A-D] Image URL` columns are
+  all optional. `resolveOption()` (`src/lib/bulk-upload.ts`) resolves each option as
+  `{type:"image", content:<url>}` when its own Image URL column is populated, otherwise as
+  `{type:"text", content:<the Option A-D column>}` — never both, and an option with neither
+  populated is a validation error (`"Option A is required (text or an Option A Image URL)"`).
+  URL validation is **format-only** (parses via the `URL` constructor), not a live
+  reachability check — confirming a URL actually resolves would need a server round-trip
+  (browsers can't reliably read cross-origin fetch results for arbitrary image hosts via
+  CORS) and would turn every review into a live outbound request to an admin-supplied URL, a
+  deliberate scope cut for this pass. `Question Image URL`, if given, becomes
+  `mcqs.questionImage`; if blank, it's `null`.
 - **Validation** (`validateBulkRow`, per row): every required field present; grade is `10` or
   `11`; difficulty is `easy`/`medium`/`hard`; Correct Answer is strictly a **position** (`1`-`4`,
   matching Option A-D respectively) — a letter (`"C"`) or the option's own literal text is

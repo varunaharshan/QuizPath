@@ -98,6 +98,13 @@ export function QuizForm({
           )}
         </div>
         <p className="mb-4 text-[16px] leading-relaxed text-quiz-navy">{question.questionText}</p>
+        {question.questionImage && (
+          <img
+            src={question.questionImage.content}
+            alt="Question diagram"
+            className="mb-4 max-h-72 max-w-full rounded-md"
+          />
+        )}
         <div className="mb-1.5 flex flex-col gap-2.5">
           {question.options.map((option, optionIndex) => {
             const isSelected = selectedOption === optionIndex;

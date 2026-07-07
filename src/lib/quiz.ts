@@ -7,6 +7,7 @@ import {
   quizAttemptAnswers,
   quizAttempts,
   subTopics,
+  type QuestionImage,
   type QuestionOption,
 } from "@/db/schema";
 
@@ -36,6 +37,10 @@ export type QuizQuestion = {
   id: string;
   questionText: string;
   options: QuestionOption[];
+  // The question stem's own diagram/figure, if any — distinct from an
+  // image-type option. Null for the (large majority of) questions with no
+  // attached image.
+  questionImage: QuestionImage | null;
   // The one tag shown per question in the quiz-taking UI — sourced directly
   // from the existing sub_topic_id relationship, not a separate taxonomy
   // field. Null for a paper question that isn't tagged with a sub-topic.
@@ -62,7 +67,12 @@ export async function getQuizForSubTopic(subTopicId: string): Promise<Quiz> {
   }
 
   const questions = await db
-    .select({ id: mcqs.id, questionText: mcqs.questionText, options: mcqs.options })
+    .select({
+      id: mcqs.id,
+      questionText: mcqs.questionText,
+      options: mcqs.options,
+      questionImage: mcqs.questionImage,
+    })
     .from(mcqs)
     .where(and(eq(mcqs.subTopicId, subTopicId), eq(mcqs.status, "published")))
     .orderBy(mcqs.createdAt)
@@ -313,6 +323,7 @@ export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
       id: mcqs.id,
       questionText: mcqs.questionText,
       options: mcqs.options,
+      questionImage: mcqs.questionImage,
       subTopicName: subTopics.name,
     })
     .from(mcqs)

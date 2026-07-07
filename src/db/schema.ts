@@ -128,6 +128,10 @@ export const papers = pgTable("papers", {
 // stem) can be plain text or an image URL — "type" is the discriminant,
 // "content" is either the literal text or the image's URL depending on it.
 export type QuestionOption = { type: "text"; content: string } | { type: "image"; content: string };
+// A question's own diagram/figure (the stem's illustration, distinct from an
+// image-type option) — always image-type, since a "text" question image
+// would just be questionText itself.
+export type QuestionImage = { type: "image"; content: string };
 
 export const mcqs = pgTable("mcqs", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -146,6 +150,12 @@ export const mcqs = pgTable("mcqs", {
   // into this array positionally; grading never reads an option's content.
   options: jsonb("options").$type<QuestionOption[]>().notNull(),
   correctOption: integer("correct_option").notNull(),
+  // Nullable: most questions have no diagram/figure attached to the stem
+  // itself (distinct from an image-type option — this is the question text's
+  // own illustration). Not stored via content_items — that table requires a
+  // title and carries its own draft/published status meant for something
+  // more like attached reading material, not a lightweight image reference.
+  questionImage: jsonb("question_image").$type<QuestionImage>(),
   difficulty: mcqDifficultyEnum("difficulty").notNull().default("medium"),
   status: contentStatusEnum("status").notNull().default("draft"),
   // Whether anyone has reviewed this question's content — independent of

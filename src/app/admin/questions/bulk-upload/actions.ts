@@ -32,6 +32,7 @@ export async function bulkImportQuestions(rows: ResolvedBulkRow[]): Promise<{ im
           subTopicId: row.subTopicId,
           paperId: row.paperId,
           questionText: row.questionText,
+          questionImage: row.questionImage,
           options: row.options,
           correctOption: row.correctOption,
           difficulty: row.difficulty,

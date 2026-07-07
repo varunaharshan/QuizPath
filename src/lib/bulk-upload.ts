@@ -12,10 +12,15 @@ import Papa from "papaparse";
 
 export const TEMPLATE_HEADERS = [
   "Question Text",
+  "Question Image URL",
   "Option A",
+  "Option A Image URL",
   "Option B",
+  "Option B Image URL",
   "Option C",
+  "Option C Image URL",
   "Option D",
+  "Option D Image URL",
   "Correct Answer",
   "Subject",
   "Grade",
@@ -35,10 +40,17 @@ export type BulkUploadRow = {
   // matching how the review grid displays "Row 1, Row 2, …".
   rowNumber: number;
   questionText: string;
+  // Optional — the question stem's own diagram/figure, distinct from an
+  // image-type option.
+  questionImageUrl: string;
   optionA: string;
+  optionAImageUrl: string;
   optionB: string;
+  optionBImageUrl: string;
   optionC: string;
+  optionCImageUrl: string;
   optionD: string;
+  optionDImageUrl: string;
   correctAnswer: string;
   subject: string;
   grade: string;
@@ -51,10 +63,15 @@ export type BulkUploadRow = {
 
 const HEADER_KEY_MAP: Record<string, keyof Omit<BulkUploadRow, "rowNumber">> = {
   "question text": "questionText",
+  "question image url": "questionImageUrl",
   "option a": "optionA",
+  "option a image url": "optionAImageUrl",
   "option b": "optionB",
+  "option b image url": "optionBImageUrl",
   "option c": "optionC",
+  "option c image url": "optionCImageUrl",
   "option d": "optionD",
+  "option d image url": "optionDImageUrl",
   "correct answer": "correctAnswer",
   subject: "subject",
   grade: "grade",
@@ -91,10 +108,15 @@ export function parseBulkCsv(csvText: string): BulkUploadRow[] {
     return {
       rowNumber: index + 1,
       questionText: row.questionText ?? "",
+      questionImageUrl: row.questionImageUrl ?? "",
       optionA: row.optionA ?? "",
+      optionAImageUrl: row.optionAImageUrl ?? "",
       optionB: row.optionB ?? "",
+      optionBImageUrl: row.optionBImageUrl ?? "",
       optionC: row.optionC ?? "",
+      optionCImageUrl: row.optionCImageUrl ?? "",
       optionD: row.optionD ?? "",
+      optionDImageUrl: row.optionDImageUrl ?? "",
       correctAnswer: row.correctAnswer ?? "",
       subject: row.subject ?? "",
       grade: row.grade ?? "",
@@ -118,16 +140,19 @@ export type BulkUploadReferenceData = {
   papers: { id: string; title: string; subjectId: string; grade: "10" | "11" }[];
 };
 
-// Duplicated from src/db/schema.ts's QuestionOption rather than imported —
-// keeps this file's "zero import from @/db or anything that transitively
-// imports it" invariant explicit and self-contained (see file-level comment
-// above), even though schema.ts itself doesn't currently import @/db.
+// Duplicated from src/db/schema.ts's QuestionOption/QuestionImage rather than
+// imported — keeps this file's "zero import from @/db or anything that
+// transitively imports it" invariant explicit and self-contained (see
+// file-level comment above), even though schema.ts itself doesn't currently
+// import @/db.
 export type QuestionOption = { type: "text"; content: string } | { type: "image"; content: string };
+export type QuestionImage = { type: "image"; content: string };
 
 export type ResolvedBulkRow = {
   subTopicId: string;
   paperId: string | null;
   questionText: string;
+  questionImage: QuestionImage | null;
   options: [QuestionOption, QuestionOption, QuestionOption, QuestionOption];
   correctOption: number;
   difficulty: "easy" | "medium" | "hard";
@@ -155,15 +180,48 @@ function isDifficultyValue(value: string): value is "easy" | "medium" | "hard" {
   return value === "easy" || value === "medium" || value === "hard";
 }
 
+// Format-only — confirms the string parses as a URL, not that it actually
+// resolves to a reachable resource. A genuine reachability check would need
+// a server round-trip (browsers can't reliably read cross-origin fetch
+// results for arbitrary image hosts) and would turn this into a live
+// outbound request to an admin-supplied URL on every review; deliberately
+// out of scope for this pass.
+function isWellFormedUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// An option is either an image (if its "Image URL" column is populated) or
+// plain text (the existing Option A-D column) — never both, and never
+// neither. Pulled into a helper since all four options resolve identically.
+function resolveOption(
+  label: string,
+  text: string,
+  imageUrl: string,
+): { error?: string; option?: QuestionOption } {
+  const trimmedImageUrl = imageUrl.trim();
+  if (trimmedImageUrl) {
+    if (!isWellFormedUrl(trimmedImageUrl)) {
+      return { error: `${label} Image URL "${imageUrl}" is not a well-formed URL` };
+    }
+    return { option: { type: "image", content: trimmedImageUrl } };
+  }
+  const trimmedText = text.trim();
+  if (!trimmedText) {
+    return { error: `${label} is required (text or an ${label} Image URL)` };
+  }
+  return { option: { type: "text", content: trimmedText } };
+}
+
 export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData): ValidatedBulkRow {
   const errors: string[] = [];
 
   const required: [string, string][] = [
     ["Question text", row.questionText],
-    ["Option A", row.optionA],
-    ["Option B", row.optionB],
-    ["Option C", row.optionC],
-    ["Option D", row.optionD],
     ["Correct answer", row.correctAnswer],
     ["Subject", row.subject],
     ["Grade", row.grade],
@@ -235,7 +293,33 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
     }
   }
 
-  if (errors.length > 0 || !matchedSubTopic || !isDifficultyValue(difficultyRaw)) {
+  const optionA = resolveOption("Option A", row.optionA, row.optionAImageUrl);
+  const optionB = resolveOption("Option B", row.optionB, row.optionBImageUrl);
+  const optionC = resolveOption("Option C", row.optionC, row.optionCImageUrl);
+  const optionD = resolveOption("Option D", row.optionD, row.optionDImageUrl);
+  for (const resolvedOpt of [optionA, optionB, optionC, optionD]) {
+    if (resolvedOpt.error) errors.push(resolvedOpt.error);
+  }
+
+  const trimmedQuestionImageUrl = row.questionImageUrl.trim();
+  let questionImage: QuestionImage | null = null;
+  if (trimmedQuestionImageUrl) {
+    if (!isWellFormedUrl(trimmedQuestionImageUrl)) {
+      errors.push(`Question Image URL "${row.questionImageUrl}" is not a well-formed URL`);
+    } else {
+      questionImage = { type: "image", content: trimmedQuestionImageUrl };
+    }
+  }
+
+  if (
+    errors.length > 0 ||
+    !matchedSubTopic ||
+    !isDifficultyValue(difficultyRaw) ||
+    !optionA.option ||
+    !optionB.option ||
+    !optionC.option ||
+    !optionD.option
+  ) {
     return { row, errors, resolved: null };
   }
 
@@ -246,12 +330,8 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
       subTopicId: matchedSubTopic.id,
       paperId: matchedPaper?.id ?? null,
       questionText: row.questionText.trim(),
-      options: [
-        { type: "text", content: row.optionA.trim() },
-        { type: "text", content: row.optionB.trim() },
-        { type: "text", content: row.optionC.trim() },
-        { type: "text", content: row.optionD.trim() },
-      ],
+      questionImage,
+      options: [optionA.option, optionB.option, optionC.option, optionD.option],
       correctOption: correctIndex,
       difficulty: difficultyRaw,
       keywords: row.keywords
