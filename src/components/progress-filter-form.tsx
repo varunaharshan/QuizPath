@@ -2,13 +2,14 @@
 
 import { useRouter } from "next/navigation";
 
-// Client Component mirroring <PapersFilterForm>'s cascading-dropdown shape
-// (see src/components/papers-filter-form.tsx) — changing either select
-// re-navigates to /progress with updated query params, and the Server
-// Component page re-fetches and re-renders the KPI cards/topic table below
-// for the new grade+subject. There's no "Start"-style action here (Progress
-// is a live view, not something you launch), so unlike PapersFilterForm
-// there's no button — the selects themselves are the whole form.
+// Client Component with a cascading-dropdown shape (this app's standard
+// pattern for a Grade/Subject filter that re-navigates rather than holding
+// client state) — changing either select re-navigates to /progress with
+// updated query params, and the Server Component page re-fetches and
+// re-renders the KPI cards/topic table below for the new grade+subject.
+// There's no "Start"-style action here (Progress is a live view, not
+// something you launch), so there's no button — the selects themselves are
+// the whole form.
 export function ProgressFilterForm({
   grades,
   subjects,

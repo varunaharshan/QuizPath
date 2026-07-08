@@ -12,6 +12,7 @@ export type AdminPaper = {
   paperType: PaperTypeValue;
   year: number | null;
   status: "draft" | "published";
+  timeLimitMinutes: number | null;
   questionCount: number;
 };
 
@@ -43,6 +44,7 @@ export async function getPapersForAdmin(filters: AdminPapersFilters): Promise<Ad
       paperType: papers.paperType,
       year: papers.year,
       status: papers.status,
+      timeLimitMinutes: papers.timeLimitMinutes,
     })
     .from(papers)
     .innerJoin(subjects, eq(papers.subjectId, subjects.id))
@@ -72,6 +74,7 @@ export type AdminPaperDetail = {
   paperType: PaperTypeValue;
   year: number | null;
   status: "draft" | "published";
+  timeLimitMinutes: number | null;
 };
 
 export async function getPaperForAdmin(paperId: string): Promise<AdminPaperDetail | null> {
@@ -85,5 +88,6 @@ export async function getPaperForAdmin(paperId: string): Promise<AdminPaperDetai
     paperType: paper.paperType,
     year: paper.year,
     status: paper.status,
+    timeLimitMinutes: paper.timeLimitMinutes,
   };
 }

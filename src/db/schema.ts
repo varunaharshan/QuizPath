@@ -122,6 +122,12 @@ export const papers = pgTable("papers", {
   source: varchar("source", { length: 200 }),
   status: contentStatusEnum("status").notNull().default("draft"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Nullable, admin-settable via Papers Management — an earlier pass
+  // deliberately dropped this field ("content starts simple, add fields
+  // when there's a real need"), reintroduced now that the student-facing
+  // Papers grid/detail redesign needs a real "suggested time" to show
+  // rather than guessing one from question count.
+  timeLimitMinutes: integer("time_limit_minutes"),
 });
 
 // An option (and, from src/db/migrate-options-format.ts onward, a question

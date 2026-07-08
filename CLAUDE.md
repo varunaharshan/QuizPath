@@ -536,47 +536,115 @@ existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a pla
 default rather than a data-driven backfill, since "English" is a reasonable default and there
 was no real user data to preserve a signal from.
 
-Papers (the sidebar's "Papers" nav item — see "App shell" above) is a single filter page at
-`/papers`, not a multi-step drill-down: four dropdowns — Grade, Subject, Paper Type, and the
-specific Paper — plus a Start/Resume/Retake button (`<PapersFilterForm>` in
-`src/components/papers-filter-form.tsx`), matching a student-provided reference screenshot's
-"Past Papers" filter card. All four selections live in the URL's query string
-(`?grade=&subjectId=&type=&paper=`), not route params, so the page is a single Server
-Component (`src/app/papers/page.tsx`) that reads `searchParams`, re-fetches on every change,
-and passes the results to the (thin, `"use client"`) filter form:
-- **Grade and Subject** work exactly as the old 3-step flow did: a **session-level browsing
-  choice only** (nothing here ever writes to `student_profiles.grade`), with `medium`
-  resolved as `subject.fixedMedium ?? profile.medium` (medium stays a durable profile
-  attribute; only grade is a free browsing choice). Changing either resets the Paper Type/
-  Paper selections, since the previous ones may no longer apply.
-- **Paper Type** is a new dropdown (`provincial | district | school`, matching `paper_type`'s
-  real enum values — not the reference screenshot's fictional "GCSE"/"Zonal"/"Model" labels,
-  which came from a different product's mockup). `isValidPaperType()` in `src/lib/papers.ts`
-  validates it the same way `isValidGrade()` already did for grade — both are free
-  query-string choices a browsing student controls, not values trusted from the database.
-  When no type is selected (or the URL's is invalid), `firstNonEmptyPaperType()` picks the
-  first of the three (in that order) that actually has papers for the current grade+subject,
-  so switching grade/subject never lands on an empty dropdown when a different type would
-  have papers.
-- **Paper** lists whichever papers `getPapersForSubject()` (unchanged) returned for the
-  selected type, each labeled with its title/year; selecting one and clicking
-  Start/Resume/Retake (label driven by that paper's own `PaperAttemptStatus`, same three
-  values as before) navigates straight to the existing `/quiz/papers/[paperId]` quiz-taking
-  route — unchanged, since only the *selection* mechanism was redesigned, not how a paper is
-  actually taken.
-- Because all four values are free filter-form state (not identity-bearing route params
-  anymore), invalid or missing query values fall back to a sane default (student's own grade,
-  first subject, first non-empty paper type) rather than `notFound()`-ing — a deliberate
-  change from the old grade/subject route params, which did 404 on garbage input.
+Papers (the sidebar's "Papers" nav item — see "App shell" above) is a two-screen browse-then-
+launch flow: a filterable grid at `/papers`, and a read-only overview at `/papers/[paperId]`
+that's the actual entry point into taking a paper. This replaced an earlier four-dropdown
+filter-form design (Grade/Subject/Paper Type/Paper selects plus a single Start/Resume/Retake
+button, all on one page) — dropped because it could only ever show one subject's papers for
+one paper type at a time, and a card grid reads real per-paper status (question count, marks,
+suggested time, progress) at a glance instead of hiding it behind a fourth select.
 
-This single page replaced an earlier three-step Grade → Subject → Papers page-per-step flow
-(`/papers`, `/papers/grade/[grade]`, `/papers/grade/[grade]/subjects/[subjectId]`, itself
-originally at `/quiz/*` before "Papers" and "Practice" became separate nav items — see "App
-shell" above). The sub-topic quiz-taking route (`/quiz/[subTopicId]`, reached only via deep
-links from the Dashboard's Recommended-practice cards and Progress's per-topic Practice
-buttons) and the paper-taking route (`/quiz/papers/[paperId]`) are unaffected by any of this —
-neither was ever part of the Papers *browsing/filtering* UI, just the mechanics of taking a
-specific quiz once a paper or sub-topic has already been chosen.
+**`/papers` (the grid)** — `src/app/papers/page.tsx`, a Server Component:
+- **Grade is a pill row driven by `getGradesWithPapers()`** (`src/lib/papers.ts`) — real
+  distinct grades that have at least one published paper, not a hardcoded `["10","11"]` list,
+  so a grade with zero papers simply gets no pill. Like every other cascading filter in this
+  app, Grade is a real query-string param (`?grade=`) — clicking a pill is a plain `<Link>`,
+  causing a real navigation/refetch, not client state. Invalid/missing values fall back to the
+  student's own `profile.grade` (a free browsing choice, same rule Papers/Progress have always
+  used), even if that grade turns out to have zero papers.
+- **`getPapersForGrade({ grade, studentMedium, studentId })`** fetches every published paper
+  for that grade **across every subject in one query** — the key structural change from the
+  old function it replaced (`getPapersForSubject`, one subject at a time). Medium is resolved
+  **per paper's own subject** (`subject.fixedMedium ?? studentMedium`), not once for the whole
+  page, since a grade-wide fetch can span subjects with different fixed mediums. Each
+  `GradePaperCard` carries `questionCount`/`totalMarks` (published-`mcqs` count ×
+  `MARKS_PER_QUESTION`, reusing the existing quiz-results multiplier — see "Quiz-taking flow"),
+  `timeLimitMinutes` (see schema note below), and a `status` (`PaperAttemptStatus`, same
+  `not_started | in_progress | completed` values Papers has always used) resolved by a shared
+  internal helper, `resolvePaperStatuses()`, that also backs `getPaperOverview()` below — same
+  "an in-progress attempt always wins over an older completed one" precedence the old function
+  used, plus an `answeredCount` (only set when `in_progress`) so a card can show
+  "In progress · 6/12 answered."
+- **Subject is a pill row + Search box, both pure client state** — `getPapersForGrade`'s
+  already-fetched, whole-grade result is grouped by subject once, server-side
+  (`groupPapersBySubject()`, a pure/directly-tested function mirroring `groupTopicsBySubject`'s
+  own "bucket by subject, sort groups by name" shape for Practice by Topic), then handed to
+  `<PapersGrid>` (`src/components/papers-grid.tsx`, `"use client"`) which just toggles which
+  already-fetched group is visible (`useState`, no refetch) — the same "fetch once per Grade,
+  tab-switch client-side" split `<TopicCardGrid>` established. The search box live-filters the
+  *active* subject's papers by a case-insensitive title substring match, entirely in the
+  browser. `<PapersGrid>` deliberately never imports anything runtime from `@/lib/papers` (it
+  transitively imports `@/db`, `server-only`-guarded) — `PaperCardData`/`SubjectPaperTab` are
+  local types, and `PAPER_TYPE_LABELS` is a small local copy, the same "Client Component gets
+  plain precomputed data, not a live import" rule `<TopicCardGrid>` already established.
+- **Paper Type isn't a filter anymore** — the reference screenshot's fourth dropdown is gone;
+  instead every card shows its own `provincial | district | school` label as a small badge, a
+  deliberate design call (a badge conveys the same information as a filter would, without a
+  fourth control to manage for what's typically a handful of papers per subject+grade).
+  `PAPER_TYPE_LABELS`/`isValidPaperType` (`src/lib/papers.ts`) are otherwise unchanged.
+- **Each card** shows title, the paper-type badge, year (if set), a meta line
+  (question count · total marks · `~N min` from `timeLimitMinutes`, omitted entirely if unset
+  rather than guessed), and a progress indicator: no bar for `not_started` ("Not started" in
+  muted text), a partial `bg-progress` bar + "In progress · X/Y answered" for `in_progress`, or
+  a full `bg-mastered` bar + "✓ Completed" for `completed` — **deliberately no score anywhere
+  on a completed card**. An earlier plan considered a "Best score across all attempts" badge
+  (a `MAX(score)` aggregate over every attempt for that paper); this was explicitly dropped —
+  simpler status-only signal, no new aggregate query. The whole card is a `<Link>` to
+  `/papers/[paperId]?grade=&subjectId=`, passing along the grade/subject the student was
+  browsing so the overview page's own back-link can return to the same context.
+- **Empty states**: "No papers are available yet" when `getGradesWithPapers()` is empty
+  site-wide; "No papers are available yet for Grade N in your medium" when the selected grade
+  has published papers but none happen to match this student's resolved medium anywhere; "No
+  papers are available yet for this subject" for a subject tab with zero papers; "No papers
+  match your search" when a search term filters a non-empty subject down to zero.
+
+**`/papers/[paperId]` (the overview)** — `src/app/papers/[paperId]/page.tsx`, a **read-only**
+Server Component that is the only way a student launches a paper now (a card click, never a
+direct "Start" button on the grid itself). Backed by **`getPaperOverview({ paperId, studentId })`**
+(`src/lib/papers.ts`), which returns the same per-paper shape `getPapersForGrade` computes
+(subject/grade/paper-type/year, `questionCount`/`totalMarks`/`timeLimitMinutes`, `status` +
+`answeredCount` via the same shared `resolvePaperStatuses()` helper) for exactly one paper, or
+`null` for an unknown id (`notFound()`). **Critically, this page never calls
+`ensurePaperAttemptStarted`** — that side effect (marking the attempt "in progress" the moment
+a student opens a paper) belongs solely to the existing `/quiz/papers/[paperId]` quiz-taking
+route, unchanged; viewing the overview must never itself flip a paper's status. The back link
+reads `?grade=&subjectId=` from the URL (falling back to the paper's own grade/subject for a
+bookmarked/direct link) to return to `/papers` in the same context the student came from. Below
+the title/subtitle: a 3-stat row (question count, suggested time — `timeLimitMinutes` or `—` if
+unset, total marks), a status block matching the grid card's own not-started/in-progress/
+completed states (again, no score on completed), a "Before you start" checklist listing only
+what's actually true today (free navigation between questions, autosave, resume anytime before
+submitting — **no hints claim**, since no hints system exists anywhere in this app yet — see
+"What's NOT built yet"), and a Start/Resume/Retake button (`BUTTON_LABEL`, keyed off the same
+`PaperAttemptStatus`) linking straight into the existing, unmodified `/quiz/papers/[paperId]`
+route.
+
+**Schema**: `papers.time_limit_minutes` (nullable `integer`) is a new, admin-settable column —
+an earlier pass in this same project had deliberately *not* added it ("content starts simple,
+add fields when there's a real need"); reintroduced once the overview/grid redesign needed a
+real "suggested time" rather than guessing one from question count. Set via a
+"Time Limit in Minutes (optional)" field on both `/admin/papers/new` and
+`/admin/papers/[paperId]/edit` (parsed/validated by `parseTimeLimitMinutes()` in
+`src/app/admin/papers/actions.ts` — must be a positive whole number if provided at all, `null`
+if left blank), threaded through `AdminPaper`/`AdminPaperDetail` (`src/lib/admin-papers.ts`).
+
+**Removed as dead code, not left unused**: `getPapersForSubject`, `GroupedPapers`,
+`PaperListItem`, `firstNonEmptyPaperType`, and `src/components/papers-filter-form.tsx` (the old
+four-dropdown filter form) — all exclusively served the old single-subject dropdown design and
+have no other callers, so they were deleted outright rather than kept around unused (the same
+call already made for `getContinueAttempt`/`rankRecommendedPracticeTopics` when the Dashboard
+was redesigned — see "Dashboard" above). Their test coverage in `tests/paper-flow.test.ts` and
+`tests/papers.test.ts` was migrated to exercise the same behavior through the new
+`getPapersForGrade`/`groupPapersBySubject` functions instead of deleted outright, so the
+underlying attempt-status-resolution behavior they were protecting (in-progress-beats-completed
+precedence, cross-grade browsing never touching `student_profiles.grade`, retake starting a
+fresh row, etc.) stays covered.
+
+The sub-topic quiz-taking route (`/quiz/[subTopicId]`, reached only via deep links from the
+Dashboard's Recommended-practice cards and Progress's per-topic Practice buttons) and the
+paper-taking route (`/quiz/papers/[paperId]`) are unaffected by any of this — neither was ever
+part of the Papers *browsing* UI, just the mechanics of taking a specific quiz once a paper or
+sub-topic has already been chosen.
 
 New `papers` table (`subject_id` FK, `grade`, `medium`, `paper_type`
 `provincial|district|school`, `title`, nullable `year`/`source`, `status`

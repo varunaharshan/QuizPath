@@ -1,28 +1,12 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes } from "@/lib/dashboard";
-import {
-  firstNonEmptyPaperType,
-  getPapersForSubject,
-  getPracticeSubjects,
-  getSubjectById,
-  isValidGrade,
-  isValidPaperType,
-  PAPER_TYPE_LABELS,
-  type PaperTypeValue,
-} from "@/lib/papers";
+import { getGradesWithPapers, getPapersForGrade, groupPapersBySubject, isValidGrade } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
-import { PapersFilterForm } from "@/components/papers-filter-form";
+import { PapersGrid } from "@/components/papers-grid";
 
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
-
-const PAPER_TYPE_OPTIONS = (Object.keys(PAPER_TYPE_LABELS) as PaperTypeValue[]).map((value) => ({
-  value,
-  label: `${PAPER_TYPE_LABELS[value]} papers`,
-}));
+const GRADE_LABELS: Record<"10" | "11", string> = { "10": "Grade 10", "11": "Grade 11" };
 
 export default async function PapersPage({
   searchParams,
@@ -41,33 +25,19 @@ export default async function PapersPage({
 
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
-  const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
-  const rawType = typeof params.type === "string" ? params.type : undefined;
-  const rawPaperId = typeof params.paper === "string" ? params.paper : undefined;
 
-  // All four filter values are free query-string choices (like the old
-  // Grade/Subject route params were) — this is a filter form's current
-  // selection, not an identity-bearing URL, so anything invalid just falls
-  // back to a sane default instead of 404ing.
+  // Grade is a free browsing choice (like every other cascading filter in
+  // this app) — invalid/missing falls back to the student's own grade
+  // rather than 404ing, even if that grade happens to have zero papers.
   const grade = rawGrade && isValidGrade(rawGrade) ? rawGrade : profile.grade;
 
-  const [subjects, completedQuizzes] = await Promise.all([
-    getPracticeSubjects(),
+  const [grades, papersForGrade, completedQuizzes] = await Promise.all([
+    getGradesWithPapers(),
+    getPapersForGrade({ grade, studentMedium: profile.medium, studentId: appUser.id }),
     getCompletedQuizzes(appUser.id),
   ]);
 
-  const subjectId =
-    rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
-  const subject = subjectId ? await getSubjectById(subjectId) : null;
-  const medium = subject?.fixedMedium ?? profile.medium;
-
-  const grouped = subjectId
-    ? await getPapersForSubject({ subjectId, grade, medium, studentId: appUser.id })
-    : { provincial: [], district: [], school: [] };
-
-  const type = rawType && isValidPaperType(rawType) ? rawType : firstNonEmptyPaperType(grouped);
-  const papersForType = grouped[type];
-  const hasAnyPapers = grouped.provincial.length > 0 || grouped.district.length > 0 || grouped.school.length > 0;
+  const groups = groupPapersBySubject(papersForGrade);
 
   return (
     <AppShell
@@ -78,25 +48,56 @@ export default async function PapersPage({
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Past Papers</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Practice with real past exam papers, organised by year.
+        Practice with real past exam papers, organised by subject.
       </p>
 
-      {!subjectId ? (
+      {grades.length === 0 ? (
         <div className="max-w-[640px] rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
-          No subjects are available yet.
-        </div>
-      ) : !hasAnyPapers ? (
-        <div className="max-w-[640px] rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
-          No papers are available yet for Grade {grade} in your medium.
+          No papers are available yet.
         </div>
       ) : (
-        <PapersFilterForm
-          grades={GRADES.map((g) => ({ ...g }))}
-          subjects={subjects}
-          paperTypes={PAPER_TYPE_OPTIONS}
-          papers={papersForType}
-          selected={{ grade, subjectId, type, paperId: rawPaperId ?? null }}
-        />
+        <>
+          <div className="mb-4.5 flex flex-wrap gap-2">
+            {grades.map((g) => (
+              <Link
+                key={g}
+                href={`/papers?grade=${g}`}
+                className={`rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors ${
+                  g === grade
+                    ? "bg-navy-900 text-white"
+                    : "bg-app-surface-muted text-ink-secondary hover:bg-app-border"
+                }`}
+              >
+                {GRADE_LABELS[g]}
+              </Link>
+            ))}
+          </div>
+
+          {groups.length === 0 ? (
+            <div className="max-w-[640px] rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
+              No papers are available yet for Grade {grade} in your medium.
+            </div>
+          ) : (
+            <PapersGrid
+              grade={grade}
+              groups={groups.map((group) => ({
+                subjectId: group.subjectId,
+                subjectName: group.subjectName,
+                papers: group.papers.map((p) => ({
+                  id: p.id,
+                  title: p.title,
+                  paperType: p.paperType,
+                  year: p.year,
+                  questionCount: p.questionCount,
+                  totalMarks: p.totalMarks,
+                  timeLimitMinutes: p.timeLimitMinutes,
+                  status: p.status,
+                  answeredCount: p.answeredCount,
+                })),
+              }))}
+            />
+          )}
+        </>
       )}
     </AppShell>
   );

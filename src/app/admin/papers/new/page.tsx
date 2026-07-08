@@ -83,6 +83,20 @@ export default async function NewPaperPage() {
             </div>
           </div>
 
+          <div className="mb-3.5">
+            <label className="mb-1.5 block text-[12px] font-bold text-ink-secondary">
+              Time Limit in Minutes (optional)
+            </label>
+            <input
+              type="number"
+              name="timeLimitMinutes"
+              min="1"
+              step="1"
+              placeholder="e.g. 60"
+              className={INPUT_CLASSES}
+            />
+          </div>
+
           <div className="flex gap-2.5">
             <button
               type="submit"

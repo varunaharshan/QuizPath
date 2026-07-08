@@ -10,7 +10,7 @@ import {
   getQuizForPaper,
   saveQuizAnswer,
 } from "@/lib/quiz";
-import { getPapersForSubject } from "@/lib/papers";
+import { getPapersForGrade } from "@/lib/papers";
 import { submitFullPaperQuiz, textOptions } from "./helpers";
 
 describe("paper-based quiz flow", () => {
@@ -117,21 +117,15 @@ describe("paper-based quiz flow", () => {
     await pool.end();
   });
 
-  it("lists the paper grouped by paper_type, filtered by grade/medium, status not_started", async () => {
-    const grouped = await getPapersForSubject({
-      subjectId,
-      grade: "10",
-      medium: "english",
-      studentId,
-    });
-
-    expect(grouped.provincial).toHaveLength(1);
-    expect(grouped.provincial[0].id).toBe(paperId);
-    expect(grouped.provincial[0].status).toBe("not_started");
-    expect(grouped.district).toHaveLength(0);
-    expect(grouped.school).toHaveLength(0);
+  it("lists the paper for its grade/medium with status not_started, excluding a different grade's paper", async () => {
+    const cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    const card = cards.find((c) => c.id === paperId);
+    expect(card).toBeDefined();
+    expect(card?.paperType).toBe("provincial");
+    expect(card?.status).toBe("not_started");
+    expect(card?.answeredCount).toBeNull();
     // The Grade 11 paper must not leak into a Grade 10 listing.
-    expect(grouped.provincial.some((p) => p.id === otherGradePaperId)).toBe(false);
+    expect(cards.some((c) => c.id === otherGradePaperId)).toBe(false);
   });
 
   it("serves every published question with no cap, without leaking the answer key", async () => {
@@ -152,13 +146,10 @@ describe("paper-based quiz flow", () => {
     const attemptId = await ensurePaperAttemptStarted(studentId, paperId);
     expect(attemptId).toBeTruthy();
 
-    const grouped = await getPapersForSubject({
-      subjectId,
-      grade: "10",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial[0].status).toBe("in_progress");
+    const cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    const card = cards.find((c) => c.id === paperId);
+    expect(card?.status).toBe("in_progress");
+    expect(card?.answeredCount).toBe(0);
 
     // Idempotent: opening it again reuses the same in-progress row.
     const attemptIdAgain = await ensurePaperAttemptStarted(studentId, paperId);
@@ -192,13 +183,10 @@ describe("paper-based quiz flow", () => {
     });
     expect(mastery).toBeUndefined();
 
-    const grouped = await getPapersForSubject({
-      subjectId,
-      grade: "10",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial[0].status).toBe("completed");
+    const cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    const card = cards.find((c) => c.id === paperId);
+    expect(card?.status).toBe("completed");
+    expect(card?.answeredCount).toBeNull();
   });
 
   it("starts a fresh attempt (a second row) on retake, rather than reusing the completed one", async () => {
@@ -230,13 +218,8 @@ describe("paper-based quiz flow", () => {
 
     // Simulates navigating away and back: re-listing the Grade 11 papers
     // should show "Resume" for this still-incomplete attempt.
-    let grouped = await getPapersForSubject({
-      subjectId,
-      grade: "11",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("in_progress");
+    let cards = await getPapersForGrade({ grade: "11", studentMedium: "english", studentId });
+    expect(cards.find((c) => c.id === otherGradePaperId)?.status).toBe("in_progress");
 
     const [oq1, oq2] = otherGradeMcqIds;
     await submitFullPaperQuiz({
@@ -245,13 +228,8 @@ describe("paper-based quiz flow", () => {
       answers: { [oq1]: 2, [oq2]: 2 }, // both correct -> 100%
     });
 
-    grouped = await getPapersForSubject({
-      subjectId,
-      grade: "11",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial.find((p) => p.id === otherGradePaperId)?.status).toBe("completed");
+    cards = await getPapersForGrade({ grade: "11", studentMedium: "english", studentId });
+    expect(cards.find((c) => c.id === otherGradePaperId)?.status).toBe("completed");
 
     // Browsing Grade 11 must never have touched the student's own grade.
     const profileAfter = await db.query.studentProfiles.findFirst({
@@ -274,25 +252,18 @@ describe("paper-based quiz flow", () => {
     const existingAnswers = await getExistingAnswers(resumedAttemptId);
     expect(existingAnswers[q1]).toBe(1);
 
-    let grouped = await getPapersForSubject({
-      subjectId,
-      grade: "10",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial[0].status).toBe("in_progress");
+    let cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    let card = cards.find((c) => c.id === paperId);
+    expect(card?.status).toBe("in_progress");
+    expect(card?.answeredCount).toBe(1);
 
     // Explicitly submitting with only 1 of 3 questions answered ends this
     // session — status must flip to "completed" (Retake), not stay "Resume".
     await finalizePaperAttempt({ studentId, attemptId: resumedAttemptId });
 
-    grouped = await getPapersForSubject({
-      subjectId,
-      grade: "10",
-      medium: "english",
-      studentId,
-    });
-    expect(grouped.provincial[0].status).toBe("completed");
+    cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    card = cards.find((c) => c.id === paperId);
+    expect(card?.status).toBe("completed");
 
     const nextAttemptId = await ensurePaperAttemptStarted(studentId, paperId);
     expect(nextAttemptId).not.toBe(resumedAttemptId);

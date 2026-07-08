@@ -82,6 +82,21 @@ export default async function EditPaperPage({ params }: { params: Promise<{ pape
           </div>
         </div>
 
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-[12px] font-bold text-ink-secondary">
+            Time Limit in Minutes (optional)
+          </label>
+          <input
+            type="number"
+            name="timeLimitMinutes"
+            min="1"
+            step="1"
+            placeholder="e.g. 60"
+            defaultValue={paper.timeLimitMinutes ?? ""}
+            className={INPUT_CLASSES}
+          />
+        </div>
+
         <div className="mb-4.5">
           <label className="mb-1.5 block text-[12px] font-bold text-ink-secondary">Status</label>
           <select name="status" required defaultValue={paper.status} className={INPUT_CLASSES}>

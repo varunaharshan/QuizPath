@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { firstNonEmptyPaperType, isValidPaperType, type GroupedPapers } from "@/lib/papers";
+import { groupPapersBySubject, isValidPaperType, type GradePaperCard } from "@/lib/papers";
 
-function grouped(overrides: Partial<GroupedPapers> = {}): GroupedPapers {
-  return { provincial: [], district: [], school: [], ...overrides };
+function paperCard(overrides: Partial<GradePaperCard> = {}): GradePaperCard {
+  return {
+    id: "p1",
+    title: "Test paper",
+    subjectId: "s1",
+    subjectName: "Science",
+    paperType: "provincial",
+    year: 2023,
+    questionCount: 10,
+    totalMarks: 20,
+    timeLimitMinutes: null,
+    status: "not_started",
+    answeredCount: null,
+    ...overrides,
+  };
 }
-
-const PAPER = {
-  id: "p1",
-  title: "Test paper",
-  year: 2023,
-  source: null,
-  status: "not_started" as const,
-};
 
 describe("isValidPaperType", () => {
   it("accepts exactly the three real paper types", () => {
@@ -28,26 +33,29 @@ describe("isValidPaperType", () => {
   });
 });
 
-// Backs the Papers filter form's default Paper Type selection: whichever
-// grade+subject was just chosen, the dropdown should default to a type that
-// actually has papers rather than landing on an empty one.
-describe("firstNonEmptyPaperType", () => {
-  it("picks provincial first when it has papers, regardless of what else does", () => {
-    const g = grouped({ provincial: [PAPER], district: [PAPER], school: [PAPER] });
-    expect(firstNonEmptyPaperType(g)).toBe("provincial");
+// Backs the Papers grid's subject-tab switcher: an already-fetched grade-wide
+// paper list gets bucketed by subject, client-side tab-switching over the
+// result (mirroring groupTopicsBySubject's own test coverage for Practice by
+// Topic).
+describe("groupPapersBySubject", () => {
+  it("buckets papers by subject, preserving each subject's own order, sorted by subject name", () => {
+    const papers = [
+      paperCard({ id: "p1", subjectId: "s1", subjectName: "Science", title: "Paper A" }),
+      paperCard({ id: "p2", subjectId: "s1", subjectName: "Science", title: "Paper B" }),
+      paperCard({ id: "p3", subjectId: "s2", subjectName: "Business Studies", title: "Paper C" }),
+    ];
+
+    const groups = groupPapersBySubject(papers);
+
+    expect(groups).toHaveLength(2);
+    // Sorted by subject name, not by first-appearance order.
+    expect(groups[0].subjectName).toBe("Business Studies");
+    expect(groups[0].papers.map((p) => p.id)).toEqual(["p3"]);
+    expect(groups[1].subjectName).toBe("Science");
+    expect(groups[1].papers.map((p) => p.id)).toEqual(["p1", "p2"]);
   });
 
-  it("falls through to district when provincial is empty", () => {
-    const g = grouped({ district: [PAPER], school: [PAPER] });
-    expect(firstNonEmptyPaperType(g)).toBe("district");
-  });
-
-  it("falls through to school when only school has papers", () => {
-    const g = grouped({ school: [PAPER] });
-    expect(firstNonEmptyPaperType(g)).toBe("school");
-  });
-
-  it("defaults to provincial when nothing has any papers", () => {
-    expect(firstNonEmptyPaperType(grouped())).toBe("provincial");
+  it("returns an empty array for an empty input", () => {
+    expect(groupPapersBySubject([])).toEqual([]);
   });
 });

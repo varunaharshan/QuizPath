@@ -19,6 +19,15 @@ function parseYear(value: FormDataEntryValue | null): number | null {
   return year;
 }
 
+function parseTimeLimitMinutes(value: FormDataEntryValue | null): number | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes) || minutes <= 0) {
+    throw new Error("Time limit must be a positive whole number of minutes.");
+  }
+  return minutes;
+}
+
 // Papers Management's create/edit form doesn't collect medium at all (out
 // of scope per the brief) — resolved the same way the rest of the app
 // already treats a content subject's medium: pinned to subject.fixedMedium
@@ -38,6 +47,7 @@ export async function createPaper(formData: FormData) {
   const paperType = formData.get("paperType");
   const title = formData.get("title");
   const year = parseYear(formData.get("year"));
+  const timeLimitMinutes = parseTimeLimitMinutes(formData.get("timeLimitMinutes"));
 
   if (typeof subjectId !== "string" || !subjectId) {
     throw new Error("Invalid subject.");
@@ -61,6 +71,7 @@ export async function createPaper(formData: FormData) {
     paperType,
     title: title.trim(),
     year,
+    timeLimitMinutes,
   });
 
   revalidatePath("/admin/papers");
@@ -77,6 +88,7 @@ export async function updatePaper(formData: FormData) {
   const title = formData.get("title");
   const status = formData.get("status");
   const year = parseYear(formData.get("year"));
+  const timeLimitMinutes = parseTimeLimitMinutes(formData.get("timeLimitMinutes"));
 
   if (typeof paperId !== "string" || !paperId) {
     throw new Error("Invalid paper.");
@@ -101,7 +113,7 @@ export async function updatePaper(formData: FormData) {
 
   await db
     .update(papers)
-    .set({ subjectId, grade, medium, paperType, title: title.trim(), year, status })
+    .set({ subjectId, grade, medium, paperType, title: title.trim(), year, status, timeLimitMinutes })
     .where(eq(papers.id, paperId));
 
   revalidatePath("/admin/papers");
