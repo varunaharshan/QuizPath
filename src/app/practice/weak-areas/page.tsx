@@ -40,7 +40,7 @@ export default async function WeakAreasPage({
 
   return (
     <AppShell
-      active="practice-weak-areas"
+      active="weak-areas"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
       isActiveLearner={completedQuizzes.length > 0}

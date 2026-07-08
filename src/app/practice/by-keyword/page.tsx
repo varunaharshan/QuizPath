@@ -65,7 +65,7 @@ export default async function ByKeywordPage({
 
   return (
     <AppShell
-      active="practice-by-keyword"
+      active="by-keyword"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
       isActiveLearner={completedQuizzes.length > 0}

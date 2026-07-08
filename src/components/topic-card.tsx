@@ -2,10 +2,9 @@ import Link from "next/link";
 
 // Plain presentational component — no "use client", no imports from
 // @/lib/dashboard or @/lib/practice (both transitively hit the
-// server-only-guarded @/db). That keeps it safe to use from both a Server
-// Component (e.g. the By Keyword search results page) and a Client
-// Component (<TopicCardGrid>'s tab switcher): all data, including the icon,
-// is precomputed by whichever Server Component page renders it.
+// server-only-guarded @/db). Used by the By Keyword search results page (a
+// Server Component); all data, including the icon, is precomputed by
+// whichever page renders it.
 export type TopicCardData = {
   id: string;
   name: string;

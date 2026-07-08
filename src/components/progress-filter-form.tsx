@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 
 // Client Component with a cascading-dropdown shape (this app's standard
 // pattern for a Grade/Subject filter that re-navigates rather than holding
-// client state) — changing either select re-navigates to /progress with
-// updated query params, and the Server Component page re-fetches and
-// re-renders the KPI cards/topic table below for the new grade+subject.
-// There's no "Start"-style action here (Progress is a live view, not
-// something you launch), so there's no button — the selects themselves are
-// the whole form.
+// client state) — changing either select re-navigates to /practice/by-topic
+// with updated query params, and the Server Component page re-fetches and
+// re-renders the topic table below for the new grade+subject. There's no
+// "Start"-style action here (this is a live view, not something you
+// launch), so there's no button — the selects themselves are the whole
+// form. No max-width on the outer container — it's meant to span the same
+// full width as the Mastery by topic table beneath it.
 export function ProgressFilterForm({
   grades,
   subjects,
@@ -26,11 +27,11 @@ export function ProgressFilterForm({
     for (const [key, value] of Object.entries(overrides)) {
       params.set(key, value);
     }
-    router.push(`/progress?${params.toString()}`);
+    router.push(`/practice/by-topic?${params.toString()}`);
   }
 
   return (
-    <div className="mb-4.5 max-w-[640px] rounded-[10px] border border-app-border bg-white p-5">
+    <div className="mb-4.5 rounded-[10px] border border-app-border bg-white p-5">
       <div className="grid grid-cols-2 gap-4">
         <label className="block">
           <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-wide text-ink-secondary">

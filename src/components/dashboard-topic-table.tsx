@@ -2,20 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { SubjectTopicTab } from "@/components/topic-card-grid";
+import type { TopicCardData } from "@/components/topic-card";
 
-export type { SubjectTopicTab };
+export type SubjectTopicTab = {
+  subjectId: string;
+  subjectName: string;
+  topics: TopicCardData[];
+};
 
 // Subject-tab switcher + accuracy table for the Dashboard's "Topic
-// Performance" card — same tab-switching mechanic as <TopicCardGrid> (pure
-// client state, no navigation/reload; all subjects' data pre-fetched
-// server-side), just rendered as a table row per topic instead of a card
-// grid, matching the dash-* mockup's own table styling for this screen.
-// Deliberately its own component rather than reusing <TopicCardGrid>
-// directly, since the visual shape (table vs. cards) and active-tab color
-// (dash-blue here vs. navy-900 on Practice by Topic) are both genuinely
-// different — only the underlying tab-state mechanic and data shape are
-// shared (via the imported SubjectTopicTab type).
+// Performance" card — a table row per topic instead of a card grid,
+// matching the dash-* mockup's own table styling for this screen. Was
+// previously "deliberately its own component rather than reusing
+// <TopicCardGrid> directly" (that card-grid component backed the old
+// "Practice by Topic" page, since replaced by the topic-rollup "By topic"
+// page — see CLAUDE.md "App shell"); this component and its data shape are
+// otherwise unaffected by that removal.
 export function DashboardTopicTable({
   groups,
   defaultSubjectId,

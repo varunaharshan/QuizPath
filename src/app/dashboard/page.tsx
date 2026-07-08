@@ -89,7 +89,9 @@ export default async function DashboardPage() {
     topicTabs.find((t) => t.subjectId === mostRecentSubjectId)?.subjectId ?? topicTabs[0]?.subjectId ?? null;
 
   const subject = subjects[0] as { id: string; name: string } | undefined;
-  const progressHref = subject ? `/progress?grade=${profile.grade}&subjectId=${subject.id}` : "/progress";
+  const byTopicHref = subject
+    ? `/practice/by-topic?grade=${profile.grade}&subjectId=${subject.id}`
+    : "/practice/by-topic";
   const displayName = appUser.name ?? appUser.email.split("@")[0];
   const firstName = displayName.split(" ")[0];
 
@@ -171,7 +173,7 @@ export default async function DashboardPage() {
             ))
           )}
           <Link
-            href={progressHref}
+            href={byTopicHref}
             className="mt-3 block w-full rounded-md border border-dash-blue-bg bg-white py-2 text-center text-[12.5px] font-semibold text-dash-blue hover:bg-dash-blue-bg"
           >
             View full analytics

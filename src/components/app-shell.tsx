@@ -2,14 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 
-export type ActiveNav =
-  | "dashboard"
-  | "papers"
-  | "practice-weak-areas"
-  | "practice-by-topic"
-  | "practice-by-keyword"
-  | "progress"
-  | "profile";
+export type ActiveNav = "dashboard" | "papers" | "weak-areas" | "by-topic" | "by-keyword" | "profile";
 
 type NavItem = { key: ActiveNav; href: string; label: string; icon: string };
 
@@ -18,31 +11,26 @@ const TOP_NAV_ITEMS: (NavItem & { section: "Overview" | "Account" })[] = [
   { key: "profile", href: "/profile", label: "Profile", icon: "◉", section: "Account" },
 ];
 
-// "Papers" is the Grade -> Subject -> Papers browsing/filtering flow (see
-// src/app/papers/page.tsx). "Progress" is the Grade -> Subject -> Topics
-// breakdown. Both are flat, single-destination nav items.
-const PAPERS_ITEM: NavItem = { key: "papers", href: "/papers", label: "Papers", icon: "📄" };
-const PROGRESS_ITEM: NavItem = { key: "progress", href: "/progress", label: "Progress", icon: "☰" };
-
-// "Practice" itself has no single destination — it's a section header over
-// three real sub-pages (Weak Areas, By Topic, By Keyword), always expanded
-// (no collapse/toggle state, so no client JS needed for the sidebar).
-const PRACTICE_SUBITEMS: NavItem[] = [
-  { key: "practice-weak-areas", href: "/practice/weak-areas", label: "Weak Areas", icon: "⚠" },
-  { key: "practice-by-topic", href: "/practice/by-topic", label: "By Topic", icon: "▤" },
-  { key: "practice-by-keyword", href: "/practice/by-keyword", label: "By Keyword", icon: "⌕" },
+// Four flat, single-destination Learning items — Papers (Grade -> Subject ->
+// Papers browsing), Weak Areas, By Topic (the topic-rollup mastery table,
+// formerly "Progress"), and By Keyword. Previously the latter three sat
+// indented under a non-clickable "Practice" section header; that grouping
+// is gone, so all four are plain siblings under "Learning" now.
+const LEARNING_ITEMS: NavItem[] = [
+  { key: "papers", href: "/papers", label: "Papers", icon: "📄" },
+  { key: "weak-areas", href: "/practice/weak-areas", label: "Weak areas", icon: "⚠" },
+  { key: "by-topic", href: "/practice/by-topic", label: "By topic", icon: "▤" },
+  { key: "by-keyword", href: "/practice/by-keyword", label: "By keyword", icon: "⌕" },
 ];
 
 const SECTIONS = ["Overview", "Learning", "Account"] as const;
 
-function NavLink({ item, active, indent = false }: { item: NavItem; active: ActiveNav; indent?: boolean }) {
+function NavLink({ item, active }: { item: NavItem; active: ActiveNav }) {
   const isActive = item.key === active;
   return (
     <Link
       href={item.href}
-      className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] py-2 text-[13.5px] ${
-        indent ? "pl-6 pr-2.5" : "px-2.5"
-      } ${
+      className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] px-2.5 py-2 text-[13.5px] ${
         isActive
           ? "border-progress bg-progress-bg font-semibold text-progress"
           : "border-transparent text-ink-secondary hover:bg-app-surface-muted"
@@ -68,7 +56,6 @@ export function AppShell({
   children: ReactNode;
 }) {
   const topTab = active === "profile" ? "settings" : "learn";
-  const isPracticeActive = active.startsWith("practice-");
 
   return (
     <div className="flex min-h-screen flex-1 flex-col bg-app-bg text-ink">
@@ -130,21 +117,7 @@ export function AppShell({
                 {section}
               </p>
               {section === "Learning" ? (
-                <>
-                  <NavLink item={PAPERS_ITEM} active={active} />
-                  <div
-                    className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] border-transparent px-2.5 py-2 text-[13.5px] ${
-                      isPracticeActive ? "font-semibold text-ink" : "text-ink-secondary"
-                    }`}
-                  >
-                    <span className="w-[18px] shrink-0 text-center text-[15px]">✎</span>
-                    Practice
-                  </div>
-                  {PRACTICE_SUBITEMS.map((item) => (
-                    <NavLink key={item.key} item={item} active={active} indent />
-                  ))}
-                  <NavLink item={PROGRESS_ITEM} active={active} />
-                </>
+                LEARNING_ITEMS.map((item) => <NavLink key={item.key} item={item} active={active} />)
               ) : (
                 TOP_NAV_ITEMS.filter((item) => item.section === section).map((item) => (
                   <NavLink key={item.key} item={item} active={active} />

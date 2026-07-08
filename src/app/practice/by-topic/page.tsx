@@ -1,16 +1,55 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import {
-  getCompletedQuizzes,
-  getMostRecentlyPracticedSubjectId,
-  getSubTopicStatusesForGrade,
-  iconForModule,
-} from "@/lib/dashboard";
-import { groupTopicsBySubject } from "@/lib/practice";
+import { getCompletedQuizzes, getProgressStats, type TopicProgress } from "@/lib/dashboard";
+import { getPracticeSubjects, isValidGrade } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
-import { TopicCardGrid, type SubjectTopicTab } from "@/components/topic-card-grid";
+import { ProgressFilterForm } from "@/components/progress-filter-form";
+import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
-export default async function ByTopicPage() {
+const GRADES = [
+  { value: "10", label: "Grade 10" },
+  { value: "11", label: "Grade 11" },
+] as const;
+
+// <TopicProgressTable> is "use client" and deliberately defines its own
+// local types rather than importing TopicProgress from @/lib/dashboard
+// (which transitively imports the server-only-guarded @/db) — this remaps
+// the Server Component's already-fetched data into that plain shape, the
+// same pattern this app's other Client Components (e.g. <PapersGrid>)
+// already established.
+function toTopicProgressData(topic: TopicProgress): TopicProgressData {
+  return {
+    id: topic.id,
+    name: topic.name,
+    questionsAnswered: topic.questionsAnswered,
+    correctCount: topic.correctCount,
+    score: topic.score,
+    label: topic.label,
+    subTopics: topic.subTopics.map((subTopic) => ({
+      id: subTopic.id,
+      name: subTopic.name,
+      questionsAnswered: subTopic.questionsAnswered,
+      correctCount: subTopic.correctCount,
+      score: subTopic.score,
+      label: subTopic.label,
+    })),
+  };
+}
+
+// Formerly "Progress" (at /progress) — renamed and simplified to just the
+// Mastery by topic table. The 4 KPI cards (quizzes completed / questions
+// answered / correct answers / average score) that used to sit above this
+// table were dropped, not moved: the Dashboard's own stat row already shows
+// the same 4 metric types (account-wide across every subject for the
+// grade, via getOverallStats) — a deliberate decision, not an oversight, so
+// this page can stay focused on topic browsing without duplicating numbers
+// already visible elsewhere.
+export default async function ByTopicPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -21,53 +60,68 @@ export default async function ByTopicPage() {
     redirect("/onboarding");
   }
 
-  const [statuses, completedQuizzes, mostRecentSubjectId] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+  const params = await searchParams;
+  const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
+  const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
+
+  // Both filter values are free query-string choices (a Grade 11 student can
+  // browse Grade 10 progress, same free-browsing rule Papers has), so
+  // anything invalid just falls back to a sane default rather than 404ing.
+  const grade = rawGrade && isValidGrade(rawGrade) ? rawGrade : profile.grade;
+
+  const [subjects, completedQuizzes] = await Promise.all([
+    getPracticeSubjects(),
     getCompletedQuizzes(appUser.id),
-    getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
   ]);
 
-  // Icons are precomputed here (Server Component) rather than inside
-  // <TopicCardGrid> — that component is "use client", and iconForModule
-  // lives in @/lib/dashboard, which transitively imports the server-only-
-  // guarded @/db; importing it from client code would fail at build time.
-  const groups: SubjectTopicTab[] = groupTopicsBySubject(statuses).map((group) => ({
-    subjectId: group.subjectId,
-    subjectName: group.subjectName,
-    topics: group.topics.map((topic) => ({
-      id: topic.id,
-      name: topic.name,
-      moduleName: topic.moduleName,
-      icon: iconForModule(topic.moduleName),
-      score: topic.score,
-      questionsAnswered: topic.questionsAnswered,
-    })),
-  }));
+  const subjectId =
+    rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
+  const subject = subjects.find((s) => s.id === subjectId) ?? null;
 
-  // Defaults to the subject the student most recently completed a quiz in;
-  // falls back to the first subject (alphabetical, from groupTopicsBySubject)
-  // when there's no completed-attempt history yet.
-  const defaultSubjectId =
-    groups.find((g) => g.subjectId === mostRecentSubjectId)?.subjectId ?? groups[0]?.subjectId ?? null;
+  const stats = subjectId ? await getProgressStats(appUser.id, grade, subjectId) : null;
 
   return (
     <AppShell
-      active="practice-by-topic"
+      active="by-topic"
       studentName={appUser.name ?? appUser.email.split("@")[0]}
       grade={profile.grade}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Practice by Topic</h1>
+      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">By Topic</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Pick a subject and topic to drill specific content
+        See how you&apos;re doing, topic by topic.
       </p>
 
-      {defaultSubjectId ? (
-        <TopicCardGrid groups={groups} defaultSubjectId={defaultSubjectId} />
-      ) : (
-        <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
-          <p className="p-4 text-sm text-ink-secondary">No topics are available yet for this grade.</p>
+      {!subjectId || !subject || !stats ? (
+        <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
+          No subjects are available yet.
         </div>
+      ) : (
+        <>
+          <ProgressFilterForm grades={GRADES.map((g) => ({ ...g }))} subjects={subjects} selected={{ grade, subjectId }} />
+
+          {stats.quizzesCompleted === 0 ? (
+            <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
+              You haven&apos;t tried any Grade {grade} {subject.name} papers yet —{" "}
+              <Link
+                href={`/papers?grade=${grade}&subjectId=${subjectId}`}
+                className="font-medium text-progress underline"
+              >
+                head to Papers
+              </Link>{" "}
+              to get started.
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
+              <div className="border-b border-app-border px-4.5 py-3.5 text-[13.5px] font-bold text-navy-900">
+                Mastery by topic
+              </div>
+              <div className="overflow-x-auto">
+                <TopicProgressTable topics={stats.topics.map(toTopicProgressData)} />
+              </div>
+            </div>
+          )}
+        </>
       )}
     </AppShell>
   );

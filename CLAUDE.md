@@ -424,37 +424,39 @@ The layout/color structure (split-screen navy marketing panel + white sign-in fo
 adapted from a reference screenshot of a different product's login page; the copy was
 rewritten from scratch for QuizPath rather than reused.
 
-## App shell (dashboard, practice, progress, profile)
+## App shell (dashboard, practice, profile)
 
 The authenticated app (everything past sign-in) was rebuilt from a student-provided HTML/CSS
 mockup: a navy top bar (QuizPath brand, "Learn"/"Settings" tabs, gold active-tab underline,
 `<UserButton>` avatar), a context bar (name, grade, "Free tier" / "Active learner" pills),
-and a persistent sidebar (Dashboard, Papers, Practice, Progress, Profile). This is a **second,
-fixed light theme** distinct from the navy marketing pages — new tokens for it
-(`--color-app-bg`, `--color-ink*`, `--color-mastered`/`--color-warn`/`--color-progress` +
-their `-bg` variants) live alongside the brand palette in `globals.css`. Neither theme
-adapts to OS dark mode; they're both intentionally fixed.
+and a persistent sidebar. This is a **second, fixed light theme** distinct from the navy
+marketing pages — new tokens for it (`--color-app-bg`, `--color-ink*`,
+`--color-mastered`/`--color-warn`/`--color-progress` + their `-bg` variants) live alongside
+the brand palette in `globals.css`. Neither theme adapts to OS dark mode; they're both
+intentionally fixed.
 
 - `src/components/app-shell.tsx` is a plain Server Component (no client JS needed) — each
   page passes an `active` nav key and a few precomputed display values (name, grade,
   active-learner flag) as props, rather than the shell fetching its own data or needing
   `usePathname()`.
-- **"Papers" and "Practice" are two separate nav items** (previously one item, "Practice").
-  "Papers" is the Grade → Subject → Papers browsing/filtering flow at `/papers` (see "Medium
-  and papers" below) — a flat, single-destination link, `active="papers"`. "Practice" is a
-  section header, not a link itself — it has no single destination, only three real sub-pages
-  underneath it (see "Practice" below): Weak Areas, By Topic, By Keyword. The submenu is
-  always expanded (no collapse/toggle state, so the sidebar still needs no client JS); the
-  header text itself is bolded whenever `active` is any of the three `practice-*` values, via
-  `active.startsWith("practice-")`, even though the header has no `active` value of its own.
-  The sub-topic quiz-taking page (`/quiz/[subTopicId]`, reached only via deep links, never
-  from a nav click) sets `active="practice-by-topic"` — the closest of the three conceptually,
-  since it's always "practicing one specific topic." The sidebar's old practice-count badge
-  (non-mastered sub-topic count) stays dropped (from when Papers/Practice first split) —
-  `AppShell` still takes no `practiceCount` prop.
+- **The "Learning" section is four flat, single-destination nav items: Papers, Weak areas,
+  By topic, By keyword** (`ActiveNav = "dashboard" | "papers" | "weak-areas" | "by-topic" |
+  "by-keyword" | "profile"`). This replaced an earlier structure where the latter three sat
+  indented under a non-clickable "Practice" section header (with its own `isPracticeActive`/
+  `active.startsWith("practice-")` bolding logic and an `indent` prop on `NavLink`) alongside a
+  separate "Progress" item below it — both the header grouping and the separate Progress item
+  are gone; "By topic" is the renamed, simplified former Progress page (see "By topic" below),
+  now sitting as a plain sibling of the other three. The sub-topic quiz-taking page
+  (`/quiz/[subTopicId]`, reached only via deep links, never from a nav click) sets
+  `active="by-topic"` — the closest of the four conceptually, since it's always "practicing
+  one specific topic." The sidebar's old practice-count badge (non-mastered sub-topic count)
+  stays dropped (from when Papers/Practice first split) — `AppShell` still takes no
+  `practiceCount` prop.
 - `src/lib/dashboard.ts` holds the read queries the shell/pages need: `getSubTopicStatusesForGrade`
-  (mastery status per sub-topic — backs the Progress tab and the Practice sub-pages'
-  Weak Areas/By Topic views), `getCompletedQuizzes` (derives real correct/total per attempt
+  (mastery status per sub-topic, from the `mastery_scores` cache — backs Weak Areas and the
+  Dashboard's own Topic Performance card; the By Topic page uses a separate, live-aggregating
+  function, `getProgressStats` — see "Practice" below), `getCompletedQuizzes` (derives real
+  correct/total per attempt
   from `quiz_attempt_answers` rather than reverse-engineering it from the stored percentage),
   `getProgressStats`, `getOverallStats`, and `getSubjectAccuracyTrends` (the latter two back
   the Dashboard's restyled stat row/chart — see "Dashboard" below).
@@ -521,8 +523,9 @@ layout at all), not carried forward or renamed.
 - **Subject breakdown mini-list** (beside the chart) — one row per subject that has any
   sub-topic for this grade (from `groupTopicsBySubject`), each showing that subject's overall
   average score via `getProgressStats(studentId, grade, subjectId)` called once per subject
-  (parallelized) — reused exactly as the Progress tab uses it, not modified, just called for
-  more than one subject. Each row's "Strongest: X" sub-label is the highest-scoring attempted
+  (parallelized) — reused exactly as the By Topic page uses it (see "Practice" below), not
+  modified, just called for more than one subject. Each row's "Strongest: X" sub-label is the
+  highest-scoring attempted
   topic within that subject's own topic list (a plain `reduce`, not a new tested function —
   trivial enough not to warrant extracting); falls back to "Not started yet" when no topic in
   that subject has been attempted.
@@ -707,7 +710,7 @@ relationship to `/papers`'s own route structure at all now — a paper's own `gr
 build the "Choose a different paper" link back to `/papers?grade=&subjectId=`), so the
 paper-taking page doesn't need them threaded through nested URL segments to render correctly
 regardless of which grade/subject the student was browsing when they opened it. Both of that
-back-link and Progress's own "head to Papers" empty-state link pass `grade`/`subjectId` as
+back-link and By Topic's own "head to Papers" empty-state link pass `grade`/`subjectId` as
 query params (`/papers?grade=10&subjectId=...`) so landing back on the filter page comes in
 pre-filled to the right context, rather than resetting to the student's own defaults.
 
@@ -726,115 +729,17 @@ one. Integration coverage: `tests/paper-flow.test.ts`; the cross-flow cumulative
 behavior (a paper's tagged questions plus a direct sub-topic quiz all combining into one
 running total) is covered separately in `tests/mastery.test.ts`.
 
-## Progress tab
-
-Like Papers (above), Progress is a single filter page at `/progress` rather than a
-page-per-step drill-down — it was originally its own separate three-step Grade → Subject →
-Topics flow (predating, and initially left alone by, the Papers filter-form redesign) but was
-brought in line with the same shape once the Papers change landed:
-- **Grade and Subject** are two dropdowns (`<ProgressFilterForm>` in
-  `src/components/progress-filter-form.tsx`, structurally the same cascading-query-string
-  pattern as `<PapersFilterForm>` — see "Medium and papers" above — minus the Paper Type/Paper
-  fields and the Start/Resume/Retake button, since Progress is a live view rather than
-  something you launch) — both a **session-level browsing choice only**, same free-browsing
-  rule Papers has always had: a Grade 11 student can view Grade 10 progress if they've been
-  practicing those papers, and picking either never writes to `student_profiles.grade`.
-  Invalid/missing query values fall back to the student's own grade and first subject, same
-  as Papers.
-- **The topic breakdown below the filter card** was rebuilt to match a student-provided
-  mockup (`docs/progress-mockup-reference.html`) pixel-for-pixel:
-  - **4 fixed KPI cards** — quizzes completed (blue), total questions answered (teal), total
-    correct answers (green), average score (amber). These are fixed category colors per the
-    mockup, not dynamic per the score value — a new `--color-teal`/`--color-teal-bg` token
-    was added to `globals.css` since the palette didn't have one yet. There's deliberately no
-    "topics mastered" card anymore — removed per the mockup.
-  - **One "Mastery by topic" table**, not a separate "needs work" callout plus a bars list —
-    **one row per Topic (module) for this grade+subject, in syllabus order (module
-    sortOrder)**, never a bare sub-topic as its own top-level row. This replaced an earlier
-    version that flattened Topics and sub-topics into a single list keyed one-row-per-sub-topic
-    — confusing whenever a sub-topic happened to share a name with (or otherwise read like) its
-    own parent topic, since nothing distinguished "this is the topic" from "this is one of its
-    sub-topics." Each topic row's own Questions/Correct/Score is a **rollup across every
-    sub-topic it contains** (see `getProgressStats` below for the aggregation), with columns
-    for #, Topic, a Progress bar, Questions, Correct, Score. Score shows `—` rather than `0%`
-    when `questionsAnswered` is 0 (not started, not "scored zero"). Clicking a topic row
-    (`<TopicProgressTable>` in `src/components/topic-progress-table.tsx`, the one piece of
-    client JS on this page — a Set of expanded topic ids, collapsed by default) reveals that
-    topic's own sub-topics underneath it, each scored independently with the same columns —
-    the topic-level rollup can land in a different mastery bucket than any individual
-    sub-topic (e.g. an "in_progress" topic whose sub-topics are a mix of "needs_work" and
-    "mastered"), which is expected, not a bug. The Practice button now lives **only on the
-    expanded sub-topic rows**, not the topic row itself — there's no "practice this whole
-    topic at once" quiz mode in this app (a pooled multi-sub-topic quiz was deliberately not
-    built, see "What's NOT built yet"), so a topic row has no single quiz to launch. Each
-    sub-topic row's Practice button links straight to `/quiz/[subTopicId]`, unchanged — the
-    existing sub-topic quiz route already pools every published MCQ tagged with that
-    `sub_topic_id` regardless of which paper (if any) it also belongs to, and logs the
-    resulting attempt with `paper_id` null, so this needed no new quiz-serving mechanism.
-
-**No cross-grade blending anywhere in this tab, and the KPI cards are cumulative, not
-per-attempt averages** — `getProgressStats(studentId, grade, subjectId)` (`src/lib/dashboard.ts`)
-takes both `grade` and `subjectId` and scopes every number to that exact pair; there's no
-combined/overall "readiness" figure across grades. The KPI cards' `totalQuestionsAnswered` /
-`totalCorrectAnswers` / `averageScore` are cumulative counts across every completed attempt
-belonging to this grade+subject (via the sub-topic's module, or the paper's own grade/subject)
-— `averageScore` is total correct ÷ total questions, deliberately *not* an average of each
-attempt's own percentage (an earlier version of this function did exactly that, which would
-weight a 2-question attempt the same as a 40-question one — fixed alongside this redesign).
-The empty state ("You haven't tried any Grade N Science papers yet") is driven specifically by
-`quizzesCompleted === 0`, not by an absence of sub-topics — a grade+subject can have topics
-listed as `not_started` while still showing the empty state, if literally nothing has been
-attempted there yet.
-
-Each **sub-topic's** `questionsAnswered`/`correctCount` in `getProgressStats` is computed
-**live** from `quiz_attempt_answers` (the same source of truth `recalculateMasteryForSubTopic`
-writes from) rather than read out of the `mastery_scores` cache — this table needs an exact raw
-"Correct" count alongside the percentage, and re-deriving an integer count from an
-already-rounded stored percentage risks an off-by-one in the displayed math. Each **topic's**
-own numbers are then a pure rollup of its own sub-topics' already-computed counts (`TopicProgress`
-extends `SubTopicProgress` with a `subTopics: SubTopicProgress[]` array) — summed in JS, not a
-second query — which can't double-count or drop anything, since every sub-topic belongs to
-exactly one topic (`sub_topics.module_id` is a required FK). A question with `sub_topic_id`
-null has no topic association at all in this schema (`mcqs` has no `module_id`/topic FK of its
-own, only `sub_topic_id`), so there's no "untagged" bucket that could be missing from a topic's
-rollup — every question a topic's numbers could possibly include already belongs to exactly one
-of its listed sub-topics. This is unchanged, pre-existing behavior, not something this pass
-introduced: an untagged paper question (`sub_topic_id` null) has never contributed to any
-topic/sub-topic mastery number anywhere in this app.
-
-**This restructure is scoped to the Progress tab only** (`getProgressStats`). Weak Areas,
-Practice by Topic, and the Dashboard's own "Topic Performance" card all read from a *different*
-function, `getSubTopicStatusesForGrade`, which is backed by the `mastery_scores` cache (not a
-live re-aggregation) and is still sub-topic-only — it has no module-level rollup or drill-down
-today. `getSubTopicStatusesForGrade` gained an optional third `subjectId` parameter — optional
-because every *other* caller (dashboard, practice, the sidebar's practice-count badge)
-intentionally wants "every subject for this grade," since Science is the only subject today and
-that badge is meant to be grade-wide, not subject-scoped. Applying the same topic-primary/
-sub-topic-drill-down pattern to that second function (and its three consumers) was a deliberate
-follow-up decision, not done in this pass — flagged here rather than silently left inconsistent.
-
-Integration coverage: `tests/progress.test.ts` — own-grade progress with a single topic row
-(never a bare sub-topic row) confirmed by asserting the sub-topic's own id is absent from
-`stats.topics`, a different grade the student has practiced (mirroring Practice's cross-grade
-browsing), the KPI cards' cumulative math versus a deliberately-wrong per-attempt average (a
-2-question and a 10-question attempt whose naive average would differ meaningfully from the
-correct cumulative ratio), the topic-level rollup itself (three sub-topics under one module
-summing to one topic row's numbers, with the topic's own rolled-up label landing in a different
-mastery bucket than any individual sub-topic, by design), the sub-topic drill-down listing every
-sub-topic in syllabus order — including a mastered one, proving it isn't filtered to weak
-sub-topics only, and proving the order isn't score-sorted — the empty state for a grade+subject
-with zero attempts (with the untouched topic's score `null`, not `0`), and topics (and their
-sub-topics) never bleeding in from a different subject at the same grade.
-
 ## Practice (Weak Areas, By Topic, By Keyword)
 
-The sidebar's "Practice" section (see "App shell" above) has three real sub-pages now,
-matching the mockup's expandable submenu. All three are read-only views over the same
-`getSubTopicStatusesForGrade(studentId, grade)` data the Progress tab uses — there's no new
-mastery-tracking mechanism, just three different filters/presentations of it — and every
-topic row links to the existing `/quiz/[subTopicId]` quiz-taking route via the shared
-`<TopicPracticeList>` (`src/components/topic-practice-list.tsx`), so none of this needed any
-new quiz-serving logic either.
+Three of the sidebar's four flat "Learning" nav items (see "App shell" above) are Practice
+sub-pages. Weak Areas and By Keyword are read-only views over
+`getSubTopicStatusesForGrade(studentId, grade)` (the `mastery_scores` cache) — every topic row
+links to the existing `/quiz/[subTopicId]` quiz-taking route via the shared
+`<TopicPracticeList>` (`src/components/topic-practice-list.tsx`), so neither needed any new
+quiz-serving logic. **By Topic is different** — it reads from a separate, live-aggregating
+function, `getProgressStats` (see its own bullet below), not `getSubTopicStatusesForGrade`;
+the two data paths are independent and were only made *consistent in spirit* (both group by
+Topic with the same rollup shape), not merged into one function.
 
 - **`/practice/weak-areas`** — every sub-topic labeled `needs_work` (score < 60, and only
   ones actually attempted — `not_started` topics aren't "weak," just untried, same reasoning
@@ -875,46 +780,110 @@ new quiz-serving logic either.
     the page renders every (not just top-3) weak sub-topic for that one subject via the
     existing `<TopicPracticeList>`, with a "← All subjects" link back to the tiled view. The
     page header/subtitle and the sidebar are unchanged in both modes.
-- **`/practice/by-topic`** — every sub-topic for the grade (not just weak ones), presented as
-  a **subject-tab switcher + sub-topic card grid**, matching a GradeBoost-style reference
-  mockup (a different redesign pass than Weak Areas' subject tiles above, though it reuses the
-  same card visual language). Unlike every other cascading filter in this app (Papers,
-  Progress, Weak Areas' own "View All"), switching tabs here is **pure client state, no
-  navigation** — the spec calls for switching subjects with no page reload, so
-  `<TopicCardGrid>` (`src/components/topic-card-grid.tsx`) is a `"use client"` component that
-  receives every subject's sub-topics pre-fetched from the Server Component page and just
-  toggles which group is visible via `useState`, rather than re-fetching per tab click.
-  - `groupTopicsBySubject()` (`src/lib/practice.ts`) is a new pure function, directly
-    unit-tested, that buckets *every* sub-topic (not filtered to weak ones, unlike
-    `groupWeakAreasBySubject`) by `subjectId`, preserving each group's existing syllabus order
-    (`getSubTopicStatusesForGrade`'s module-sortOrder-then-sub-topic-sortOrder ordering is
-    untouched) and sorting the groups themselves by subject name for a stable tab order.
-  - **`<TopicCardGrid>` deliberately never imports anything runtime from `@/lib/dashboard` or
-    `@/lib/practice`**, even though it renders `SubTopicStatus`-shaped data — both modules
-    transitively import `@/db`, which is `server-only`-guarded (see "Database" above), so a
-    Client Component importing either would fail at build time. Instead the page (a Server
-    Component) precomputes each card's icon via the existing `iconForModule` and passes plain
-    `TopicCardData`/`SubjectTopicTab` objects (types local to `topic-card-grid.tsx`) down as
-    props — the same "thin Client Component driven by Server Component data" shape as
-    `<QuizForm>`/`<PapersFilterForm>`.
-  - The default active tab is whichever subject the student most recently **completed** a
-    quiz in for this grade — `getMostRecentlyPracticedSubjectId()` (`src/lib/dashboard.ts`)
-    mirrors `getContinueAttempt`'s join shape (`leftJoin` through `subTopics`/`modules`/
-    `papers`, `or(modules.grade, papers.grade)`) to resolve the subject regardless of whether
-    the latest completed attempt was a sub-topic quiz or a paper, but keyed off
-    `completedAt` instead of the in-progress row `getContinueAttempt` looks for. Falls back to
-    the first subject (alphabetical, from `groupTopicsBySubject`'s own ordering) when the
-    student has no completed-attempt history yet for that grade.
-  - Each card shows the sub-topic name, its parent module name (so the syllabus grouping
-    context survives the move from rows to cards), and either "`N` questions · `score`%
-    accuracy" or "Not started" (never a different card style for unstarted topics — same
-    card layout either way, matching the spec). The Practice button is full-width at the
-    card's bottom, still linking to the existing `/quiz/[subTopicId]` route.
-  - Only Science has real data today, so only its tab renders — `getPracticeSubjects()`
-    (this page doesn't call it directly; tabs are derived straight from
-    `groupTopicsBySubject`'s output, so a subject with zero sub-topics for this grade simply
-    produces no tab) needs no per-subject hardcoding for Business Studies/Geography to appear
-    once they have sub-topic data.
+- **`/practice/by-topic`** — formerly a standalone "Progress" tab at `/progress`, renamed and
+  moved to this route once its old card-grid predecessor (which lived at this URL) was retired
+  (see the "Removed as dead code" bullet below). Grade and Subject are two dropdowns
+  (`<ProgressFilterForm>` in `src/components/progress-filter-form.tsx`, kept under its original
+  name/file despite the page rename — purely cosmetic, no behavioral reason to rename it —
+  structurally the same cascading-query-string pattern as `<PapersFilterForm>`, minus the Paper
+  Type/Paper fields and the Start/Resume/Retake button, since this is a live view rather than
+  something you launch) — both a **session-level browsing choice only**, same free-browsing
+  rule Papers has always had: a Grade 11 student can view Grade 10 progress if they've been
+  practicing those papers, and picking either never writes to `student_profiles.grade`.
+  Invalid/missing query values fall back to the student's own grade and first subject, same as
+  Papers. The filter card's outer container has no `max-width` (unlike most of this app's card
+  containers) — it's meant to span the exact same edges as the Mastery by topic table beneath
+  it, and a `max-w-[640px]` cap here was previously making it render visibly narrower.
+  - **One "Mastery by topic" table** — **one row per Topic (module) for this grade+subject, in
+    syllabus order (module sortOrder)**, never a bare sub-topic as its own top-level row. This
+    replaced an earlier version that flattened Topics and sub-topics into a single list keyed
+    one-row-per-sub-topic — confusing whenever a sub-topic happened to share a name with (or
+    otherwise read like) its own parent topic, since nothing distinguished "this is the topic"
+    from "this is one of its sub-topics." Each topic row's own Questions/Correct/Score is a
+    **rollup across every sub-topic it contains** (see `getProgressStats` below for the
+    aggregation), with columns for #, Topic, a Progress bar, Questions, Correct, Score. Score
+    shows `—` rather than `0%` when `questionsAnswered` is 0 (not started, not "scored zero").
+    Clicking a topic row (`<TopicProgressTable>` in `src/components/topic-progress-table.tsx`,
+    the one piece of client JS on this page — a Set of expanded topic ids, collapsed by
+    default) reveals that topic's own sub-topics underneath it, each scored independently with
+    the same columns — the topic-level rollup can land in a different mastery bucket than any
+    individual sub-topic (e.g. an "in_progress" topic whose sub-topics are a mix of
+    "needs_work" and "mastered"), which is expected, not a bug. The Practice button lives
+    **only on the expanded sub-topic rows**, not the topic row itself — there's no "practice
+    this whole topic at once" quiz mode in this app (a pooled multi-sub-topic quiz was
+    deliberately not built, see "What's NOT built yet"), so a topic row has no single quiz to
+    launch. Each sub-topic row's Practice button links straight to `/quiz/[subTopicId]`,
+    unchanged — the existing sub-topic quiz route already pools every published MCQ tagged
+    with that `sub_topic_id` regardless of which paper (if any) it also belongs to, and logs
+    the resulting attempt with `paper_id` null, so this needed no new quiz-serving mechanism.
+  - **The 4 KPI cards this page used to show** (quizzes completed, total questions answered,
+    total correct answers, average score, above the filter card) **were dropped, not moved** —
+    a deliberate decision, not an oversight. The Dashboard's own stat row (`getOverallStats`)
+    already shows the same 4 metric types account-wide across every subject for the grade;
+    since Science is the only subject that exists today, those numbers are currently identical
+    to what this page's cards would have shown for one subject, so a second, near-duplicate row
+    here would just be clutter. If a second subject is ever added, this becomes a real
+    per-subject vs. account-wide distinction worth revisiting, but that's a future call, not
+    this one.
+  - **No cross-grade blending anywhere here, and the numbers behind the table are cumulative,
+    not per-attempt averages** — `getProgressStats(studentId, grade, subjectId)`
+    (`src/lib/dashboard.ts`) takes both `grade` and `subjectId` and scopes every number to that
+    exact pair; there's no combined/overall "readiness" figure across grades. A topic's own
+    `score` is total correct ÷ total questions across its sub-topics, deliberately *not* an
+    average of each sub-topic's own percentage (that would weight a 2-question sub-topic the
+    same as a 40-question one). The empty state ("You haven't tried any Grade N Science papers
+    yet") is driven specifically by `quizzesCompleted === 0`, not by an absence of sub-topics —
+    a grade+subject can have topics listed as `not_started` while still showing the empty
+    state, if literally nothing has been attempted there yet.
+  - Each **sub-topic's** `questionsAnswered`/`correctCount` in `getProgressStats` is computed
+    **live** from `quiz_attempt_answers` (the same source of truth
+    `recalculateMasteryForSubTopic` writes from) rather than read out of the `mastery_scores`
+    cache — this table needs an exact raw "Correct" count alongside the percentage, and
+    re-deriving an integer count from an already-rounded stored percentage risks an off-by-one
+    in the displayed math. Each **topic's** own numbers are then a pure rollup of its own
+    sub-topics' already-computed counts (`TopicProgress` extends `SubTopicProgress` with a
+    `subTopics: SubTopicProgress[]` array) — summed in JS, not a second query — which can't
+    double-count or drop anything, since every sub-topic belongs to exactly one topic
+    (`sub_topics.module_id` is a required FK). A question with `sub_topic_id` null has no topic
+    association at all in this schema (`mcqs` has no `module_id`/topic FK of its own, only
+    `sub_topic_id`), so there's no "untagged" bucket that could be missing from a topic's
+    rollup — every question a topic's numbers could possibly include already belongs to exactly
+    one of its listed sub-topics. This is unchanged, pre-existing behavior: an untagged paper
+    question (`sub_topic_id` null) has never contributed to any topic/sub-topic mastery number
+    anywhere in this app.
+  - **This rollup is scoped to this page only** (`getProgressStats`). Weak Areas and the
+    Dashboard's own "Topic Performance" card both read from `getSubTopicStatusesForGrade`
+    instead (the `mastery_scores` cache, not a live re-aggregation), which is still sub-topic-
+    only — it has no module-level rollup or drill-down. Applying the same topic-primary/
+    sub-topic-drill-down pattern there was a deliberate follow-up decision, not done in this
+    pass — flagged here rather than silently left inconsistent.
+  - Integration coverage: `tests/progress.test.ts` — own-grade progress with a single topic
+    row (never a bare sub-topic row) confirmed by asserting the sub-topic's own id is absent
+    from `stats.topics`, a different grade the student has practiced (mirroring Practice's
+    cross-grade browsing), the topic-level rollup itself (three sub-topics under one module
+    summing to one topic row's numbers, with the topic's own rolled-up label landing in a
+    different mastery bucket than any individual sub-topic, by design), the sub-topic
+    drill-down listing every sub-topic in syllabus order — including a mastered one, proving
+    it isn't filtered to weak sub-topics only, and proving the order isn't score-sorted — the
+    empty state for a grade+subject with zero attempts (with the untouched topic's score
+    `null`, not `0`), and topics (and their sub-topics) never bleeding in from a different
+    subject at the same grade.
+- **Removed as dead code, not left unused**: the old card-grid "Practice by Topic" page that
+  previously lived at this same `/practice/by-topic` route (a subject-tab switcher + sub-topic
+  card grid, one card per sub-topic) is gone, along with `<TopicCardGrid>`
+  (`src/components/topic-card-grid.tsx`) — its whole job is now covered by the topic-rollup
+  table above. `<TopicCard>` itself (`src/components/topic-card.tsx`) stays, since the By
+  Keyword results page below also renders it directly; only the tab-switcher wrapper around it
+  is gone. `<DashboardTopicTable>` (Dashboard's own "Topic Performance" card) previously
+  imported its `SubjectTopicTab` type from `topic-card-grid.tsx`; that type now lives directly
+  in `dashboard-topic-table.tsx` itself, sourced from `topic-card.tsx`'s `TopicCardData`
+  instead, so it has no dependency on the deleted file. `groupTopicsBySubject()`
+  (`src/lib/practice.ts`) and `getMostRecentlyPracticedSubjectId()` (`src/lib/dashboard.ts`)
+  both stay — the old page was never their only caller (the Dashboard and/or By Keyword page
+  already used them too) — as does `getPracticeSubjects()` (`src/lib/papers.ts`), still used
+  by both the Dashboard and this page's own Subject dropdown.
+- **The sidebar's old "Practice" section header (a non-clickable grouping label above these
+  three sub-pages) is also gone** — see "App shell" above for the flat-nav restructure.
 - **`/practice/by-keyword`** — a real, multi-tag search over `mcqs.keywords` now (see
   "Question keyword tagging" below), not just a single name/text substring match.
   `searchSubTopicIdsByKeyword(grade, query)` (`src/lib/practice.ts`) matches one term
@@ -1385,7 +1354,7 @@ Per-question review after a quiz, Stripe/Billing, and Facebook login are still o
 scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. The Dashboard's
 own "progress by sub-topic" card is still grade-only
 (not subject-scoped) and shows a plain percentage with no questions-answered confidence
-note — the Progress tab is the one place that now surfaces the fuller
+note — the By Topic page is the one place that now surfaces the fuller
 Grade+Subject+confidence view.
 
 Also deferred, from the same GradeBoost-style reference mockup that the Papers/Practice
