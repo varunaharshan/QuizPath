@@ -20,6 +20,10 @@ export type SubTopicProgressData = {
 
 export type TopicProgressData = SubTopicProgressData & {
   subTopics: SubTopicProgressData[];
+  // Optional "N of M weak" badge next to the topic name on the collapsed
+  // row — only Weak Areas populates this; By Topic leaves it undefined and
+  // renders no badge at all.
+  weakBadge?: { weakCount: number; totalCount: number };
 };
 
 const BAR_COLOR: Record<SubTopicStatusLabel, string> = {
@@ -92,6 +96,11 @@ export function TopicProgressTable({ topics }: { topics: TopicProgressData[] }) 
                 <td className="px-3.5 py-2.5 min-w-[180px] font-semibold">
                   <span className="mr-1.5 inline-block w-3 text-ink-muted">{isExpanded ? "▾" : "▸"}</span>
                   {topic.name}
+                  {topic.weakBadge && (
+                    <span className="ml-2 rounded-full bg-warn-bg px-2 py-0.5 text-[11px] font-bold text-warn">
+                      {topic.weakBadge.weakCount} of {topic.weakBadge.totalCount} weak
+                    </span>
+                  )}
                 </td>
                 <td className="px-3.5 py-2.5">
                   <ProgressBar label={topic.label} score={topic.score} />

@@ -732,54 +732,65 @@ running total) is covered separately in `tests/mastery.test.ts`.
 ## Practice (Weak Areas, By Topic, By Keyword)
 
 Three of the sidebar's four flat "Learning" nav items (see "App shell" above) are Practice
-sub-pages. Weak Areas and By Keyword are read-only views over
-`getSubTopicStatusesForGrade(studentId, grade)` (the `mastery_scores` cache) — every topic row
-links to the existing `/quiz/[subTopicId]` quiz-taking route via the shared
-`<TopicPracticeList>` (`src/components/topic-practice-list.tsx`), so neither needed any new
-quiz-serving logic. **By Topic is different** — it reads from a separate, live-aggregating
-function, `getProgressStats` (see its own bullet below), not `getSubTopicStatusesForGrade`;
-the two data paths are independent and were only made *consistent in spirit* (both group by
-Topic with the same rollup shape), not merged into one function.
+sub-pages. By Keyword is a read-only view over `getSubTopicStatusesForGrade(studentId, grade)`
+(the `mastery_scores` cache) — every topic row links to the existing `/quiz/[subTopicId]`
+quiz-taking route, so it needed no new quiz-serving logic. **Weak Areas and By Topic are both
+topic-primary, expandable lists now** (`<TopicProgressTable>`, shared between the two — see
+"By topic" below), but from two independent data paths: By Topic reads live from
+`getProgressStats`, while Weak Areas reads from `getWeakTopicsForGrade` (`mastery_scores`-cache
+backed, mirroring `getProgressStats`'s own rollup shape). They were only made *consistent in
+spirit* (both group by Topic with the same rollup shape and the same shared UI component), not
+merged into one function or one data source.
 
-- **`/practice/weak-areas`** — every sub-topic labeled `needs_work` (score < 60, and only
-  ones actually attempted — `not_started` topics aren't "weak," just untried, same reasoning
-  `rankRecommendedPracticeTopics` already uses on the Dashboard), sorted lowest score first
-  (most urgent). `weakAreas()` in `src/lib/practice.ts` is the pure filter+sort, directly
-  unit-tested and unchanged by the redesign below. The mockup's "Practice All Weak Areas"
-  button (one mixed quiz pooling questions across several sub-topics at once) is deliberately
-  **not** built — every quiz attempt today is scoped to exactly one sub-topic or one paper
-  (`quiz_attempts_exactly_one_target`), and a cross-sub-topic pooled attempt would be a real
-  quiz-engine change, not a UI addition. Each weak topic still gets its own individual
-  Practice button.
-  - The page presents `weakAreas()`'s output as a **grid of subject tiles**, not one flat
-    list, matching a GradeBoost-style reference screenshot. `SubTopicStatus`
-    (`src/lib/dashboard.ts`) gained `subjectId`/`subjectName` fields — every module has a
-    non-nullable `subject_id`, so `getSubTopicStatusesForGrade` now also selects `with:
-    { subject: true }` on its `modules` query, resolving these for free; this is additive
-    (existing fields/behavior unchanged), so every other caller of `SubTopicStatus`
-    (Progress, By Topic, By Keyword, the Dashboard) is unaffected. `groupWeakAreasBySubject()`
-    (`src/lib/practice.ts`) is a new pure function, directly unit-tested, that buckets
-    `weakAreas()`'s already-filtered/sorted list by `subjectId`: each group's `accuracy` is
-    the average score across *every* needs_work topic in that subject (not just the ones
-    shown), `topics` is sliced to the top 3 lowest-scoring (already sorted ascending by
-    `weakAreas()`), and `totalCount` preserves the true count for "View All." Groups are
-    sorted weakest-subject-first. A subject with zero needs_work topics simply never
-    produces a group, so the grid never renders an empty placeholder tile — this is also
-    why only Science shows today (the only subject with real weak-area data) and the
-    component needs no per-subject hardcoding for Business Studies/Geography/etc. to appear
-    once they have data.
-  - `<WeakAreaSubjectTile>` (`src/components/weak-area-subject-tile.tsx`) renders one tile:
-    a header (`iconForSubject(subjectName)` — a new cosmetic per-subject emoji lookup in
-    `src/lib/dashboard.ts`, mirroring the existing per-module `iconForModule` since
-    `subjects` has no icon column — + subject name + rounded accuracy %) with a "View All"
-    link, then each preview topic's name / "score% accuracy · N questions" / a Practice
-    button linking to `/quiz/[subTopicId]`, styled after the Dashboard's existing
-    "Recommended practice" card rows rather than a new visual pattern.
-  - "View All" navigates to `/practice/weak-areas?subjectId=`, the same page reading its own
-    query string (the Papers/Progress filter-form pattern, not a new route) — when present,
-    the page renders every (not just top-3) weak sub-topic for that one subject via the
-    existing `<TopicPracticeList>`, with a "← All subjects" link back to the tiled view. The
-    page header/subtitle and the sidebar are unchanged in both modes.
+- **`/practice/weak-areas`** — one row per Topic (module) the student has actually attempted
+  **and** whose rolled-up score is itself `needs_work` (< 60%, the same threshold used
+  everywhere else in this app) — not merely "the lowest-scoring among attempted topics." A
+  topic that's attempted and imperfect but still scores, say, 73% is deliberately excluded, the
+  same way an untouched topic is; both would just be noise on a page meant to surface real
+  problems. Sorted ascending by score (weakest topic first), spanning every subject for the
+  grade in one list — there's no more subject-tile grouping or per-subject "View All" mode
+  (see "Removed as dead code" below).
+  - **`getWeakTopicsForGrade(studentId, grade)`** (`src/lib/dashboard.ts`) does the rollup:
+    fetches every module+sub-topic for the grade (same relational shape `getProgressStats`
+    uses) and every `mastery_scores` row for the student, reconstructs each sub-topic's
+    `correctCount` as `round(score / 100 × questionsAnswered)` (`mastery_scores` stores only
+    the percentage and a denominator, not a raw correct count), then sums up to the topic level
+    and reuses `getProgressStats`'s own `scoreAndLabel()` helper to derive the topic's score
+    and label — the two functions share that one small helper, not the whole rollup, since
+    their surrounding fetch logic (a live SQL join vs. a cache lookup) is different enough that
+    forcing both through one generic function would trade a little duplication for an added
+    layer of indirection. A topic only makes the list when its rolled-up label is `needs_work`
+    **and** `questionsAnswered > 0`; each included topic still lists every one of its
+    sub-topics (including never-attempted ones, `not_started`) for the drill-down, not just the
+    weak ones.
+  - **Reading from `mastery_scores` instead of live `quiz_attempt_answers` (like
+    `getProgressStats`) carries two narrow, pre-existing risks**, neither introduced by this
+    function: (1) the `correctCount` reconstruction above is exact for realistic question
+    counts but isn't a byte-for-byte guarantee the way a live count is; (2) `mastery_scores`
+    only gets recalculated when a student completes a quiz attempt — if an admin reassigns a
+    question's `sub_topic_id` or deletes a historically-answered question (Paper Questions
+    Management), the cached score for that sub-topic goes stale until the student's next
+    attempt there, whereas a live query would reflect the change immediately. Both are
+    already-accepted properties of every `getSubTopicStatusesForGrade`/`mastery_scores`
+    consumer (Dashboard, By Keyword), not something Weak Areas introduces.
+  - A per-topic **"N of M weak"** badge shows how many of that topic's own sub-topics are
+    themselves `needs_work` — the same 60% threshold as topic inclusion, not a second,
+    separate cutoff. `<TopicProgressTable>` (`src/components/topic-progress-table.tsx`, shared
+    with By Topic) gained an optional `weakBadge` field on `TopicProgressData` for this; By
+    Topic's own page never sets it, so its rows render with no badge, unchanged.
+  - The mockup's "Practice All Weak Areas" button (one mixed quiz pooling questions across
+    several sub-topics at once) is deliberately **not** built — every quiz attempt today is
+    scoped to exactly one sub-topic or one paper (`quiz_attempts_exactly_one_target`), and a
+    cross-sub-topic pooled attempt would be a real quiz-engine change, not a UI addition. The
+    Practice button lives only on the expanded sub-topic rows, same as By Topic.
+  - **The Dashboard's own "Your Weak Areas" card is unaffected** — it calls `weakAreas()`/
+    `groupWeakAreasBySubject()` (`src/lib/practice.ts`) directly for its own compact
+    sub-topic-level preview, which stay exactly as they were; this page no longer calls either
+    of them.
+  - **Removed as dead code**: `<WeakAreaSubjectTile>` (`src/components/weak-area-subject-tile.tsx`)
+    and `<TopicPracticeList>` (`src/components/topic-practice-list.tsx`) both only ever served
+    this page's old subject-tile-grid layout and per-subject "View All" drill-down — deleted
+    outright once the page moved to `<TopicProgressTable>` instead.
 - **`/practice/by-topic`** — formerly a standalone "Progress" tab at `/progress`, renamed and
   moved to this route once its old card-grid predecessor (which lived at this URL) was retired
   (see the "Removed as dead code" bullet below). Grade and Subject are two dropdowns
@@ -805,7 +816,8 @@ Topic with the same rollup shape), not merged into one function.
     shows `—` rather than `0%` when `questionsAnswered` is 0 (not started, not "scored zero").
     Clicking a topic row (`<TopicProgressTable>` in `src/components/topic-progress-table.tsx`,
     the one piece of client JS on this page — a Set of expanded topic ids, collapsed by
-    default) reveals that topic's own sub-topics underneath it, each scored independently with
+    default; also reused as-is by Weak Areas, see "Practice" above) reveals that topic's own
+    sub-topics underneath it, each scored independently with
     the same columns — the topic-level rollup can land in a different mastery bucket than any
     individual sub-topic (e.g. an "in_progress" topic whose sub-topics are a mix of
     "needs_work" and "mastered"), which is expected, not a bug. The Practice button lives
@@ -961,6 +973,11 @@ covers the autocomplete's pure matching/ranking/highlight-splitting/dedup logic 
 `tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId` against a two-subject
 fixture (one resolved via a sub-topic attempt, one via a paper attempt, so subject
 *resolution* is actually exercised, not just grade scoping) and its no-history null case.
+`tests/weak-areas.test.ts` covers `getWeakTopicsForGrade`'s topic-level rollup: inclusion
+(attempted-and-needs_work only, excluding both an untouched topic and one that's attempted but
+not actually weak), the rollup math itself (multiple sub-topics summing correctly, with an
+unattempted sub-topic still listed in the drill-down), the weak-badge count, grade-wide
+sorting across more than one subject, and the empty-list case.
 
 ### Question keyword tagging
 

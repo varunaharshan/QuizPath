@@ -1,17 +1,42 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getSubTopicStatusesForGrade, iconForSubject } from "@/lib/dashboard";
-import { groupWeakAreasBySubject, weakAreas } from "@/lib/practice";
+import { getCompletedQuizzes, getWeakTopicsForGrade, type WeakTopic } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
-import { TopicPracticeList } from "@/components/topic-practice-list";
-import { WeakAreaSubjectTile } from "@/components/weak-area-subject-tile";
+import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
-export default async function WeakAreasPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
+// <TopicProgressTable> is "use client" and deliberately defines its own
+// local types rather than importing from @/lib/dashboard (which
+// transitively imports the server-only-guarded @/db) — this remaps the
+// Server Component's already-fetched data into that plain shape, same
+// pattern as the By Topic page.
+function toTopicProgressData(topic: WeakTopic): TopicProgressData {
+  return {
+    id: topic.id,
+    name: topic.name,
+    questionsAnswered: topic.questionsAnswered,
+    correctCount: topic.correctCount,
+    score: topic.score,
+    label: topic.label,
+    weakBadge: { weakCount: topic.weakSubTopicCount, totalCount: topic.totalSubTopicCount },
+    subTopics: topic.subTopics.map((subTopic) => ({
+      id: subTopic.id,
+      name: subTopic.name,
+      questionsAnswered: subTopic.questionsAnswered,
+      correctCount: subTopic.correctCount,
+      score: subTopic.score,
+      label: subTopic.label,
+    })),
+  };
+}
+
+// Topic-primary, expandable list — same pattern as By Topic
+// (<TopicProgressTable>, reused as-is here, just with the weakBadge field
+// populated) — rather than the earlier subject-tile grid. One row per
+// topic (module) the student has actually attempted and that's itself
+// needs_work (score < 60%, the same threshold used everywhere else in this
+// app), sorted weakest-first; expanding a row reveals its own sub-topics.
+// See src/lib/dashboard.ts's getWeakTopicsForGrade for the rollup itself.
+export default async function WeakAreasPage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -22,21 +47,10 @@ export default async function WeakAreasPage({
     redirect("/onboarding");
   }
 
-  const params = await searchParams;
-  const filterSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
-
-  const [statuses, completedQuizzes] = await Promise.all([
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
+  const [weakTopics, completedQuizzes] = await Promise.all([
+    getWeakTopicsForGrade(appUser.id, profile.grade),
     getCompletedQuizzes(appUser.id),
   ]);
-
-  const weak = weakAreas(statuses);
-
-  // "View All" on a tile drills into every weak sub-topic for that one
-  // subject (not just the top few shown on the tile) — same page, filtered
-  // by query string, matching the Papers/Progress filter-form pattern
-  // elsewhere in this app rather than a new route.
-  const subjectWeak = filterSubjectId ? weak.filter((t) => t.subjectId === filterSubjectId) : null;
 
   return (
     <AppShell
@@ -47,38 +61,19 @@ export default async function WeakAreasPage({
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Weak Areas</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Sub-topics where your accuracy is lowest — practice these first.
+        Topics where your accuracy is lowest — practice these first.
       </p>
 
-      {subjectWeak ? (
-        <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
-          <div className="flex items-center justify-between border-b border-app-border px-4.5 py-3.5">
-            <span className="text-[13.5px] font-bold text-navy-900">
-              {iconForSubject(subjectWeak[0]?.subjectName ?? "")} {subjectWeak[0]?.subjectName ?? "Subject"}
-            </span>
-            <Link href="/practice/weak-areas" className="text-[12.5px] font-semibold text-progress hover:underline">
-              ← All subjects
-            </Link>
-          </div>
-          <TopicPracticeList topics={subjectWeak} emptyMessage="No weak areas right now — nice work! Keep practicing to stay sharp." />
+      {weakTopics.length === 0 ? (
+        <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
+          No weak areas right now — nice work! Keep practicing to stay sharp.
         </div>
       ) : (
-        (() => {
-          const groups = groupWeakAreasBySubject(weak);
-          return groups.length === 0 ? (
-            <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
-              <p className="p-4 text-sm text-ink-secondary">
-                No weak areas right now — nice work! Keep practicing to stay sharp.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4.5 lg:grid-cols-2">
-              {groups.map((group) => (
-                <WeakAreaSubjectTile key={group.subjectId} group={group} />
-              ))}
-            </div>
-          );
-        })()
+        <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
+          <div className="overflow-x-auto">
+            <TopicProgressTable topics={weakTopics.map(toTopicProgressData)} />
+          </div>
+        </div>
       )}
     </AppShell>
   );

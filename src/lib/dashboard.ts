@@ -369,6 +369,90 @@ export async function getProgressStats(
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
 }
 
+export type WeakTopic = TopicProgress & {
+  // How many of this topic's own sub-topics are themselves needs_work (the
+  // same score < 60 threshold as everywhere else in this app, not a second,
+  // separate cutoff) — shown as a small badge on the collapsed row.
+  weakSubTopicCount: number;
+  totalSubTopicCount: number;
+};
+
+// Powers the Weak Areas page's topic-primary list — mirrors getProgressStats's
+// rollup shape (TopicProgress/SubTopicProgress, the shared scoreAndLabel
+// helper) but reads from the mastery_scores cache instead of live
+// quiz_attempt_answers, matching getSubTopicStatusesForGrade's existing data
+// source (this function is grade-wide, deliberately not accepting a
+// subjectId, since Weak Areas surfaces the single weakest topic first
+// regardless of subject). mastery_scores has no raw correctCount column,
+// only score (%) and questionsAnswered, so each sub-topic's correctCount is
+// reconstructed as round(score/100 * questionsAnswered) before summing —
+// exact in practice for realistic question counts, though not a
+// byte-for-byte guarantee the way a live count is. This cache can also lag
+// briefly behind live data in one narrow case: an admin reassigning a
+// question's sub_topic_id or deleting a historically-answered question
+// doesn't trigger a recalculation, so a stale number can persist until the
+// student's next completed attempt in that sub-topic — a pre-existing
+// property of every getSubTopicStatusesForGrade consumer, not something
+// this function introduces.
+//
+// Only topics the student has actually attempted (questionsAnswered > 0)
+// AND whose rolled-up score is itself needs_work (< 60%) are included —
+// matching the existing sub-topic-level weakAreas() filter, not just
+// "attempted." A topic with an 85% aggregate score never appears here even
+// if it happens to be the lowest-scoring among attempted topics for this
+// grade. Sorted ascending by score — weakest topic first.
+export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11"): Promise<WeakTopic[]> {
+  const gradeModules = await db.query.modules.findMany({
+    where: eq(modules.grade, grade),
+    orderBy: modules.sortOrder,
+    with: { subTopics: { orderBy: subTopics.sortOrder } },
+  });
+
+  const scores = await db.select().from(masteryScores).where(eq(masteryScores.studentId, studentId));
+  const scoreBySubTopic = new Map(
+    scores.map((s) => [s.subTopicId, { score: Number(s.score), questionsAnswered: s.questionsAnswered }]),
+  );
+
+  const topics: WeakTopic[] = [];
+  for (const gradeModule of gradeModules) {
+    const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
+      const mastery = scoreBySubTopic.get(subTopic.id);
+      const questionsAnswered = mastery?.questionsAnswered ?? 0;
+      const score = mastery?.score ?? null;
+      const correctCount = mastery ? Math.round((mastery.score / 100) * questionsAnswered) : 0;
+      return {
+        id: subTopic.id,
+        name: subTopic.name,
+        questionsAnswered,
+        correctCount,
+        score,
+        label: score === null ? "not_started" : masteryLabelForScore(score),
+      };
+    });
+
+    const questionsAnswered = subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0);
+    if (questionsAnswered === 0) continue;
+
+    const correctCount = subTopicRows.reduce((sum, s) => sum + s.correctCount, 0);
+    const { score, label } = scoreAndLabel({ questionsAnswered, correctCount });
+    if (label !== "needs_work") continue;
+
+    topics.push({
+      id: gradeModule.id,
+      name: gradeModule.name,
+      questionsAnswered,
+      correctCount,
+      score,
+      label,
+      subTopics: subTopicRows,
+      weakSubTopicCount: subTopicRows.filter((s) => s.label === "needs_work").length,
+      totalSubTopicCount: subTopicRows.length,
+    });
+  }
+
+  return topics.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
+}
+
 export type OverallStats = {
   quizzesCompleted: number;
   totalQuestionsAnswered: number;
