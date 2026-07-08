@@ -29,6 +29,11 @@ export type AdminPaperQuestion = {
   difficulty: "easy" | "medium" | "hard";
   keywords: string[];
   hint: string | null;
+  // Whether this individual question is actually servable to students —
+  // independent of the paper's own draft/published status and of
+  // verificationStatus (a question can be published-but-unreviewed or
+  // draft-but-already-verified; the two gates don't imply each other).
+  status: "draft" | "published";
   verificationStatus: "unverified" | "verified";
   subTopicId: string | null;
   subTopicName: string | null;
@@ -79,6 +84,7 @@ export async function getQuestionsForPaper(paperId: string): Promise<AdminPaperQ
       difficulty: mcqs.difficulty,
       keywords: mcqs.keywords,
       hint: mcqs.hint,
+      status: mcqs.status,
       verificationStatus: mcqs.verificationStatus,
       subTopicId: mcqs.subTopicId,
       subTopicName: subTopics.name,
@@ -111,6 +117,7 @@ export async function getQuestionForEdit(mcqId: string): Promise<AdminQuestionDe
       difficulty: mcqs.difficulty,
       keywords: mcqs.keywords,
       hint: mcqs.hint,
+      status: mcqs.status,
       verificationStatus: mcqs.verificationStatus,
       subTopicId: mcqs.subTopicId,
       subTopicName: subTopics.name,

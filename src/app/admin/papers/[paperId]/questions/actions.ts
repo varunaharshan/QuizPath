@@ -42,6 +42,34 @@ export async function setVerificationStatus(
   revalidatePath(`/admin/papers/${paperId}/questions`);
 }
 
+// A question's own draft/published status — independent of the paper's own
+// status and of verificationStatus (see AdminPaperQuestion's comment in
+// src/lib/admin-questions.ts). Bulk Upload always imports as "draft" and
+// nothing else in this app ever flips it, so this (plus publishAllQuestions
+// below) is the only way a question actually becomes servable to students.
+export async function setQuestionStatus(
+  mcqId: string,
+  status: "draft" | "published",
+  paperId: string,
+) {
+  await requireAdminUser();
+
+  await db.update(mcqs).set({ status }).where(eq(mcqs.id, mcqId));
+  revalidatePath(`/admin/papers/${paperId}/questions`);
+}
+
+// Bulk "go live" action for the whole paper — flips every one of its
+// questions to published in one go, since toggling potentially dozens of
+// rows individually after a Bulk Upload import would be impractical. Gated
+// behind a client-side window.confirm() (<ConfirmSubmitButton>) on the page
+// since it makes previously-unreviewed content visible to students.
+export async function publishAllQuestions(paperId: string) {
+  await requireAdminUser();
+
+  await db.update(mcqs).set({ status: "published" }).where(eq(mcqs.paperId, paperId));
+  revalidatePath(`/admin/papers/${paperId}/questions`);
+}
+
 function requireField(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value : "";
 }

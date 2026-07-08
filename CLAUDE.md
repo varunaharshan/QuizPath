@@ -1305,6 +1305,25 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   same pattern Topics' reorder buttons already established, to avoid pairing a manual `name`
   attribute with a function `formAction`), since flipping one boolean flag doesn't need a
   whole page.
+- **A question's own `status` (draft/published) is a separate gate from `verification_status`
+  and from the paper's own `status`** — a question can be published-but-unreviewed or
+  draft-but-verified, and the paper it belongs to can be "Published" while every one of its
+  questions is still individually "draft" (this is exactly what Bulk Upload always produces —
+  it never sets `status`, so every imported row lands on the schema's own `"draft"` default and
+  stayed there indefinitely, since nothing anywhere in the admin UI could flip it). This was a
+  real gap discovered after the student-facing Papers grid redesign (see "Medium and papers")
+  started correctly filtering `getPapersForGrade`/`getQuizForPaper` to published questions
+  only — a paper could show "Published" with a real question count in Admin while serving
+  zero questions to students, since Admin's own count (`getPapersForAdmin`) was never
+  status-filtered either (it only ever backed the delete-confirmation warning). Fixed with:
+  a per-row Status pill (`setQuestionStatus`, same `.bind(null, mcqId, "draft"/"published",
+  paperId)` shape as the verification toggle) and a page-level **"Publish All"** button
+  (`publishAllQuestions`, flips every question under the paper to `published` in one
+  statement) for the common case of a whole freshly-imported paper needing to go live at
+  once — gated behind `<ConfirmSubmitButton>` since it's a bulk action that makes
+  previously-unreviewed content visible to students. The list page's subtitle now reads
+  "N questions · X of N published" so this state is visible at a glance instead of only
+  showing a raw count that ignores status.
 - **Delete is the same "warn, don't block" `<ConfirmSubmitButton>` pattern** as
   Topics/Papers — `mcqs` is a leaf table here (nothing cascades further from deleting one
   question).
@@ -1313,9 +1332,9 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   Component that renders a `[Image]` link for image-type options or plain text otherwise —
   also reused on the edit page's... no, only the list page uses it today; the edit form
   shows raw URL/text inputs instead, since those need to be editable, not just previewed),
-  Topic, Sub-topic, Difficulty, Keywords, and the verification pill — showing all four full
-  options per row would make the table too wide to be "scannable." The full option set is
-  only visible/editable on the dedicated edit page.
+  Topic, Sub-topic, Difficulty, Keywords, the Status pill, and the verification pill — showing
+  all four full options per row would make the table too wide to be "scannable." The full
+  option set is only visible/editable on the dedicated edit page.
 
 Integration coverage: `tests/admin-questions.test.ts` — `getPaperForQuestionsAdmin`'s
 paper+subject-name lookup and not-found `null` case; `getQuestionsForPaper`'s strict

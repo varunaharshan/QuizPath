@@ -122,6 +122,9 @@ describe("admin-questions: paper question review/management", () => {
     expect(tagged.verificationStatus).toBe("unverified");
     expect(tagged.keywords).toEqual(["alpha", "beta"]);
     expect(tagged.hint).toBe("Think about the cell's energy production");
+    // Never set explicitly on this fixture — must reflect the schema's own
+    // "draft" default, the same state every Bulk Upload import lands in.
+    expect(tagged.status).toBe("draft");
 
     const untagged = questions.find((q) => q.id === untaggedQuestionId)!;
     expect(untagged.subTopicName).toBeNull();
@@ -129,6 +132,7 @@ describe("admin-questions: paper question review/management", () => {
     expect(untagged.subTopicId).toBeNull();
     // No hint was set on this fixture — must come through as null, not "".
     expect(untagged.hint).toBeNull();
+    expect(untagged.status).toBe("published");
   });
 
   it("getQuestionForEdit returns full detail including paperId, or null if not found", async () => {
@@ -141,6 +145,7 @@ describe("admin-questions: paper question review/management", () => {
       difficulty: "hard",
       correctOption: 2,
       hint: "Think about the cell's energy production",
+      status: "draft",
     });
 
     expect(await getQuestionForEdit(randomUUID())).toBeNull();

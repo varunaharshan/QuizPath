@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getPaperForQuestionsAdmin, getQuestionsForPaper } from "@/lib/admin-questions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { QuestionOptionPreview } from "@/components/question-option-preview";
-import { deleteQuestion, setVerificationStatus } from "./actions";
+import { deleteQuestion, publishAllQuestions, setQuestionStatus, setVerificationStatus } from "./actions";
 
 const DELETE_BUTTON_CLASSES =
   "rounded-md border border-red-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-red-600 hover:bg-red-50";
@@ -19,6 +19,7 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
   }
 
   const questions = await getQuestionsForPaper(paperId);
+  const publishedCount = questions.filter((q) => q.status === "published").length;
 
   return (
     <>
@@ -26,15 +27,29 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
         <div>
           <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">{paper.title} — Questions</h1>
           <p className="m-0 text-[13px] text-ink-secondary">
-            Grade {paper.grade} · {questions.length} question{questions.length === 1 ? "" : "s"}
+            Grade {paper.grade} · {questions.length} question{questions.length === 1 ? "" : "s"} ·{" "}
+            {publishedCount} of {questions.length} published
           </p>
         </div>
-        <Link
-          href="/admin/papers"
-          className="shrink-0 rounded-md border border-app-border bg-white px-4.5 py-2 text-[13px] font-semibold hover:bg-app-surface-muted"
-        >
-          ← Back to Papers
-        </Link>
+        <div className="flex shrink-0 gap-2.5">
+          {questions.length > 0 && publishedCount < questions.length && (
+            <form>
+              <ConfirmSubmitButton
+                formAction={publishAllQuestions.bind(null, paperId)}
+                confirmMessage={`Publish all ${questions.length - publishedCount} draft question(s) in this paper? They'll immediately become visible to students.`}
+                className="rounded-md bg-mastered px-4.5 py-2 text-[13px] font-semibold text-white hover:opacity-90"
+              >
+                Publish All
+              </ConfirmSubmitButton>
+            </form>
+          )}
+          <Link
+            href="/admin/papers"
+            className="rounded-md border border-app-border bg-white px-4.5 py-2 text-[13px] font-semibold hover:bg-app-surface-muted"
+          >
+            ← Back to Papers
+          </Link>
+        </div>
       </div>
 
       {questions.length === 0 ? (
@@ -58,6 +73,7 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
                   <th className="px-3.5 py-2.5">Sub-topic</th>
                   <th className="px-3.5 py-2.5">Difficulty</th>
                   <th className="px-3.5 py-2.5">Keywords</th>
+                  <th className="px-3.5 py-2.5">Status</th>
                   <th className="px-3.5 py-2.5">Verified</th>
                   <th className="px-3.5 py-2.5" />
                 </tr>
@@ -85,6 +101,27 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
                       <td className="px-3.5 py-2.5 text-ink-secondary capitalize">{q.difficulty}</td>
                       <td className="px-3.5 py-2.5 max-w-[160px] text-ink-secondary">
                         {q.keywords.length > 0 ? q.keywords.join(", ") : "—"}
+                      </td>
+                      <td className="px-3.5 py-2.5">
+                        <form>
+                          {q.status === "published" ? (
+                            <button
+                              type="submit"
+                              formAction={setQuestionStatus.bind(null, q.id, "draft", paperId)}
+                              className="rounded-full bg-mastered-bg px-2.5 py-1 text-[11px] font-bold text-mastered"
+                            >
+                              Published
+                            </button>
+                          ) : (
+                            <button
+                              type="submit"
+                              formAction={setQuestionStatus.bind(null, q.id, "published", paperId)}
+                              className="rounded-full bg-app-surface-muted px-2.5 py-1 text-[11px] font-bold text-ink-secondary"
+                            >
+                              Draft
+                            </button>
+                          )}
+                        </form>
                       </td>
                       <td className="px-3.5 py-2.5">
                         <form>
