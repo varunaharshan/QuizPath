@@ -42,6 +42,7 @@ function validRow(overrides: Partial<BulkUploadRow> = {}): BulkUploadRow {
     subTopic: "Types of Chemical Reactions",
     difficulty: "medium",
     keywords: "Cell Biology, Mitochondria",
+    hint: "",
     paperReference: "",
     ...overrides,
   };
@@ -95,6 +96,16 @@ describe("parseBulkCsv", () => {
     expect(rows[0].optionAImageUrl).toBe("https://example.com/a.png");
     expect(rows[0].optionBImageUrl).toBe("");
   });
+
+  it("parses the optional Hint column, defaulting to an empty string when absent", () => {
+    const csv = [
+      "Question Text,Option A,Option B,Option C,Option D,Correct Answer,Subject,Grade,Topic,Sub-topic,Difficulty,Keywords,Hint,Paper Reference",
+      'What causes rust?,Oxygen,Nitrogen,Hydrogen,Carbon,Oxygen,Science,10,Chemical Reactions,Types of Chemical Reactions,easy,,"Think about oxidation",',
+    ].join("\n");
+
+    const rows = parseBulkCsv(csv);
+    expect(rows[0].hint).toBe("Think about oxidation");
+  });
 });
 
 describe("validateBulkRow", () => {
@@ -115,7 +126,20 @@ describe("validateBulkRow", () => {
       correctOption: 1,
       difficulty: "medium",
       keywords: ["Cell Biology", "Mitochondria"],
+      hint: null,
     });
+  });
+
+  it("resolves a blank Hint column to null, not an empty string, with no error", () => {
+    const result = validateBulkRow(validRow({ hint: "" }), REF);
+    expect(result.errors).toEqual([]);
+    expect(result.resolved?.hint).toBeNull();
+  });
+
+  it("resolves a populated Hint column to its trimmed text", () => {
+    const result = validateBulkRow(validRow({ hint: "  Think about energy production  " }), REF);
+    expect(result.errors).toEqual([]);
+    expect(result.resolved?.hint).toBe("Think about energy production");
   });
 
   it("flags every missing required field", () => {

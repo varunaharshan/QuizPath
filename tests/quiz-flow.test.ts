@@ -59,6 +59,7 @@ describe("quiz-taking flow", () => {
           options: textOptions("3", "4", "5", "6"),
           correctOption: 1,
           status: "published",
+          hint: "Count on your fingers",
         },
         {
           subTopicId,
@@ -124,6 +125,14 @@ describe("quiz-taking flow", () => {
       // name as its topic tag.
       expect(q.subTopicName).toBe(`Test Sub-topic ${runId}`);
     }
+
+    // One fixture question has a hint, the rest don't — confirms hint rides
+    // along on the served quiz without affecting scoring, and that "no
+    // hint" comes through as null rather than an empty string.
+    const withHint = quiz.questions.find((q) => q.questionText === "2 + 2 = ?");
+    expect(withHint?.hint).toBe("Count on your fingers");
+    const withoutHint = quiz.questions.find((q) => q.questionText === "The sun rises in the:");
+    expect(withoutHint?.hint).toBeNull();
   });
 
   it("grades an attempt, persists it, and sets mastery to 'in_progress' for a 2/3 score", async () => {

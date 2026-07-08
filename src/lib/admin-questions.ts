@@ -28,6 +28,7 @@ export type AdminPaperQuestion = {
   correctOption: number;
   difficulty: "easy" | "medium" | "hard";
   keywords: string[];
+  hint: string | null;
   verificationStatus: "unverified" | "verified";
   subTopicId: string | null;
   subTopicName: string | null;
@@ -77,6 +78,7 @@ export async function getQuestionsForPaper(paperId: string): Promise<AdminPaperQ
       correctOption: mcqs.correctOption,
       difficulty: mcqs.difficulty,
       keywords: mcqs.keywords,
+      hint: mcqs.hint,
       verificationStatus: mcqs.verificationStatus,
       subTopicId: mcqs.subTopicId,
       subTopicName: subTopics.name,
@@ -108,6 +110,7 @@ export async function getQuestionForEdit(mcqId: string): Promise<AdminQuestionDe
       correctOption: mcqs.correctOption,
       difficulty: mcqs.difficulty,
       keywords: mcqs.keywords,
+      hint: mcqs.hint,
       verificationStatus: mcqs.verificationStatus,
       subTopicId: mcqs.subTopicId,
       subTopicName: subTopics.name,

@@ -38,6 +38,7 @@ export async function bulkImportQuestions(rows: ResolvedBulkRow[]): Promise<{ im
           difficulty: row.difficulty,
           verificationStatus: "unverified" as const,
           keywords: row.keywords,
+          hint: row.hint,
         })),
       )
       .returning({ id: mcqs.id }),

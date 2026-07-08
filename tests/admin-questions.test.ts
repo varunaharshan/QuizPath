@@ -56,6 +56,7 @@ describe("admin-questions: paper question review/management", () => {
         correctOption: 2,
         difficulty: "hard",
         keywords: ["alpha", "beta"],
+        hint: "Think about the cell's energy production",
         verificationStatus: "unverified",
       })
       .returning();
@@ -120,11 +121,14 @@ describe("admin-questions: paper question review/management", () => {
     expect(tagged.questionImage).toEqual({ type: "image", content: "https://example.com/q.png" });
     expect(tagged.verificationStatus).toBe("unverified");
     expect(tagged.keywords).toEqual(["alpha", "beta"]);
+    expect(tagged.hint).toBe("Think about the cell's energy production");
 
     const untagged = questions.find((q) => q.id === untaggedQuestionId)!;
     expect(untagged.subTopicName).toBeNull();
     expect(untagged.moduleName).toBeNull();
     expect(untagged.subTopicId).toBeNull();
+    // No hint was set on this fixture — must come through as null, not "".
+    expect(untagged.hint).toBeNull();
   });
 
   it("getQuestionForEdit returns full detail including paperId, or null if not found", async () => {
@@ -136,6 +140,7 @@ describe("admin-questions: paper question review/management", () => {
       moduleId,
       difficulty: "hard",
       correctOption: 2,
+      hint: "Think about the cell's energy production",
     });
 
     expect(await getQuestionForEdit(randomUUID())).toBeNull();

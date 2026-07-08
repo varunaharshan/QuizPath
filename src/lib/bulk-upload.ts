@@ -28,6 +28,7 @@ export const TEMPLATE_HEADERS = [
   "Sub-topic",
   "Difficulty",
   "Keywords",
+  "Hint",
   "Paper Reference",
 ] as const;
 
@@ -58,6 +59,7 @@ export type BulkUploadRow = {
   subTopic: string;
   difficulty: string;
   keywords: string;
+  hint: string;
   paperReference: string;
 };
 
@@ -81,6 +83,7 @@ const HEADER_KEY_MAP: Record<string, keyof Omit<BulkUploadRow, "rowNumber">> = {
   subtopic: "subTopic",
   difficulty: "difficulty",
   keywords: "keywords",
+  hint: "hint",
   "paper reference": "paperReference",
 };
 
@@ -124,6 +127,7 @@ export function parseBulkCsv(csvText: string): BulkUploadRow[] {
       subTopic: row.subTopic ?? "",
       difficulty: row.difficulty ?? "",
       keywords: row.keywords ?? "",
+      hint: row.hint ?? "",
       paperReference: row.paperReference ?? "",
     };
   });
@@ -157,6 +161,9 @@ export type ResolvedBulkRow = {
   correctOption: number;
   difficulty: "easy" | "medium" | "hard";
   keywords: string[];
+  // Optional — null (not an empty string) when the CSV's Hint column is
+  // blank, matching how questionImage is null rather than an empty object.
+  hint: string | null;
 };
 
 export type ValidatedBulkRow = {
@@ -321,6 +328,12 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
     if (resolvedOpt.error) errors.push(resolvedOpt.error);
   }
 
+  // Blank is always valid — never pushed as an error — and resolves to null
+  // rather than an empty string, matching questionImage's own null-vs-empty
+  // convention.
+  const trimmedHint = row.hint.trim();
+  const hint = trimmedHint || null;
+
   const trimmedQuestionImageUrl = row.questionImageUrl.trim();
   let questionImage: QuestionImage | null = null;
   if (trimmedQuestionImageUrl) {
@@ -358,6 +371,7 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
         .split(",")
         .map((k) => k.trim())
         .filter(Boolean),
+      hint,
     },
   };
 }

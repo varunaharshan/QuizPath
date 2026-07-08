@@ -147,12 +147,23 @@ export function QuestionEditForm({
         </div>
       </div>
 
-      <div className="mb-4.5">
+      <div className="mb-3.5">
         <label className={LABEL_CLASSES}>Keywords (comma-separated)</label>
         <input
           type="text"
           name="keywords"
           defaultValue={question.keywords.join(", ")}
+          className={INPUT_CLASSES}
+        />
+      </div>
+
+      <div className="mb-4.5">
+        <label className={LABEL_CLASSES}>Hint (optional)</label>
+        <textarea
+          name="hint"
+          defaultValue={question.hint ?? ""}
+          rows={2}
+          placeholder="A nudge students can reveal before answering — never the answer itself"
           className={INPUT_CLASSES}
         />
       </div>

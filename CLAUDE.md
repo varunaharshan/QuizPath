@@ -352,6 +352,51 @@ gets *displayed*, not how a question is graded.
   for the same reason — none of those tests exercise the text/image distinction itself,
   just that `options` is populated and `correctOption` indexes into it correctly.
 
+### Question hints
+
+`mcqs.hint` (nullable `text`) is an optional per-question nudge a student can reveal before
+answering — a plain sibling column to `options`/`correctOption`/`questionImage`, not part of
+either; grading (`saveQuizAnswer`) never reads it, so adding it is inert to scoring.
+
+- **`<QuizForm>`** (`src/components/quiz-form.tsx`) renders a "Show hint" toggle directly
+  below the question text/image and above the options list, **only when `question.hint` is
+  present** — a hint-less question renders nothing there at all (no empty box, no "no hint
+  available" message), the same "conditionally render or omit entirely" rule
+  `questionImage` already follows. Collapsed by default; expand/collapse state is a
+  `Set<string>` of expanded question ids (`expandedHints`), so it's tracked per-question and
+  persists across Prev/Next navigation rather than resetting. The toggle is available
+  regardless of whether the student has answered yet — it's gated purely on `question.hint`,
+  never on `selectedOption`/`answers` — and nothing in the component ever collapses it back
+  down after answering, so "stays visible/collapsible for review" falls out for free rather
+  than needing special-case logic. Styled with the existing `quiz-purple-bg`/
+  `quiz-purple-text` tokens (already used for the sub-topic tag pill as "supporting info"),
+  so no new color tokens were needed.
+- **`src/lib/quiz.ts`**: `QuizQuestion` gained a `hint: string | null` field, selected
+  alongside every other column in both `getQuizForSubTopic` and `getQuizForPaper` — served to
+  the client exactly like `questionText`/`options`, since a hint is meant to be seen before
+  answering (unlike `correctOption`, which is deliberately never sent).
+- **Bulk Upload**: a new optional `Hint` column in the CSV template (`TEMPLATE_HEADERS` in
+  `src/lib/bulk-upload.ts`), placed after `Keywords` — grouped with the other optional
+  per-question metadata rather than the question-stem/option columns. A blank `Hint` cell is
+  always valid and resolves to `null` (not an empty string), with **no validation error**
+  raised either way, matching how `questionImage` already treats "blank" as "no image" rather
+  than something to flag.
+- **Paper Questions Management** (`/admin/papers/[paperId]/questions`): the edit form
+  (`src/components/question-edit-form.tsx`) gained a "Hint (optional)" `<textarea>`, wired
+  through `updateQuestion` (`src/app/admin/papers/[paperId]/questions/actions.ts`) with the
+  same blank-means-`null` rule as Bulk Upload. The list page shows a small "💡 Has hint"
+  marker under the question text when `hint` is set (mirroring the existing `[img]` marker
+  for `questionImage`) rather than a dedicated table column, so admins can tell at a glance
+  without widening an already-wide table.
+- Test coverage: `tests/bulk-upload.test.ts` (Hint column parses; blank resolves to `null`
+  with zero errors; populated Hint trims correctly), `tests/admin-questions.test.ts`
+  (`getQuestionsForPaper`/`getQuestionForEdit` return a populated hint and a correct `null`
+  for an untagged fixture with none), `tests/quiz-flow.test.ts`/`tests/paper-flow.test.ts`
+  (a served quiz's questions carry `hint` — populated and `null` — without affecting scoring),
+  and `tests/quiz-ui.test.ts` source guards (the toggle is gated on `question.hint`, and that
+  gating never references `selectedOption`, confirming it's available before answering, not
+  only after).
+
 ## Brand / design system
 
 Navy + gold theme tokens live in `src/app/globals.css` under `@theme inline`
@@ -1125,7 +1170,8 @@ the end.
   `keyword-tag-input-logic.ts`/`topic-card-grid.tsx`.
 - **Template columns**: Question Text, Question Image URL, Option A–D (each immediately
   followed by its own `Option [A-D] Image URL`), Correct Answer, Subject, **Grade**, Topic,
-  Sub-topic, Difficulty, Keywords, Paper Reference. Grade is a real column (not just implied)
+  Sub-topic, Difficulty, Keywords, Hint, Paper Reference (see "Question hints" above for the
+  Hint column's own blank-means-`null` rule). Grade is a real column (not just implied)
   — topic/sub-topic names aren't guaranteed unique across Grade 10 vs. 11 (this codebase's own
   seeded data already has modules that share a name across grades), so resolving a topic
   without knowing which grade's module to look inside would risk silently matching the wrong
@@ -1224,8 +1270,9 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   field, exactly mirroring Bulk Upload's CSV columns — an Image URL takes priority over the
   text field when both are populated, via the same `resolveOption()` bulk-upload already
   established), Correct Answer (a strict `1`-`4` position select, reusing
-  `parseCorrectAnswerPosition()`), Difficulty, and Keywords (comma-separated, same
-  split/trim/drop-empty rule as Bulk Upload). This was a deliberate scope decision beyond the
+  `parseCorrectAnswerPosition()`), Difficulty, Keywords (comma-separated, same
+  split/trim/drop-empty rule as Bulk Upload), and Hint (see "Question hints" above). This was
+  a deliberate scope decision beyond the
   original ask (which only named Topic/Sub-topic/images) — once the edit page exists for
   those, exposing the rest of the fields too is marginal extra work and avoids a
   "re-run the whole Bulk Upload just to fix a typo" gap.
@@ -1283,9 +1330,8 @@ including a cross-topic sub-topic reassignment and a mixed text/image options up
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
-scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. Hints
-(the mockup's per-question hint toggle/text) are also deferred — no schema column, no UI —
-to a later session. The Dashboard's own "progress by sub-topic" card is still grade-only
+scope — see `docs/mvp-product-spec.md` section 9 for the week-by-week plan. The Dashboard's
+own "progress by sub-topic" card is still grade-only
 (not subject-scoped) and shows a plain percentage with no questions-answered confidence
 note — the Progress tab is the one place that now surfaces the fuller
 Grade+Subject+confidence view.

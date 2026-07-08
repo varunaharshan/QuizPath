@@ -82,7 +82,14 @@ describe("paper-based quiz flow", () => {
     const inserted = await db
       .insert(mcqs)
       .values([
-        { paperId, questionText: "1 + 1 = ?", options: textOptions("1", "2", "3", "4"), correctOption: 1, status: "published" },
+        {
+          paperId,
+          questionText: "1 + 1 = ?",
+          options: textOptions("1", "2", "3", "4"),
+          correctOption: 1,
+          status: "published",
+          hint: "Add one and one",
+        },
         { paperId, questionText: "2 + 2 = ?", options: textOptions("3", "4", "5", "6"), correctOption: 1, status: "published" },
         { paperId, questionText: "3 + 3 = ?", options: textOptions("5", "6", "7", "8"), correctOption: 1, status: "published" },
         {
@@ -140,6 +147,10 @@ describe("paper-based quiz flow", () => {
       // — the topic tag must be null, not a fabricated/omitted field.
       expect(q.subTopicName).toBeNull();
     }
+
+    // One fixture question has a hint, the rest don't.
+    expect(quiz.questions.find((q) => q.questionText === "1 + 1 = ?")?.hint).toBe("Add one and one");
+    expect(quiz.questions.find((q) => q.questionText === "2 + 2 = ?")?.hint).toBeNull();
   });
 
   it("marks the paper in_progress after opening it, before any submission", async () => {

@@ -38,6 +38,10 @@ export function QuizForm({
   const [answers, setAnswers] = useState<Record<string, number>>(initialAnswers);
   const [current, setCurrent] = useState(0);
   const [showJumpGrid, setShowJumpGrid] = useState(false);
+  // Per-question, keyed by mcq id — collapsed by default, available whether
+  // or not the student has answered yet, and never auto-collapsed once
+  // answered (no special-casing on selectedOption below).
+  const [expandedHints, setExpandedHints] = useState<Set<string>>(new Set());
   const [isPending, startTransition] = useTransition();
 
   const total = questions.length;
@@ -50,6 +54,18 @@ export function QuizForm({
     setAnswers((prev) => ({ ...prev, [question.id]: optionIndex }));
     startTransition(async () => {
       await saveAnswer(question.id, optionIndex);
+    });
+  }
+
+  function toggleHint(mcqId: string) {
+    setExpandedHints((prev) => {
+      const next = new Set(prev);
+      if (next.has(mcqId)) {
+        next.delete(mcqId);
+      } else {
+        next.add(mcqId);
+      }
+      return next;
     });
   }
 
@@ -104,6 +120,22 @@ export function QuizForm({
             alt="Question diagram"
             className="mb-4 max-h-72 max-w-full rounded-md"
           />
+        )}
+        {question.hint && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => toggleHint(question.id)}
+              className="rounded-lg border border-quiz-option-border bg-white px-3.5 py-2 text-[12.5px] font-bold text-quiz-navy"
+            >
+              💡 {expandedHints.has(question.id) ? "Hide hint" : "Show hint"}
+            </button>
+            {expandedHints.has(question.id) && (
+              <p className="mt-2.5 rounded-md bg-quiz-purple-bg px-3.5 py-2.5 text-[13.5px] leading-relaxed text-quiz-purple-text">
+                {question.hint}
+              </p>
+            )}
+          </div>
         )}
         <div className="mb-1.5 flex flex-col gap-2.5">
           {question.options.map((option, optionIndex) => {

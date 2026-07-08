@@ -40,9 +40,9 @@ describe("jumpButtonStatus", () => {
 });
 
 // The quiz-taking UI intentionally drops several behaviors from the mockup
-// it borrowed its visuals from (docs/quiz-taking-mockup-reference.html):
-// no hint feature, no "Reset test" button, and the live jump grid must never
-// be wired to real correctness data. These are guarded here as source
+// it borrowed its visuals from (docs/quiz-taking-mockup-reference.html): no
+// "Reset test" button, and the live jump grid must never be wired to real
+// correctness data. These are guarded here as source
 // assertions on the shared QuizForm component, since there's no component
 // rendering harness in this project's test setup (all other UI logic in
 // this codebase is tested via its underlying pure functions/data, not by
@@ -63,8 +63,20 @@ describe("QuizForm source guards", () => {
     expect(source).not.toMatch(/restart/i);
   });
 
-  it("never renders a hint toggle", () => {
-    expect(source).not.toMatch(/hint/i);
+  it("renders the hint toggle only when question.hint is present, never an empty placeholder", () => {
+    // Gated on question.hint, not unconditionally rendered — a hint-less
+    // question must render nothing at all, not an empty box or "no hint"
+    // message.
+    expect(source).toMatch(/\{question\.hint\s*&&/);
+  });
+
+  it("never gates the hint toggle on whether an answer has been selected", () => {
+    // The hint must be available before answering, not just after — so the
+    // conditional guarding it must reference question.hint, never
+    // selectedOption/answers.
+    const hintBlockMatch = source.match(/\{question\.hint\s*&&([\s\S]*?)\n\s{8}\)\}/);
+    expect(hintBlockMatch).not.toBeNull();
+    expect(hintBlockMatch![1]).not.toMatch(/selectedOption/);
   });
 
   it("always calls jumpButtonStatus with revealed hardcoded to false", () => {

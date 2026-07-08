@@ -97,6 +97,10 @@ export async function updateQuestion(formData: FormData) {
     .map((k) => k.trim())
     .filter(Boolean);
 
+  // Blank is valid — resolves to null, not an empty string, matching Bulk
+  // Upload's own hint handling.
+  const hint = requireField(formData.get("hint")).trim() || null;
+
   await db
     .update(mcqs)
     .set({
@@ -107,6 +111,7 @@ export async function updateQuestion(formData: FormData) {
       difficulty,
       subTopicId,
       keywords,
+      hint,
     })
     .where(eq(mcqs.id, mcqId));
 

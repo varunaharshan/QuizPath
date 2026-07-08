@@ -41,6 +41,10 @@ export type QuizQuestion = {
   // image-type option. Null for the (large majority of) questions with no
   // attached image.
   questionImage: QuestionImage | null;
+  // Optional nudge a student can reveal before answering (<QuizForm>'s
+  // "Show hint" toggle) — null renders no hint section at all, not an empty
+  // one.
+  hint: string | null;
   // The one tag shown per question in the quiz-taking UI — sourced directly
   // from the existing sub_topic_id relationship, not a separate taxonomy
   // field. Null for a paper question that isn't tagged with a sub-topic.
@@ -72,6 +76,7 @@ export async function getQuizForSubTopic(subTopicId: string): Promise<Quiz> {
       questionText: mcqs.questionText,
       options: mcqs.options,
       questionImage: mcqs.questionImage,
+      hint: mcqs.hint,
     })
     .from(mcqs)
     .where(and(eq(mcqs.subTopicId, subTopicId), eq(mcqs.status, "published")))
@@ -324,6 +329,7 @@ export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
       questionText: mcqs.questionText,
       options: mcqs.options,
       questionImage: mcqs.questionImage,
+      hint: mcqs.hint,
       subTopicName: subTopics.name,
     })
     .from(mcqs)

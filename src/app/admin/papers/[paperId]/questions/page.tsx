@@ -71,6 +71,11 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
                       <td className="px-3.5 py-2.5 max-w-[300px] font-medium text-navy-900">
                         {q.questionImage && <span className="mr-1 text-ink-muted">[img]</span>}
                         {q.questionText}
+                        {q.hint && (
+                          <span className="mt-1 block text-[11px] font-normal text-ink-secondary">
+                            💡 Has hint
+                          </span>
+                        )}
                       </td>
                       <td className="px-3.5 py-2.5 max-w-[160px]">
                         {correctOption ? <QuestionOptionPreview option={correctOption} /> : "—"}

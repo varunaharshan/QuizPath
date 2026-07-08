@@ -162,6 +162,10 @@ export const mcqs = pgTable("mcqs", {
   // title and carries its own draft/published status meant for something
   // more like attached reading material, not a lightweight image reference.
   questionImage: jsonb("question_image").$type<QuestionImage>(),
+  // Nullable: an optional hint students can reveal before answering (see
+  // <QuizForm>'s "Show hint" toggle). Free text, not part of options/
+  // correctOption — grading never reads this column.
+  hint: text("hint"),
   difficulty: mcqDifficultyEnum("difficulty").notNull().default("medium"),
   status: contentStatusEnum("status").notNull().default("draft"),
   // Whether anyone has reviewed this question's content — independent of
