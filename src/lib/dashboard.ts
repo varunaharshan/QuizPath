@@ -209,7 +209,7 @@ export async function getMostRecentlyPracticedSubjectId(
   return row?.subTopicSubjectId ?? row?.paperSubjectId ?? null;
 }
 
-export type TopicProgress = {
+export type SubTopicProgress = {
   id: string;
   name: string;
   questionsAnswered: number;
@@ -218,16 +218,39 @@ export type TopicProgress = {
   label: SubTopicStatusLabel;
 };
 
+export type TopicProgress = SubTopicProgress & {
+  // Every sub-topic under this topic (module), in syllabus sortOrder — for
+  // the Progress tab's expandable per-topic drill-down. A question with no
+  // sub_topic_id has no topic association at all in this schema (mcqs has
+  // no module/topic FK of its own, only subTopicId), so there's no
+  // "untagged" bucket to add here — every question this topic's own
+  // questionsAnswered/correctCount could possibly include already belongs
+  // to exactly one of these sub-topics.
+  subTopics: SubTopicProgress[];
+};
+
 export type ProgressStats = {
   quizzesCompleted: number;
   totalQuestionsAnswered: number;
   totalCorrectAnswers: number;
   averageScore: number | null;
-  // Every sub-topic for this grade+subject, in syllabus order (module
-  // sortOrder, then sub-topic sortOrder) — not sorted by weakness. The
-  // Progress tab's single "Mastery by topic" table renders this list as-is.
+  // One row per Topic (module) for this grade+subject, in syllabus order
+  // (module sortOrder) — never a bare sub-topic as its own top-level row.
+  // Each topic's own numbers are a rollup across every sub-topic it
+  // contains; see `subTopics` on each row for the per-sub-topic breakdown.
   topics: TopicProgress[];
 };
+
+function scoreAndLabel(counts: { questionsAnswered: number; correctCount: number }): {
+  score: number | null;
+  label: SubTopicStatusLabel;
+} {
+  const score =
+    counts.questionsAnswered === 0
+      ? null
+      : Math.round((counts.correctCount / counts.questionsAnswered) * 10000) / 100;
+  return { score, label: score === null ? "not_started" : masteryLabelForScore(score) };
+}
 
 // Powers the Progress tab's per-Grade+Subject topic breakdown. Deliberately
 // scoped to one grade *and* one subject at a time — there's no cross-grade
@@ -241,13 +264,16 @@ export type ProgressStats = {
 // (that would weight a 2-question attempt the same as a 40-question one,
 // double-counting the smaller sample).
 //
-// Each topic's questionsAnswered/correctCount is computed live from
+// Each sub-topic's questionsAnswered/correctCount is computed live from
 // quiz_attempt_answers (the same source of truth
 // recalculateMasteryForSubTopic writes from), rather than read out of the
 // mastery_scores cache — this table needs an exact raw "Correct" count
 // alongside the percentage, and re-deriving an integer count from a
 // already-rounded stored percentage risks an off-by-one in the displayed
-// math.
+// math. Each topic's own numbers are then just a rollup of its own
+// sub-topics' already-correct counts — since every sub-topic belongs to
+// exactly one topic, summing them up can't double-count or drop anything
+// relative to the per-sub-topic numbers already being computed.
 export async function getProgressStats(
   studentId: string,
   grade: "10" | "11",
@@ -258,8 +284,7 @@ export async function getProgressStats(
     orderBy: modules.sortOrder,
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
-  const orderedSubTopics = gradeModules.flatMap((m) => m.subTopics);
-  const subTopicIds = orderedSubTopics.map((s) => s.id);
+  const subTopicIds = gradeModules.flatMap((m) => m.subTopics.map((s) => s.id));
 
   const topicAnswerRows = subTopicIds.length
     ? await db
@@ -285,19 +310,23 @@ export async function getProgressStats(
     countsBySubTopic.set(row.subTopicId, counts);
   }
 
-  const topics: TopicProgress[] = orderedSubTopics.map((subTopic) => {
-    const counts = countsBySubTopic.get(subTopic.id) ?? { questionsAnswered: 0, correctCount: 0 };
-    const score =
-      counts.questionsAnswered === 0
-        ? null
-        : Math.round((counts.correctCount / counts.questionsAnswered) * 10000) / 100;
+  const topics: TopicProgress[] = gradeModules.map((gradeModule) => {
+    const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
+      const counts = countsBySubTopic.get(subTopic.id) ?? { questionsAnswered: 0, correctCount: 0 };
+      return { id: subTopic.id, name: subTopic.name, ...counts, ...scoreAndLabel(counts) };
+    });
+
+    const topicCounts = {
+      questionsAnswered: subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0),
+      correctCount: subTopicRows.reduce((sum, s) => sum + s.correctCount, 0),
+    };
+
     return {
-      id: subTopic.id,
-      name: subTopic.name,
-      questionsAnswered: counts.questionsAnswered,
-      correctCount: counts.correctCount,
-      score,
-      label: score === null ? "not_started" : masteryLabelForScore(score),
+      id: gradeModule.id,
+      name: gradeModule.name,
+      ...topicCounts,
+      ...scoreAndLabel(topicCounts),
+      subTopics: subTopicRows,
     };
   });
 

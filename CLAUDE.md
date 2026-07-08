@@ -749,15 +749,28 @@ brought in line with the same shape once the Papers change landed:
     was added to `globals.css` since the palette didn't have one yet. There's deliberately no
     "topics mastered" card anymore — removed per the mockup.
   - **One "Mastery by topic" table**, not a separate "needs work" callout plus a bars list —
-    every sub-topic for this grade+subject appears as a row, in syllabus order (module
-    sortOrder, then sub-topic sortOrder — *not* sorted by score), with columns for #, Topic, a
-    Progress bar, Questions, Correct, Score, and a Practice button on *every* row (including
-    already-mastered topics, not gated to weak ones). Score shows `—` rather than `0%` when
-    `questionsAnswered` is 0 (not started, not "scored zero"). Each row's Practice button
-    links straight to `/quiz/[subTopicId]` — the existing sub-topic quiz route already pools
-    every published MCQ tagged with that `sub_topic_id` regardless of which paper (if any) it
-    also belongs to, and logs the resulting attempt with `paper_id` null, so this needed no
-    new quiz-serving mechanism, just linking to what already existed.
+    **one row per Topic (module) for this grade+subject, in syllabus order (module
+    sortOrder)**, never a bare sub-topic as its own top-level row. This replaced an earlier
+    version that flattened Topics and sub-topics into a single list keyed one-row-per-sub-topic
+    — confusing whenever a sub-topic happened to share a name with (or otherwise read like) its
+    own parent topic, since nothing distinguished "this is the topic" from "this is one of its
+    sub-topics." Each topic row's own Questions/Correct/Score is a **rollup across every
+    sub-topic it contains** (see `getProgressStats` below for the aggregation), with columns
+    for #, Topic, a Progress bar, Questions, Correct, Score. Score shows `—` rather than `0%`
+    when `questionsAnswered` is 0 (not started, not "scored zero"). Clicking a topic row
+    (`<TopicProgressTable>` in `src/components/topic-progress-table.tsx`, the one piece of
+    client JS on this page — a Set of expanded topic ids, collapsed by default) reveals that
+    topic's own sub-topics underneath it, each scored independently with the same columns —
+    the topic-level rollup can land in a different mastery bucket than any individual
+    sub-topic (e.g. an "in_progress" topic whose sub-topics are a mix of "needs_work" and
+    "mastered"), which is expected, not a bug. The Practice button now lives **only on the
+    expanded sub-topic rows**, not the topic row itself — there's no "practice this whole
+    topic at once" quiz mode in this app (a pooled multi-sub-topic quiz was deliberately not
+    built, see "What's NOT built yet"), so a topic row has no single quiz to launch. Each
+    sub-topic row's Practice button links straight to `/quiz/[subTopicId]`, unchanged — the
+    existing sub-topic quiz route already pools every published MCQ tagged with that
+    `sub_topic_id` regardless of which paper (if any) it also belongs to, and logs the
+    resulting attempt with `paper_id` null, so this needed no new quiz-serving mechanism.
 
 **No cross-grade blending anywhere in this tab, and the KPI cards are cumulative, not
 per-attempt averages** — `getProgressStats(studentId, grade, subjectId)` (`src/lib/dashboard.ts`)
@@ -773,25 +786,45 @@ The empty state ("You haven't tried any Grade N Science papers yet") is driven s
 listed as `not_started` while still showing the empty state, if literally nothing has been
 attempted there yet.
 
-Each topic row's `questionsAnswered`/`correctCount` in `getProgressStats` is computed **live**
-from `quiz_attempt_answers` (the same source of truth `recalculateMasteryForSubTopic` writes
-from) rather than read out of the `mastery_scores` cache — this table needs an exact raw
+Each **sub-topic's** `questionsAnswered`/`correctCount` in `getProgressStats` is computed
+**live** from `quiz_attempt_answers` (the same source of truth `recalculateMasteryForSubTopic`
+writes from) rather than read out of the `mastery_scores` cache — this table needs an exact raw
 "Correct" count alongside the percentage, and re-deriving an integer count from an
-already-rounded stored percentage risks an off-by-one in the displayed math. This is separate
-from `getSubTopicStatusesForGrade`, which still reads the `mastery_scores` cache directly (fine
-for its callers, which only need the percentage) and gained an optional third `subjectId`
-parameter — optional because every *other* caller (dashboard, practice, the sidebar's
-practice-count badge) intentionally wants "every subject for this grade," since Science is the
-only subject today and that badge is meant to be grade-wide, not subject-scoped.
+already-rounded stored percentage risks an off-by-one in the displayed math. Each **topic's**
+own numbers are then a pure rollup of its own sub-topics' already-computed counts (`TopicProgress`
+extends `SubTopicProgress` with a `subTopics: SubTopicProgress[]` array) — summed in JS, not a
+second query — which can't double-count or drop anything, since every sub-topic belongs to
+exactly one topic (`sub_topics.module_id` is a required FK). A question with `sub_topic_id`
+null has no topic association at all in this schema (`mcqs` has no `module_id`/topic FK of its
+own, only `sub_topic_id`), so there's no "untagged" bucket that could be missing from a topic's
+rollup — every question a topic's numbers could possibly include already belongs to exactly one
+of its listed sub-topics. This is unchanged, pre-existing behavior, not something this pass
+introduced: an untagged paper question (`sub_topic_id` null) has never contributed to any
+topic/sub-topic mastery number anywhere in this app.
 
-Integration coverage: `tests/progress.test.ts` — own-grade progress, a different grade the
-student has practiced (mirroring Practice's cross-grade browsing), the KPI cards' cumulative
-math versus a deliberately-wrong per-attempt average (a 2-question and a 10-question attempt
-whose naive average would differ meaningfully from the correct cumulative ratio), the topic
-table listing every topic in syllabus order — including a mastered one, proving it isn't
-filtered to weak topics only, and proving the order isn't score-sorted — the empty state for a
-grade+subject with zero attempts (with the untouched topic's score `null`, not `0`), and topics
-never bleeding in from a different subject at the same grade.
+**This restructure is scoped to the Progress tab only** (`getProgressStats`). Weak Areas,
+Practice by Topic, and the Dashboard's own "Topic Performance" card all read from a *different*
+function, `getSubTopicStatusesForGrade`, which is backed by the `mastery_scores` cache (not a
+live re-aggregation) and is still sub-topic-only — it has no module-level rollup or drill-down
+today. `getSubTopicStatusesForGrade` gained an optional third `subjectId` parameter — optional
+because every *other* caller (dashboard, practice, the sidebar's practice-count badge)
+intentionally wants "every subject for this grade," since Science is the only subject today and
+that badge is meant to be grade-wide, not subject-scoped. Applying the same topic-primary/
+sub-topic-drill-down pattern to that second function (and its three consumers) was a deliberate
+follow-up decision, not done in this pass — flagged here rather than silently left inconsistent.
+
+Integration coverage: `tests/progress.test.ts` — own-grade progress with a single topic row
+(never a bare sub-topic row) confirmed by asserting the sub-topic's own id is absent from
+`stats.topics`, a different grade the student has practiced (mirroring Practice's cross-grade
+browsing), the KPI cards' cumulative math versus a deliberately-wrong per-attempt average (a
+2-question and a 10-question attempt whose naive average would differ meaningfully from the
+correct cumulative ratio), the topic-level rollup itself (three sub-topics under one module
+summing to one topic row's numbers, with the topic's own rolled-up label landing in a different
+mastery bucket than any individual sub-topic, by design), the sub-topic drill-down listing every
+sub-topic in syllabus order — including a mastered one, proving it isn't filtered to weak
+sub-topics only, and proving the order isn't score-sorted — the empty state for a grade+subject
+with zero attempts (with the untouched topic's score `null`, not `0`), and topics (and their
+sub-topics) never bleeding in from a different subject at the same grade.
 
 ## Practice (Weak Areas, By Topic, By Keyword)
 

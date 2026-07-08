@@ -1,29 +1,41 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getProgressStats, type SubTopicStatusLabel } from "@/lib/dashboard";
+import { getCompletedQuizzes, getProgressStats, type TopicProgress } from "@/lib/dashboard";
 import { getPracticeSubjects, isValidGrade } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { ProgressFilterForm } from "@/components/progress-filter-form";
+import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
 const GRADES = [
   { value: "10", label: "Grade 10" },
   { value: "11", label: "Grade 11" },
 ] as const;
 
-const BAR_COLOR: Record<SubTopicStatusLabel, string> = {
-  mastered: "bg-mastered",
-  in_progress: "bg-progress",
-  needs_work: "bg-warn",
-  not_started: "bg-app-surface-muted",
-};
-
-const SCORE_TEXT_COLOR: Record<SubTopicStatusLabel, string> = {
-  mastered: "text-mastered",
-  in_progress: "text-progress",
-  needs_work: "text-warn",
-  not_started: "text-ink-muted",
-};
+// <TopicProgressTable> is "use client" and deliberately defines its own
+// local types rather than importing TopicProgress from @/lib/dashboard
+// (which transitively imports the server-only-guarded @/db) — this remaps
+// the Server Component's already-fetched data into that plain shape, the
+// same pattern the Practice by Topic page already established for
+// <TopicCardGrid>.
+function toTopicProgressData(topic: TopicProgress): TopicProgressData {
+  return {
+    id: topic.id,
+    name: topic.name,
+    questionsAnswered: topic.questionsAnswered,
+    correctCount: topic.correctCount,
+    score: topic.score,
+    label: topic.label,
+    subTopics: topic.subTopics.map((subTopic) => ({
+      id: subTopic.id,
+      name: subTopic.name,
+      questionsAnswered: subTopic.questionsAnswered,
+      correctCount: subTopic.correctCount,
+      score: subTopic.score,
+      label: subTopic.label,
+    })),
+  };
+}
 
 export default async function ProgressPage({
   searchParams,
@@ -127,50 +139,7 @@ export default async function ProgressPage({
                   Mastery by topic
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[13px]">
-                    <thead>
-                      <tr className="bg-app-surface-muted text-left text-[11px] font-bold uppercase tracking-wide text-ink-secondary">
-                        <th className="px-3.5 py-2.5">#</th>
-                        <th className="px-3.5 py-2.5">Topic</th>
-                        <th className="px-3.5 py-2.5">Progress</th>
-                        <th className="px-3.5 py-2.5 text-right">Questions</th>
-                        <th className="px-3.5 py-2.5 text-right">Correct</th>
-                        <th className="px-3.5 py-2.5 text-right">Score</th>
-                        <th className="px-3.5 py-2.5" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.topics.map((topic, index) => (
-                        <tr key={topic.id} className="border-b border-app-border last:border-b-0">
-                          <td className="px-3.5 py-2.5 font-semibold text-ink-muted">{index + 1}</td>
-                          <td className="px-3.5 py-2.5 min-w-[180px] font-semibold">{topic.name}</td>
-                          <td className="px-3.5 py-2.5">
-                            <div className="h-[7px] w-40 overflow-hidden rounded-full bg-app-surface-muted">
-                              <div
-                                className={`h-full rounded-full ${BAR_COLOR[topic.label]}`}
-                                style={{ width: `${topic.score ?? 0}%` }}
-                              />
-                            </div>
-                          </td>
-                          <td className="px-3.5 py-2.5 text-right text-ink-secondary">
-                            {topic.questionsAnswered}
-                          </td>
-                          <td className="px-3.5 py-2.5 text-right text-ink-secondary">{topic.correctCount}</td>
-                          <td className={`px-3.5 py-2.5 text-right font-bold ${SCORE_TEXT_COLOR[topic.label]}`}>
-                            {topic.score === null ? "—" : `${topic.score}%`}
-                          </td>
-                          <td className="px-3.5 py-2.5 text-right">
-                            <Link
-                              href={`/quiz/${topic.id}`}
-                              className="rounded-md border border-app-border bg-white px-3.5 py-1.5 text-[12.5px] font-semibold hover:bg-app-surface-muted"
-                            >
-                              Practice
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <TopicProgressTable topics={stats.topics.map(toTopicProgressData)} />
                 </div>
               </div>
             </>
