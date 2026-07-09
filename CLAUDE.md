@@ -498,130 +498,136 @@ layout at all), not carried forward or renamed.
   within this page's restyled content; every other screen keeps the shared app-shell palette
   (`ink`/`progress`/`mastered`/`warn`/`teal`) untouched. Card radius is `14px` here (matching
   the mockup), not this app's usual `10px` — another intentional, screen-scoped deviation.
-- **Stat row (4 cards)**: Tests Completed / Average Score / Questions Answered / Correct
-  Answers — real numbers via `getOverallStats(studentId, grade)`, deliberately
-  **account-wide** (every subject for the grade), not scoped to one subject like
-  `getProgressStats` — it sits above a per-subject breakdown rather than being one subject's
-  own card. Also deliberately restricted to completed **paper** attempts only, same as the
-  chart below it and the same reasoning: this row reads as "how are you doing on real tests,"
-  and blending in practice-session (sub-topic) attempts — typically small, single-sub-topic
-  drills — would understate/overstate that signal depending on how much a student happens to
-  be practicing versus sitting full papers. The mockup's 4th card is "Study Time"; there's no
-  reliable source for that (`quiz_attempts.started_at`/`completed_at` would badly overstate it
-  for any attempt that used save-and-resume — e.g. started, closed the tab, resumed 3 days
-  later, and that gap would count as "study time"), so Correct Answers takes that slot instead,
-  reusing a number already computed reliably.
-- **Your Subject Performance chart** — restricted to completed **paper** attempts only,
-  deliberately excluding practice-session (sub-topic) attempts entirely: `getPaperAccuracyTrend
-  (studentId, grade)` (`src/lib/dashboard.ts`) returns one series per subject, one point per
-  completed paper attempt, in chronological order, each point showing that one attempt's own
-  score — not a weekly-bucketed cumulative average the way an earlier version of this chart
-  worked, and not a mix of paper + practice attempts. A full past-paper attempt is the closest
-  thing this app has to an exam-condition signal; mixing in practice-session scores (typically
-  smaller, single-sub-topic samples) would dilute that, so there's no toggle — practice data is
-  simply never part of this chart's dataset. `<SubjectAccuracyChart>` (a plain Server Component,
-  static inline SVG, no client JS) plots each point on a continuous chronological x-axis
-  (earliest to latest paper attempt across every subject), not fixed calendar-week columns;
-  every plotted point also gets a small `<circle>` marker in addition to the `<polyline>`
-  connecting them, so a subject with only one paper attempt so far still renders as a real,
-  visible single point (a valid, honest state — not padded out or hidden behind a "not enough
-  data" placeholder) rather than an SVG `<polyline>` silently rendering nothing for a lone
-  point. The empty state ("No completed paper attempts yet...") only shows when there are truly
-  zero completed paper attempts for the grade — a subject with only practice-session history
-  and no paper attempts yet still renders that same empty state, since practice data was never
-  part of this chart's dataset in the first place.
-- **Subject breakdown mini-list** (beside the chart) — one row per subject that has any
-  sub-topic for this grade (from `groupTopicsBySubject`), each showing that subject's overall
-  average score via `getProgressStats(studentId, grade, subjectId)` called once per subject
-  (parallelized) — reused exactly as the By Topic page uses it (see "Practice" below), not
-  modified, just called for more than one subject. Each row's "Strongest: X" sub-label is the
-  highest-scoring attempted
-  topic within that subject's own topic list (a plain `reduce`, not a new tested function —
-  trivial enough not to warrant extracting); falls back to "Not started yet" when no topic in
-  that subject has been attempted.
-- **Layout below the chart is 2 columns, not 3** (revised after an initial pass shipped a
-  3-column row matching the mockup literally — the user then asked for Weak Areas to sit
-  directly under Topic Performance instead of beside Recent Test Activity, which needed a
-  real layout change, not just a card reorder): a left column stacking **Topic Performance**
-  above **Your Weak Areas**, and a right column stacking **Recent Full Tests** above **Recent
-  Practices** (see below) — matching the combined height of the two stacked left cards.
-  `lg:items-start` on the grid keeps the right column's height from being stretched to match
-  the (taller) left column by default grid stretching.
-- **Topic Performance** — subject-tab switcher + accuracy table, reusing the exact tab-state
-  mechanic `<TopicCardGrid>` established for Practice by Topic (pure client state, no
-  navigation), defaulting to the most-recently-practiced subject via the existing
-  `getMostRecentlyPracticedSubjectId`. `<DashboardTopicTable>` is its own component rather
-  than reusing `<TopicCardGrid>` directly, since the visual shape (table vs. card grid) and
-  active-tab color (`dash-blue` here vs. `navy-900` on Practice by Topic) both genuinely
-  differ — only the tab-switching mechanic and the `SubjectTopicTab` data shape are shared.
-  **Rows are Topics (modules), not sub-topics** — `getTopicStatusesForGrade(studentId, grade)`
-  (`src/lib/dashboard.ts`) is the topic-level analog of `getSubTopicStatusesForGrade`: same
-  `mastery_scores`-cache data source and rollup math `getWeakTopicsForGrade` already
-  established (each topic's `questionsAnswered`/`correctCount`/`score` summed across every
-  sub-topic it contains, `correctCount` reconstructed as `round(score/100 × questionsAnswered)`
-  since the cache has no raw count column), just without the `needs_work` filter — every topic
-  for the grade comes back, including `not_started` ones, across every subject.
-  `groupTopicStatusesBySubject` (`src/lib/practice.ts`) is the topic-level analog of
-  `groupTopicsBySubject`, bucketing that by subject the same way. This replaced an earlier
-  version of this card that listed sub-topics directly (e.g. "Displacement and Distance"
-  instead of the topic it belongs to) — the wrong grain once By Topic/Weak Areas both
-  established "Topic is the primary row, sub-topic is the drill-down" elsewhere in this app.
-  Shows the **top 3 highest-scoring attempted topics per subject** (not syllabus order, and
-  not a fixed 5) — a "where am I doing well" preview complementing Weak Areas' "where am I
-  struggling" one below it; topics with no score yet are excluded from the ranking rather
-  than padding the preview out. **No per-row Practice link** — a Topic row has no single quiz
-  to launch (this app has no pooled multi-sub-topic quiz mode), the same reason
-  `<TopicProgressTable>` only ever puts a Practice button on its expanded sub-topic rows, never
-  the topic row itself; "View all topics →" (linking to `/practice/by-topic`) is this card's
-  entry point into that drill-down and the complete, syllabus-ordered list.
-- **Recent Full Tests / Recent Practices** — two separate, stacked widgets (in the right
-  column, below the chart row) rather than one combined "Recent Test Activity" table, since a
-  paper attempt and a practice-session attempt answer different questions ("how did my last
-  few real papers go" vs. "what have I been drilling lately") that a single merged list
-  conflated. Both share one `<RecentAttemptsTable>` component (`src/app/dashboard/page.tsx`,
-  the same Paper/Score/Time/Date columns as before) and the same underlying
-  `getCompletedQuizzes(studentId, { grade, limit, type })` — `type` (`"paper" | "topic_practice"`,
-  already how `CompletedQuiz.type` was derived from `quiz_attempts.sub_topic_id`/`paper_id`'s
-  existing exactly-one-set `CHECK` constraint) is a new optional filter on that function, so
-  each widget gets its own independent, guaranteed-3-rows fetch (`RECENT_ACTIVITY_LIMIT = 3`)
-  rather than splitting one shared, limit-5 fetch after the fact — a subject with lots of
-  recent papers can't crowd practice rows out of a shared cap, or vice versa. `CompletedQuiz`
-  itself, its `durationMinutes` field (wall-clock elapsed time, **not** active study time —
-  save-and-resume means a student can start an attempt, walk away, and finish it days later,
-  and that whole gap counts here), and the "Practice: " title prefix for practice rows are all
-  unchanged from before this split. Recent Full Tests' "View all" still points at `/papers`
-  (unchanged); Recent Practices' own "View all" points at `/practice/by-topic` — there's no
-  dedicated practice-history view yet, so it lands on the nearest existing practice-related
-  page rather than being a dead end, the same "intentionally land on the closest thing that
-  exists" call already made for Recent Full Tests' own links. The Dashboard's "Active learner"
-  pill (`isActiveLearner`) is now `recentPapers.length > 0 || recentPractices.length > 0`
-  instead of reading a single shared list — equivalent, since each fetch still returns every
-  match up to its own cap, so a nonempty result still just means "at least one exists."
-- **Your Weak Areas** — one row per subject via the existing `groupWeakAreasBySubject(weakAreas(statuses))`
-  (unmodified), showing `totalCount` as "N weak topics" and `accuracy` as a badge (red below
-  40%, amber 40-59% — the same 40% tier `rankRecommendedPracticeTopics` used to use, before it
-  was removed as dead code by this pass; see below). A header "View all" link and the tip
-  box's "Practice Weak Areas" link both go to `/practice/weak-areas`.
-- **`getContinueAttempt` and `rankRecommendedPracticeTopics` were deleted** (along with their
-  tests) rather than left unused — both were exclusively called by the two dropped sections
-  above and had no other callers.
 
-Integration coverage: `tests/dashboard.test.ts` — `getOverallStats`'s account-wide-but-paper-only
-aggregation (counting a paper attempt in one subject while excluding a practice/sub-topic
-attempt in a different subject, proving it's restricted to paper attempts rather than scoped
-to just one subject like `getProgressStats`) and its all-zero/null case for an untouched grade;
-`getPaperAccuracyTrend`'s one-point-per-
-completed-paper-attempt chronological ordering (a 50%-then-100% pair of paper attempts, sorted
-by `completedAt` and never cumulatively averaged), its exclusion of a same-subject
-practice-session (sub-topic) attempt from the trend entirely, its strict grade scoping in both
-directions, its single-point case (a subject with exactly one paper attempt returns exactly one
-point, not padded or omitted), and its zero-paper-attempts empty-list case; `getCompletedQuizzes`'s
-new `durationMinutes` field; `getTopicStatusesForGrade`'s topic-level rollup (multiple
-sub-topics under one module summing to the topic's true aggregate), its inclusion of a
-never-attempted topic (`null` score, not omitted), its grade scoping, and its
-subjectId/subjectName resolution across more than one subject. `tests/practice.test.ts` covers
-`groupTopicStatusesBySubject`'s per-subject bucketing/order-preservation/subject-name sort and its
-empty-input case, mirroring `groupTopicsBySubject`'s own tests.
+**A single global "Your subjects" switcher now drives every widget on the page** — a second
+simplification pass, replacing the mockup-literal layout above's per-widget subject controls
+(Topic Performance's own subject-tab pills were the only one that existed) with one shared
+filter at the top. There's no per-student enrollment table in this single-tenant schema (see
+"Single-tenant MVP"), so "the student's subjects" is a new query,
+**`getSubjectsForGrade(grade)`** (`src/lib/papers.ts`) — distinct subjects with at least one
+Topic/module for the grade, or at least one *published* paper for it (unioned in JS from two
+separate distinct-subject-id queries, mirroring `getCompletedQuizzes`'s own "resolve via two
+queries, merge afterward" shape) — not the older, broader `getPracticeSubjects()` (every row in
+`subjects`, completely unfiltered by grade), which stays as-is for its own existing callers.
+
+- **State architecture**: the Server Component (`src/app/dashboard/page.tsx`) fetches every
+  widget's data **for every one of the student's subjects at once** — stat row, chart, Topic
+  Performance rollup, Recent Full Tests/Practices — and bundles it all by `subjectId` into a
+  `SubjectBundle[]` prop handed to one new Client Component, `<DashboardSubjectSection>`
+  (`src/components/dashboard-subject-section.tsx`). That component owns `activeSubjectId` in
+  plain `useState` and renders whichever subject's already-fetched bundle is active — the same
+  "fetch once, tab-switch client-side, no network round trip" pattern `<TopicCardGrid>`/
+  `<PapersGrid>`/the old per-widget `<DashboardTopicTable>` tab-switcher already established,
+  just lifted from a single widget's own local state up to the whole page. `<SubjectAccuracyChart>`
+  and the `RecentAttemptsTable` table renderer both have no `"use client"` of their own and only
+  ever `import type` from `@/lib/dashboard` (erased at compile time), so both render directly
+  inside this Client Component with no rework — the RSC-boundary rule only blocks a Client
+  Component from importing genuine server-only/async-Server-Component code, not a plain
+  synchronous presentational function. **Your Weak Areas is the one exception**: it stays
+  cross-subject/unscoped (see its own bullet below), so it isn't part of the per-subject bundle
+  at all — the Server Component pre-renders its JSX and passes it into
+  `<DashboardSubjectSection>` as a `weakAreasSlot` prop, the sanctioned way to mix
+  already-rendered Server Component output into a Client Component's tree without that
+  component importing server-only code itself.
+- **"Your subjects" switcher** — one card per subject from `getSubjectsForGrade`, each showing
+  `iconForSubject`'s cosmetic icon, the subject's name, and a **grade badge**: a direct,
+  unweighted mapping of that subject's own Score % onto the standard G.C.E. O/L scale — `A`
+  75-100, `B` 65-74, `C` 50-64, `S` 35-49, `W` 0-34 (`gceGradeForScore` in `src/lib/dashboard.ts`,
+  a pure band lookup, no difficulty coefficient or prediction model). A subject with zero
+  paper-attempt questions answered shows "Not started" instead of a badge — there's no sixth
+  "ungraded" band. Clicking a card sets `activeSubjectId`; the clicked card gets a `border-2
+  border-dash-blue` highlight. Defaults to whichever subject `getMostRecentlyPracticedSubjectId`
+  resolves to, falling back to the first subject alphabetically.
+- **Stat row (4 cards), in this order**: Tests Completed, Questions Answered, Correct Answers,
+  **Score %** (renamed from "Average Score" for consistency with the grade badge above — same
+  underlying number). Sourced from `getOverallStats(studentId, grade, subjectId)` — `subjectId`
+  is now a **required** third argument (there was only ever one caller), scoping what used to be
+  an account-wide, grade-only aggregate down to the active subject. Still deliberately restricted
+  to completed **paper** attempts only, same reasoning as before: this row reads as "how are you
+  doing on real tests," and blending in practice-session (sub-topic) attempts — typically small,
+  single-sub-topic drills — would understate/overstate that signal. The mockup's 4th card is
+  "Study Time"; there's no reliable source for that (`quiz_attempts.started_at`/`completed_at`
+  would badly overstate it for any attempt that used save-and-resume), so Correct Answers took
+  that slot instead even before this pass, and stays there.
+- **Your Subject Performance chart** — now shows only the **active subject's own** trend (a
+  single-element `trends` array passed to `<SubjectAccuracyChart>`, or an empty array when that
+  subject has no paper attempts yet), rather than every subject's line at once. The chart
+  component itself is unchanged: `getPaperAccuracyTrend(studentId, grade)`
+  (`src/lib/dashboard.ts`) still fetches every subject's trend in one grade-wide query (one point
+  per completed **paper** attempt, chronological, that attempt's own score — never
+  practice-session data, never a weekly-bucketed cumulative average), and the Server Component
+  just looks up `trends.find(t => t.subjectId === subject.id)` per bundle rather than re-querying
+  per subject. Every plotted point still gets a small `<circle>` marker alongside the
+  `<polyline>`, so a subject with only one paper attempt renders as a single, real point — a
+  valid, honest state, not a placeholder. The empty state ("No completed paper attempts yet...")
+  shows whenever the active subject has zero paper attempts, even if it has practice-session
+  history — practice data was never part of this chart's dataset.
+- **Subject breakdown mini-list was removed outright**, not kept alongside the new switcher —
+  it showed name/icon/average-score/"Strongest: X" per subject, which the switcher's own cards
+  (icon, name, grade badge) now cover; keeping both would have been redundant. Its
+  `getProgressStats`-per-subject "Strongest topic" computation is gone with it — nothing else in
+  this pass needed it.
+- **Layout below the chart is still 2 columns**: a left column stacking **Topic Performance**
+  above **Your Weak Areas** (the `weakAreasSlot`), and a right column stacking **Recent Full
+  Tests** above **Recent Practices** — unchanged from the prior pass. `lg:items-start` on the
+  grid still keeps the right column's height from being stretched to match the (taller) left
+  column.
+- **Topic Performance** — **no subject-tab switcher of its own anymore**; `<DashboardTopicTable>`
+  (`src/components/dashboard-topic-table.tsx`) lost its `"use client"`/`useState` entirely and now
+  just renders whichever single subject's `DashboardTopicRow[]` it's handed (`topics` prop,
+  replacing the old `groups`/`defaultSubjectId` pair) — it's a plain presentational function, not
+  a Client Component, since it no longer has any interactivity of its own. Rows are still Topics
+  (modules), not sub-topics, via the same `getTopicStatusesForGrade`/`groupTopicStatusesBySubject`
+  rollup as before (grade-wide, bucketed by subject once, then the Server Component slices out
+  each subject's own top-3-highest-scoring-attempted-topics preview for its bundle) — no query
+  changes needed, since that data was already subject-tagged. "View all topics →" now links to
+  `/practice/by-topic?grade=&subjectId=` (the active subject), rather than an unscoped link,
+  matching the "deep link with context" convention already used elsewhere (Papers/By Topic empty
+  states).
+- **Recent Full Tests / Recent Practices** — now scoped to the active subject too:
+  `getCompletedQuizzes` gained a fourth optional filter, `subjectId` (via the sub-topic's module,
+  or the paper, whichever applies — same `or(...)` shape the existing `grade` filter already
+  uses), and the Server Component calls it once per subject per type (`RECENT_ACTIVITY_LIMIT = 3`
+  each), so every subject's own bundle carries its own guaranteed-3-rows Recent Full
+  Tests/Practices lists. `RecentAttemptsTable` (the shared Paper/Score/Time/Date renderer) moved
+  from `page.tsx` into `dashboard-subject-section.tsx`, since it's now rendered inside the Client
+  Component rather than the Server Component. Recent Full Tests' "View all" now links to
+  `/papers?grade=&subjectId=` (previously unscoped `/papers`); Recent Practices' own "View all"
+  stays on `/practice/by-topic?grade=&subjectId=` — there's still no dedicated practice-history
+  view, so it lands on the nearest existing practice-related page. The Dashboard's "Active
+  learner" pill (`isActiveLearner`) is now `subjects.some(s => s.recentPapers.length > 0 ||
+  s.recentPractices.length > 0)` — true if *any* subject has recent activity, not just the active
+  one, since switching which subject is selected shouldn't make the pill flicker on/off.
+- **Your Weak Areas is deliberately left cross-subject and unscoped** — it still lists every
+  subject with a weak topic at once (via the unmodified `groupWeakAreasBySubject(weakAreas(...))`,
+  itself fed by the unmodified, grade-wide `getSubTopicStatusesForGrade`), rather than being
+  filtered down to just the active subject. It's the one widget on this page that intentionally
+  doesn't read the new switcher's state at all — "where am I struggling, across everything" is a
+  cross-subject question by nature, and scoping it to one subject at a time would hide a weak
+  spot in a subject the student hasn't clicked into yet.
+- **`getContinueAttempt` and `rankRecommendedPracticeTopics` were deleted** (along with their
+  tests), and stayed deleted through this pass — both were exclusively called by two sections
+  dropped in an earlier redesign pass and had no other callers.
+
+Integration coverage: `tests/dashboard.test.ts` — `gceGradeForScore`'s band boundaries (every
+edge value, e.g. `74.99` vs. `75`, mapped to the correct adjacent band); `getOverallStats`'s
+now-required subject scoping (a paper attempt in one subject counted only when that subject is
+requested, a same-grade sub-topic/practice attempt in a *different* subject proving both the
+subject filter and the paper-only restriction at once) and its all-zero/null case for a
+grade/subject with no completed attempts; `getCompletedQuizzes`'s new `subjectId` filter (a paper
+attempt found only when scoped to its own subject, a practice attempt likewise, each excluded
+when the wrong subject is requested); `getPaperAccuracyTrend`'s one-point-per-completed-paper-
+attempt chronological ordering, its exclusion of a same-subject practice-session (sub-topic)
+attempt from the trend entirely, its strict grade scoping in both directions, its single-point
+case, and its zero-paper-attempts empty-list case; `getTopicStatusesForGrade`'s topic-level
+rollup, its inclusion of a never-attempted topic (`null` score, not omitted), its grade scoping,
+and its subjectId/subjectName resolution across more than one subject. `tests/papers-data.test.ts`
+covers `getSubjectsForGrade`: a subject with only a module, one with only a published paper, and
+one with both (counted exactly once, not duplicated) are all included; a subject whose only paper
+is a draft, and a subject whose only content is for a different grade, are both excluded.
+`tests/practice.test.ts` covers `groupTopicStatusesBySubject`'s per-subject bucketing/
+order-preservation/subject-name sort and its empty-input case, mirroring `groupTopicsBySubject`'s
+own tests.
 
 ## Medium and papers
 

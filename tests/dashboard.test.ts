@@ -5,6 +5,7 @@ import { db, pool } from "@/db";
 import { mcqs, modules, papers, quizAttempts, subjects, subTopics, users } from "@/db/schema";
 import { ensurePaperAttemptStarted } from "@/lib/quiz";
 import {
+  gceGradeForScore,
   getCompletedQuizzes,
   getMostRecentlyPracticedSubjectId,
   getOverallStats,
@@ -12,6 +13,27 @@ import {
   getTopicStatusesForGrade,
 } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
+
+// The "Your subjects" switcher's grade badge — a direct, unweighted G.C.E.
+// O/L band mapping of a subject's own Score %. Boundaries matter here (a
+// score exactly on a band edge belongs to the higher band).
+describe("gceGradeForScore", () => {
+  it("maps each band's lower boundary and a mid-band value correctly", () => {
+    expect(gceGradeForScore(100)).toBe("A");
+    expect(gceGradeForScore(75)).toBe("A");
+    expect(gceGradeForScore(74.99)).toBe("B");
+    expect(gceGradeForScore(70)).toBe("B");
+    expect(gceGradeForScore(65)).toBe("B");
+    expect(gceGradeForScore(64.99)).toBe("C");
+    expect(gceGradeForScore(57)).toBe("C");
+    expect(gceGradeForScore(50)).toBe("C");
+    expect(gceGradeForScore(49.99)).toBe("S");
+    expect(gceGradeForScore(42)).toBe("S");
+    expect(gceGradeForScore(35)).toBe("S");
+    expect(gceGradeForScore(34.99)).toBe("W");
+    expect(gceGradeForScore(0)).toBe("W");
+  });
+});
 
 // Confirms the Dashboard's "continue where you left off" card and "recent
 // activity" list stay scoped to whichever grade is asked for, even when an
@@ -266,19 +288,41 @@ describe("getMostRecentlyPracticedSubjectId", () => {
     expect(await getMostRecentlyPracticedSubjectId(studentId, "11")).toBeNull();
   });
 
-  it("getOverallStats counts only the paper attempt, excluding the sub-topic practice attempt", async () => {
-    // Subject A's attempt is a sub-topic (practice) attempt, subject B's is
-    // a paper attempt — getOverallStats is restricted to paper attempts, so
-    // only subject B's 1/1 should count, not both.
-    const stats = await getOverallStats(studentId, "10");
-    expect(stats.quizzesCompleted).toBe(1);
-    expect(stats.totalQuestionsAnswered).toBe(1);
-    expect(stats.totalCorrectAnswers).toBe(1);
-    expect(stats.averageScore).toBe(100);
+  it("getOverallStats scopes to the requested subject and counts only paper attempts", async () => {
+    // Subject B's attempt is a paper (1/1 correct) — scoping to it counts it.
+    const subjectBStats = await getOverallStats(studentId, "10", subjectBId);
+    expect(subjectBStats.quizzesCompleted).toBe(1);
+    expect(subjectBStats.totalQuestionsAnswered).toBe(1);
+    expect(subjectBStats.totalCorrectAnswers).toBe(1);
+    expect(subjectBStats.averageScore).toBe(100);
+
+    // Subject A's only attempt is a sub-topic (practice) attempt, not a
+    // paper — scoping to subject A returns zero, proving both the subject
+    // filter and the paper-only restriction (this isn't just "wrong
+    // subject", it's "no paper attempts for this subject at all").
+    const subjectAStats = await getOverallStats(studentId, "10", subjectAId);
+    expect(subjectAStats.quizzesCompleted).toBe(0);
   });
 
-  it("getOverallStats returns zeroed stats and a null average for a grade with no completed attempts", async () => {
-    const stats = await getOverallStats(studentId, "11");
+  it("getCompletedQuizzes scopes to the requested subject", async () => {
+    const subjectBPapers = await getCompletedQuizzes(studentId, { grade: "10", type: "paper", subjectId: subjectBId });
+    expect(subjectBPapers.map((q) => q.title)).toEqual([`Test MostRecent Paper B ${runId}`]);
+
+    // Subject A has no paper attempts at all.
+    const subjectAPapers = await getCompletedQuizzes(studentId, { grade: "10", type: "paper", subjectId: subjectAId });
+    expect(subjectAPapers).toEqual([]);
+
+    // But subject A's own practice attempt is found when scoped correctly.
+    const subjectAPractices = await getCompletedQuizzes(studentId, {
+      grade: "10",
+      type: "topic_practice",
+      subjectId: subjectAId,
+    });
+    expect(subjectAPractices.map((q) => q.title)).toEqual([`Test MostRecent Sub-topic A ${runId}`]);
+  });
+
+  it("getOverallStats returns zeroed stats and a null average for a grade/subject with no completed attempts", async () => {
+    const stats = await getOverallStats(studentId, "11", subjectBId);
     expect(stats).toEqual({
       quizzesCompleted: 0,
       totalQuestionsAnswered: 0,

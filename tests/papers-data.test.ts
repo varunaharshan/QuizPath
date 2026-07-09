@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
-import { mcqs, papers, quizAttempts, subjects, users } from "@/db/schema";
+import { mcqs, modules, papers, quizAttempts, subjects, users } from "@/db/schema";
 import { ensurePaperAttemptStarted, finalizePaperAttempt, MARKS_PER_QUESTION, saveQuizAnswer } from "@/lib/quiz";
-import { getGradesWithPapers, getPaperOverview, getPapersForGrade } from "@/lib/papers";
+import { getGradesWithPapers, getPaperOverview, getPapersForGrade, getSubjectsForGrade } from "@/lib/papers";
 import { textOptions } from "./helpers";
 
 // Covers the new grade-wide, multi-subject data layer behind the Papers
@@ -143,7 +143,6 @@ describe("papers grid data layer", () => {
     await db.delete(subjects).where(eq(subjects.id, scienceSubjectId));
     await db.delete(subjects).where(eq(subjects.id, pinnedSubjectId));
     await db.delete(users).where(eq(users.id, studentId));
-    await pool.end();
   });
 
   it("getGradesWithPapers lists a grade once it has at least one published paper", async () => {
@@ -223,4 +222,102 @@ describe("papers grid data layer", () => {
     expect(completed?.status).toBe("completed");
     expect(completed?.answeredCount).toBeNull();
   });
+});
+
+// Backs the Dashboard's "Your subjects" switcher — there's no per-student
+// enrollment table in this single-tenant schema, so "the student's
+// subjects" is defined as: has at least one Topic/module for the grade, OR
+// at least one published paper for the grade (a subject could plausibly
+// have only past papers and no topic breakdown yet, or vice versa).
+describe("getSubjectsForGrade", () => {
+  const runId = randomUUID().slice(0, 8);
+  let moduleOnlySubjectId: string;
+  let paperOnlySubjectId: string;
+  let bothSubjectId: string;
+  let draftOnlySubjectId: string;
+  let otherGradeSubjectId: string;
+
+  beforeAll(async () => {
+    const [moduleOnly] = await db.insert(subjects).values({ name: `Subjects Module Only ${runId}` }).returning();
+    moduleOnlySubjectId = moduleOnly.id;
+    await db.insert(modules).values({ subjectId: moduleOnlySubjectId, grade: "10", name: `M ${runId}`, sortOrder: 0 });
+
+    const [paperOnly] = await db.insert(subjects).values({ name: `Subjects Paper Only ${runId}` }).returning();
+    paperOnlySubjectId = paperOnly.id;
+    await db.insert(papers).values({
+      subjectId: paperOnlySubjectId,
+      grade: "10",
+      medium: "english",
+      paperType: "provincial",
+      title: `Subjects Paper Only Paper ${runId}`,
+      status: "published",
+    });
+
+    const [both] = await db.insert(subjects).values({ name: `Subjects Both ${runId}` }).returning();
+    bothSubjectId = both.id;
+    await db.insert(modules).values({ subjectId: bothSubjectId, grade: "10", name: `Both Module ${runId}`, sortOrder: 0 });
+    await db.insert(papers).values({
+      subjectId: bothSubjectId,
+      grade: "10",
+      medium: "english",
+      paperType: "provincial",
+      title: `Subjects Both Paper ${runId}`,
+      status: "published",
+    });
+
+    const [draftOnly] = await db.insert(subjects).values({ name: `Subjects Draft Only ${runId}` }).returning();
+    draftOnlySubjectId = draftOnly.id;
+    await db.insert(papers).values({
+      subjectId: draftOnlySubjectId,
+      grade: "10",
+      medium: "english",
+      paperType: "provincial",
+      title: `Subjects Draft Paper ${runId}`,
+      status: "draft",
+    });
+
+    const [otherGrade] = await db.insert(subjects).values({ name: `Subjects Other Grade ${runId}` }).returning();
+    otherGradeSubjectId = otherGrade.id;
+    await db.insert(modules).values({ subjectId: otherGradeSubjectId, grade: "11", name: `OG ${runId}`, sortOrder: 0 });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, moduleOnlySubjectId));
+    await db.delete(subjects).where(eq(subjects.id, paperOnlySubjectId));
+    await db.delete(subjects).where(eq(subjects.id, bothSubjectId));
+    await db.delete(subjects).where(eq(subjects.id, draftOnlySubjectId));
+    await db.delete(subjects).where(eq(subjects.id, otherGradeSubjectId));
+  });
+
+  it("includes a subject with only a module, and one with only a published paper", async () => {
+    const result = await getSubjectsForGrade("10");
+    expect(result.some((s) => s.id === moduleOnlySubjectId)).toBe(true);
+    expect(result.some((s) => s.id === paperOnlySubjectId)).toBe(true);
+  });
+
+  it("includes a subject with both a module and a paper exactly once, not duplicated", async () => {
+    const result = await getSubjectsForGrade("10");
+    expect(result.filter((s) => s.id === bothSubjectId)).toHaveLength(1);
+  });
+
+  it("excludes a subject whose only paper is a draft", async () => {
+    const result = await getSubjectsForGrade("10");
+    expect(result.some((s) => s.id === draftOnlySubjectId)).toBe(false);
+  });
+
+  it("excludes a subject that only has content for a different grade", async () => {
+    const result = await getSubjectsForGrade("10");
+    expect(result.some((s) => s.id === otherGradeSubjectId)).toBe(false);
+    expect(await getSubjectsForGrade("11")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: otherGradeSubjectId })]),
+    );
+  });
+});
+
+// A single file-level pool.end(), run once after both describes above have
+// finished, rather than inside the first describe's own afterAll — this
+// file now has two describes that hit the database, and closing the pool
+// inside the first one's afterAll would break the second's beforeAll/tests.
+afterAll(async () => {
+  await pool.end();
 });

@@ -105,12 +105,17 @@ export type CompletedQuiz = {
 // "Recent Full Tests" / "Recent Practices" widgets each call this once with
 // their own `type` and `limit`, so each widget's cap (3 rows) is guaranteed
 // regardless of how the other type is mixed in, rather than splitting one
-// shared, unfiltered fetch after the fact.
+// shared, unfiltered fetch after the fact. `subjectId`, likewise optional,
+// scopes to one subject (via the sub-topic's module, or the paper, whichever
+// applies) — the Dashboard's per-subject switcher calls this once per
+// subject to pre-fetch every subject's own Recent Full Tests/Practices up
+// front, so switching the active subject is a client-side read of
+// already-fetched data rather than a new request.
 export async function getCompletedQuizzes(
   studentId: string,
-  options: { grade?: "10" | "11"; limit?: number; type?: "paper" | "topic_practice" } = {},
+  options: { grade?: "10" | "11"; limit?: number; type?: "paper" | "topic_practice"; subjectId?: string } = {},
 ): Promise<CompletedQuiz[]> {
-  const { grade, limit = 20, type } = options;
+  const { grade, limit = 20, type, subjectId } = options;
 
   const attempts = await db
     .select({
@@ -131,6 +136,7 @@ export async function getCompletedQuizzes(
         grade ? or(eq(modules.grade, grade), eq(papers.grade, grade)) : undefined,
         type === "paper" ? isNotNull(quizAttempts.paperId) : undefined,
         type === "topic_practice" ? isNotNull(quizAttempts.subTopicId) : undefined,
+        subjectId ? or(eq(modules.subjectId, subjectId), eq(papers.subjectId, subjectId)) : undefined,
       ),
     )
     .orderBy(desc(quizAttempts.completedAt))
@@ -525,22 +531,48 @@ export type OverallStats = {
   averageScore: number | null;
 };
 
-// Account-wide (every subject, not just one) cumulative stats for the
-// Dashboard's restyled stat row — sits above a per-subject breakdown rather
-// than being scoped to one subject itself, unlike getProgressStats (which
-// is deliberately grade+subject scoped, for the Progress tab, and is left
-// untouched here). Deliberately restricted to completed PAPER attempts
-// only, same as getPaperAccuracyTrend — a full past-paper attempt is the
-// closest thing this app has to an exam-condition signal, and blending in
+export type GceGrade = "A" | "B" | "C" | "S" | "W";
+
+// Direct mapping of a subject's own Score % onto the standard G.C.E. O/L
+// grading scale for the "Your subjects" switcher's grade badge — a plain
+// band lookup on the real, measured score, not a difficulty-adjusted or
+// predicted grade. Bands: 75-100 A, 65-74 B, 50-64 C, 35-49 S, 0-34 W.
+// Callers are responsible for the "no data yet" case (a subject with zero
+// questions answered shows "Not started" instead of calling this at all —
+// there's no sixth band for "ungraded").
+export function gceGradeForScore(score: number): GceGrade {
+  if (score >= 75) return "A";
+  if (score >= 65) return "B";
+  if (score >= 50) return "C";
+  if (score >= 35) return "S";
+  return "W";
+}
+
+// Per-subject cumulative stats for the Dashboard's KPI row — scoped to
+// whichever subject the new "Your subjects" switcher has active, mirroring
+// getProgressStats's own grade+subject scoping (though that function is a
+// live cross-attempt-type rollup for the By Topic page and stays
+// untouched). Deliberately restricted to completed PAPER attempts only,
+// same as getPaperAccuracyTrend — a full past-paper attempt is the closest
+// thing this app has to an exam-condition signal, and blending in
 // practice-session (sub-topic) attempts would let a handful of small,
 // single-sub-topic drills dominate what's meant to read as "how are you
-// doing on real tests."
-export async function getOverallStats(studentId: string, grade: "10" | "11"): Promise<OverallStats> {
+// doing on real tests." Also backs each subject switcher card's own grade
+// badge (`averageScore` run through `gceGradeForScore`), so the KPI row's
+// own "Score %" and the badge shown at the top of the page always agree.
+export async function getOverallStats(studentId: string, grade: "10" | "11", subjectId: string): Promise<OverallStats> {
   const attempts = await db
     .select({ id: quizAttempts.id })
     .from(quizAttempts)
     .innerJoin(papers, eq(papers.id, quizAttempts.paperId))
-    .where(and(eq(quizAttempts.studentId, studentId), isNotNull(quizAttempts.completedAt), eq(papers.grade, grade)));
+    .where(
+      and(
+        eq(quizAttempts.studentId, studentId),
+        isNotNull(quizAttempts.completedAt),
+        eq(papers.grade, grade),
+        eq(papers.subjectId, subjectId),
+      ),
+    );
 
   const quizzesCompleted = attempts.length;
   let totalQuestionsAnswered = 0;

@@ -1,6 +1,6 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { mcqs, papers, quizAttemptAnswers, quizAttempts, subjects } from "@/db/schema";
+import { mcqs, modules, papers, quizAttemptAnswers, quizAttempts, subjects } from "@/db/schema";
 import { MARKS_PER_QUESTION } from "@/lib/quiz";
 
 // Practice's Grade step is a free browsing choice (not tied to the student's
@@ -16,6 +16,39 @@ export type PracticeSubject = { id: string; name: string };
 // subjects slot in automatically as they're added.
 export async function getPracticeSubjects(): Promise<PracticeSubject[]> {
   return db.select({ id: subjects.id, name: subjects.name }).from(subjects).orderBy(subjects.name);
+}
+
+// The Dashboard's "Your subjects" switcher — subjects that actually have
+// something for this grade (at least one Topic/module, or at least one
+// published paper), not literally every row in `subjects` the way
+// getPracticeSubjects does. There's no per-student enrollment concept in
+// this single-tenant schema (see CLAUDE.md "Single-tenant MVP") — "the
+// student's subjects" is defined the same way every other grade-scoped
+// list in this app already is: real content for that grade, resolved from
+// two separate distinct-subject-id queries (modules and papers) and
+// unioned in JS, mirroring getCompletedQuizzes's own "resolve via two
+// queries, merge afterward" shape rather than one query needing `subjects`
+// joined in twice. A module has no draft/published status of its own (only
+// mcqs/papers do), so any module for the grade counts; a paper only counts
+// once it's published, matching every other student-facing paper query.
+export async function getSubjectsForGrade(grade: "10" | "11"): Promise<PracticeSubject[]> {
+  const moduleSubjectRows = await db
+    .selectDistinct({ id: modules.subjectId })
+    .from(modules)
+    .where(eq(modules.grade, grade));
+  const paperSubjectRows = await db
+    .selectDistinct({ id: papers.subjectId })
+    .from(papers)
+    .where(and(eq(papers.grade, grade), eq(papers.status, "published")));
+
+  const subjectIds = [...new Set([...moduleSubjectRows.map((r) => r.id), ...paperSubjectRows.map((r) => r.id)])];
+  if (subjectIds.length === 0) return [];
+
+  return db
+    .select({ id: subjects.id, name: subjects.name })
+    .from(subjects)
+    .where(inArray(subjects.id, subjectIds))
+    .orderBy(subjects.name);
 }
 
 export type SubjectInfo = {
