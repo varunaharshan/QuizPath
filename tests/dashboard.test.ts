@@ -3,12 +3,12 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, papers, quizAttempts, subjects, subTopics, users } from "@/db/schema";
-import { ensurePaperAttemptStarted, ensureSubTopicAttemptStarted, finalizeSubTopicAttempt, saveQuizAnswer } from "@/lib/quiz";
+import { ensurePaperAttemptStarted } from "@/lib/quiz";
 import {
   getCompletedQuizzes,
   getMostRecentlyPracticedSubjectId,
   getOverallStats,
-  getSubjectAccuracyTrends,
+  getPaperAccuracyTrend,
   getTopicStatusesForGrade,
 } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
@@ -288,25 +288,51 @@ describe("getMostRecentlyPracticedSubjectId", () => {
   });
 });
 
-// getSubjectAccuracyTrends backs the Dashboard's "Subject Performance"
-// chart — real weekly-bucketed cumulative accuracy, not placeholder data.
-// completedAt is backdated via a direct db.update after finalizing each
-// attempt through the real quiz-taking API, since there's no way to submit
-// an attempt "in the past" through the public functions.
-describe("getSubjectAccuracyTrends", () => {
+// getPaperAccuracyTrend backs the Dashboard's "Subject Performance" chart —
+// one point per completed PAPER attempt (never a practice-session/sub-topic
+// attempt), plotted at its own score, in chronological order — not a
+// weekly-bucketed cumulative average. completedAt is backdated via a direct
+// db.update after finalizing each attempt through the real quiz-taking API,
+// since there's no way to submit an attempt "in the past" through the
+// public functions.
+describe("getPaperAccuracyTrend", () => {
   const runId = randomUUID().slice(0, 8);
   const subjectName = `Test Trend Subject ${runId}`;
   let subjectId: string;
+  let paperAId: string;
+  let paperBId: string;
   let subTopicId: string;
-  let mcq1Id: string;
-  let mcq2Id: string;
-  let otherGradeSubTopicId: string;
-  let otherGradeMcqId: string;
+  let otherGradePaperId: string;
   let studentId: string;
 
   beforeAll(async () => {
     const [subject] = await db.insert(subjects).values({ name: subjectName }).returning();
     subjectId = subject.id;
+
+    const [paperA] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "10",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test Trend Paper A ${runId}`,
+        status: "published",
+      })
+      .returning();
+    paperAId = paperA.id;
+    const [paperB] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "10",
+        medium: "english",
+        paperType: "district",
+        title: `Test Trend Paper B ${runId}`,
+        status: "published",
+      })
+      .returning();
+    paperBId = paperB.id;
 
     const [testModule] = await db
       .insert(modules)
@@ -318,37 +344,45 @@ describe("getSubjectAccuracyTrends", () => {
       .returning();
     subTopicId = subTopic.id;
 
-    const [mcq1] = await db
+    const [paperAMcq1] = await db
       .insert(mcqs)
-      .values({ subTopicId, questionText: "Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .values({ paperId: paperAId, questionText: "PA-Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" })
       .returning({ id: mcqs.id });
-    mcq1Id = mcq1.id;
-    const [mcq2] = await db
+    const [paperAMcq2] = await db
       .insert(mcqs)
-      .values({ subTopicId, questionText: "Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .values({ paperId: paperAId, questionText: "PA-Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" })
       .returning({ id: mcqs.id });
-    mcq2Id = mcq2.id;
+    const [paperBMcq] = await db
+      .insert(mcqs)
+      .values({ paperId: paperBId, questionText: "PB-Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+    const [practiceMcq] = await db
+      .insert(mcqs)
+      .values({ subTopicId, questionText: "Practice-Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
 
-    const [otherGradeModule] = await db
-      .insert(modules)
-      .values({ subjectId, grade: "11", name: `Test Trend Other Grade Module ${runId}`, sortOrder: 0 })
+    const [otherGradePaper] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "11",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test Trend Other Grade Paper ${runId}`,
+        status: "published",
+      })
       .returning();
-    const [otherGradeSubTopic] = await db
-      .insert(subTopics)
-      .values({ moduleId: otherGradeModule.id, name: `Test Trend Other Grade Sub-topic ${runId}`, sortOrder: 0 })
-      .returning();
-    otherGradeSubTopicId = otherGradeSubTopic.id;
+    otherGradePaperId = otherGradePaper.id;
     const [otherGradeMcq] = await db
       .insert(mcqs)
       .values({
-        subTopicId: otherGradeSubTopicId,
-        questionText: "Q3",
+        paperId: otherGradePaperId,
+        questionText: "OG-Q1",
         options: textOptions("A", "B"),
         correctOption: 0,
         status: "published",
       })
       .returning({ id: mcqs.id });
-    otherGradeMcqId = otherGradeMcq.id;
 
     const [student] = await db
       .insert(users)
@@ -356,33 +390,25 @@ describe("getSubjectAccuracyTrends", () => {
       .returning();
     studentId = student.id;
 
-    // Attempt 1: 1/2 correct, backdated to exactly 3 weeks before the
-    // current ISO week's Monday, so it lands in a known bucket.
-    const attempt1Id = await ensureSubTopicAttemptStarted(studentId, subTopicId);
-    await saveQuizAnswer({ studentId, attemptId: attempt1Id, mcqId: mcq1Id, selectedOption: 0 }); // correct
-    await saveQuizAnswer({ studentId, attemptId: attempt1Id, mcqId: mcq2Id, selectedOption: 1 }); // wrong
-    await finalizeSubTopicAttempt({ studentId, attemptId: attempt1Id });
+    // Paper A: 1/2 correct (50%), backdated to 2 days ago -> should sort first.
+    const resultA = await submitFullPaperQuiz({
+      studentId,
+      paperId: paperAId,
+      answers: { [paperAMcq1.id]: 0, [paperAMcq2.id]: 1 },
+    });
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await db.update(quizAttempts).set({ completedAt: twoDaysAgo }).where(eq(quizAttempts.id, resultA.attemptId));
 
-    const now = new Date();
-    const daysSinceMonday = (now.getUTCDay() + 6) % 7;
-    const thisWeekStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday),
-    );
-    const backdated = new Date(thisWeekStart);
-    backdated.setUTCDate(backdated.getUTCDate() - 21);
-    await db.update(quizAttempts).set({ completedAt: backdated }).where(eq(quizAttempts.id, attempt1Id));
+    // Paper B: 1/1 correct (100%), completed "now" -> should sort second.
+    await submitFullPaperQuiz({ studentId, paperId: paperBId, answers: { [paperBMcq.id]: 0 } });
 
-    // Attempt 2 (a retake): 2/2 correct, completed "now" (this week).
-    const attempt2Id = await ensureSubTopicAttemptStarted(studentId, subTopicId);
-    await saveQuizAnswer({ studentId, attemptId: attempt2Id, mcqId: mcq1Id, selectedOption: 0 });
-    await saveQuizAnswer({ studentId, attemptId: attempt2Id, mcqId: mcq2Id, selectedOption: 0 });
-    await finalizeSubTopicAttempt({ studentId, attemptId: attempt2Id });
+    // A practice (sub-topic) attempt for the same subject/grade — must never
+    // appear in the paper-only trend at all.
+    await submitFullSubTopicQuiz({ studentId, subTopicId, answers: { [practiceMcq.id]: 0 } });
 
-    // A grade-11 attempt for the same student/subject — must never leak
-    // into the grade-10 trend's numbers.
-    const otherGradeAttemptId = await ensureSubTopicAttemptStarted(studentId, otherGradeSubTopicId);
-    await saveQuizAnswer({ studentId, attemptId: otherGradeAttemptId, mcqId: otherGradeMcqId, selectedOption: 0 });
-    await finalizeSubTopicAttempt({ studentId, attemptId: otherGradeAttemptId });
+    // A grade-11 paper attempt for the same student/subject — must never
+    // leak into the grade-10 trend.
+    await submitFullPaperQuiz({ studentId, paperId: otherGradePaperId, answers: { [otherGradeMcq.id]: 0 } });
   });
 
   afterAll(async () => {
@@ -390,40 +416,40 @@ describe("getSubjectAccuracyTrends", () => {
     await db.delete(users).where(eq(users.id, studentId));
   });
 
-  it("buckets into 7 weekly cumulative-to-date points: null before any data, then updating as attempts land", async () => {
-    const trends = await getSubjectAccuracyTrends(studentId, "10");
+  it("returns one point per completed paper attempt, chronological, each showing that attempt's own score", async () => {
+    const trends = await getPaperAccuracyTrend(studentId, "10");
     expect(trends).toHaveLength(1);
     const trend = trends[0];
     expect(trend.subjectName).toBe(subjectName);
-    expect(trend.points).toHaveLength(7);
+    expect(trend.points).toHaveLength(2);
 
-    // No data at all before attempt 1's week.
-    expect(trend.points[0].accuracy).toBeNull();
-    expect(trend.points[1].accuracy).toBeNull();
-    expect(trend.points[2].accuracy).toBeNull();
-    // Attempt 1 (1/2 = 50%) lands in week index 3 and carries forward.
-    expect(trend.points[3].accuracy).toBe(50);
-    expect(trend.points[4].accuracy).toBe(50);
-    expect(trend.points[5].accuracy).toBe(50);
-    // This week: attempt 2 lands too -> (1+2)/(2+2) = 75%. If the grade-11
-    // attempt had leaked in, this would be 80% instead.
-    expect(trend.points[6].accuracy).toBe(75);
+    // Paper A (50%, backdated) comes before Paper B (100%, now) — not a
+    // weekly cumulative average, and not leaking the practice attempt in.
+    expect(trend.points[0].score).toBe(50);
+    expect(trend.points[1].score).toBe(100);
+    expect(trend.points[0].completedAt.getTime()).toBeLessThan(trend.points[1].completedAt.getTime());
   });
 
-  it("scopes strictly by grade — the grade-11 attempt only shows up when querying grade 11", async () => {
-    const grade11Trends = await getSubjectAccuracyTrends(studentId, "11");
+  it("scopes strictly by grade — the grade-11 paper attempt only shows up when querying grade 11", async () => {
+    const grade11Trends = await getPaperAccuracyTrend(studentId, "11");
     expect(grade11Trends).toHaveLength(1);
     expect(grade11Trends[0].subjectName).toBe(subjectName);
-    expect(grade11Trends[0].points.at(-1)?.accuracy).toBe(100);
+    expect(grade11Trends[0].points).toHaveLength(1);
+    expect(grade11Trends[0].points[0].score).toBe(100);
   });
 
-  it("returns an empty list for a student with no completed attempts at all", async () => {
+  it("returns a single point for a subject with just one paper attempt, not padded or omitted", async () => {
+    const grade11Trends = await getPaperAccuracyTrend(studentId, "11");
+    expect(grade11Trends[0].points).toHaveLength(1);
+  });
+
+  it("returns an empty list for a student with no completed paper attempts at all", async () => {
     const [student] = await db
       .insert(users)
       .values({ authProviderId: `test-trend-empty-${runId}`, email: `test-trend-empty-${runId}@example.com` })
       .returning();
     try {
-      expect(await getSubjectAccuracyTrends(student.id, "10")).toEqual([]);
+      expect(await getPaperAccuracyTrend(student.id, "10")).toEqual([]);
     } finally {
       await db.delete(users).where(eq(users.id, student.id));
     }

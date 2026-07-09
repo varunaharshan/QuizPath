@@ -2,12 +2,13 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import {
+  type CompletedQuiz,
   getCompletedQuizzes,
   getMostRecentlyPracticedSubjectId,
   getOverallStats,
+  getPaperAccuracyTrend,
   getProgressStats,
   getSubTopicStatusesForGrade,
-  getSubjectAccuracyTrends,
   getTopicStatusesForGrade,
   iconForModule,
   iconForSubject,
@@ -17,6 +18,58 @@ import { getPracticeSubjects } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { DashboardTopicTable, type SubjectTopicTab } from "@/components/dashboard-topic-table";
 import { SubjectAccuracyChart } from "@/components/subject-accuracy-chart";
+
+// Recent Full Tests / Recent Practices each show their own latest 3 rows —
+// a fixed, independent cap per widget, not a shared pool split after the
+// fact (see the two separate getCompletedQuizzes calls below).
+const RECENT_ACTIVITY_LIMIT = 3;
+
+// One shared table shape for both "Recent Full Tests" and "Recent
+// Practices" — each widget's own getCompletedQuizzes call already filters
+// to one `type`, so this component doesn't need to know which; it just
+// renders whatever list (and empty-state copy) it's handed.
+function RecentAttemptsTable({ quizzes, emptyMessage }: { quizzes: CompletedQuiz[]; emptyMessage: string }) {
+  if (quizzes.length === 0) {
+    return <p className="m-0 text-sm text-ink-secondary">{emptyMessage}</p>;
+  }
+
+  return (
+    <table className="w-full border-collapse text-[13px]">
+      <thead>
+        <tr>
+          <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
+            Paper
+          </th>
+          <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
+            Score
+          </th>
+          <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
+            Time
+          </th>
+          <th className="border-b border-app-border pb-2.5 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
+            Date
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {quizzes.map((quiz) => (
+          <tr key={quiz.attemptId}>
+            <td className="max-w-[140px] truncate border-b border-app-border py-2.5 pr-2">
+              {quiz.type === "topic_practice" ? `Practice: ${quiz.title}` : quiz.title}
+            </td>
+            <td className="border-b border-app-border py-2.5 pr-2">
+              {quiz.total === 0 ? "—" : `${Math.round((quiz.correctCount / quiz.total) * 100)}%`}
+            </td>
+            <td className="border-b border-app-border py-2.5 pr-2">{quiz.durationMinutes}m</td>
+            <td className="border-b border-app-border py-2.5 text-ink-secondary">
+              {quiz.completedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 // Restyled to match a GradeBoost-style reference mockup (docs/ upload) —
 // content area only, see CLAUDE.md "Dashboard" for the full rationale.
@@ -34,14 +87,19 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const [subjects, statuses, topicStatuses, completedQuizzes, overallStats, trends, mostRecentSubjectId] =
+  const [subjects, statuses, topicStatuses, recentPapers, recentPractices, overallStats, trends, mostRecentSubjectId] =
     await Promise.all([
       getPracticeSubjects(),
       getSubTopicStatusesForGrade(appUser.id, profile.grade),
       getTopicStatusesForGrade(appUser.id, profile.grade),
-      getCompletedQuizzes(appUser.id, { grade: profile.grade, limit: 5 }),
+      getCompletedQuizzes(appUser.id, { grade: profile.grade, limit: RECENT_ACTIVITY_LIMIT, type: "paper" }),
+      getCompletedQuizzes(appUser.id, {
+        grade: profile.grade,
+        limit: RECENT_ACTIVITY_LIMIT,
+        type: "topic_practice",
+      }),
       getOverallStats(appUser.id, profile.grade),
-      getSubjectAccuracyTrends(appUser.id, profile.grade),
+      getPaperAccuracyTrend(appUser.id, profile.grade),
       getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
     ]);
 
@@ -105,7 +163,7 @@ export default async function DashboardPage() {
       active="dashboard"
       studentName={displayName}
       grade={profile.grade}
-      isActiveLearner={completedQuizzes.length > 0}
+      isActiveLearner={recentPapers.length > 0 || recentPractices.length > 0}
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Welcome back, {firstName}</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
@@ -246,55 +304,28 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-[14px] border border-app-border bg-white p-4.5">
-          <div className="mb-3.5 flex items-center justify-between">
-            <h3 className="m-0 text-[15.5px] font-bold text-ink">Recent Test Activity</h3>
-            <Link href="/papers" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
-              View all
-            </Link>
+        <div className="flex flex-col gap-4">
+          <div className="rounded-[14px] border border-app-border bg-white p-4.5">
+            <div className="mb-3.5 flex items-center justify-between">
+              <h3 className="m-0 text-[15.5px] font-bold text-ink">Recent Full Tests</h3>
+              <Link href="/papers" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+                View all
+              </Link>
+            </div>
+            <RecentAttemptsTable quizzes={recentPapers} emptyMessage="You haven't completed any full tests yet." />
           </div>
-          {completedQuizzes.length === 0 ? (
-            <p className="m-0 text-sm text-ink-secondary">You haven&apos;t completed any quizzes yet.</p>
-          ) : (
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
-                    Paper
-                  </th>
-                  <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
-                    Score
-                  </th>
-                  <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
-                    Time
-                  </th>
-                  <th className="border-b border-app-border pb-2.5 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
-                    Date
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {completedQuizzes.map((quiz) => (
-                  <tr key={quiz.attemptId}>
-                    <td className="max-w-[140px] truncate border-b border-app-border py-2.5 pr-2">
-                      {quiz.type === "topic_practice" ? `Practice: ${quiz.title}` : quiz.title}
-                    </td>
-                    <td className="border-b border-app-border py-2.5 pr-2">
-                      {quiz.total === 0 ? "—" : `${Math.round((quiz.correctCount / quiz.total) * 100)}%`}
-                    </td>
-                    <td className="border-b border-app-border py-2.5 pr-2">{quiz.durationMinutes}m</td>
-                    <td className="border-b border-app-border py-2.5 text-ink-secondary">
-                      {quiz.completedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <div className="mt-3 text-center">
-            <Link href="/papers" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
-              Go to Past Papers →
-            </Link>
+
+          <div className="rounded-[14px] border border-app-border bg-white p-4.5">
+            <div className="mb-3.5 flex items-center justify-between">
+              <h3 className="m-0 text-[15.5px] font-bold text-ink">Recent Practices</h3>
+              <Link href="/practice/by-topic" className="text-[12.5px] font-semibold text-dash-blue hover:underline">
+                View all
+              </Link>
+            </div>
+            <RecentAttemptsTable
+              quizzes={recentPractices}
+              emptyMessage="You haven't completed any practice sessions yet."
+            />
           </div>
         </div>
       </div>

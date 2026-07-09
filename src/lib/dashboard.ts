@@ -101,12 +101,16 @@ export type CompletedQuiz = {
 // (so an attempt from browsing another grade's papers in Practice doesn't
 // show up there), while other pages only need the overall "has this student
 // completed anything, ever" count (the "Active learner" pill) and call this
-// without a grade filter.
+// without a grade filter. `type` is likewise optional — the Dashboard's own
+// "Recent Full Tests" / "Recent Practices" widgets each call this once with
+// their own `type` and `limit`, so each widget's cap (3 rows) is guaranteed
+// regardless of how the other type is mixed in, rather than splitting one
+// shared, unfiltered fetch after the fact.
 export async function getCompletedQuizzes(
   studentId: string,
-  options: { grade?: "10" | "11"; limit?: number } = {},
+  options: { grade?: "10" | "11"; limit?: number; type?: "paper" | "topic_practice" } = {},
 ): Promise<CompletedQuiz[]> {
-  const { grade, limit = 20 } = options;
+  const { grade, limit = 20, type } = options;
 
   const attempts = await db
     .select({
@@ -125,6 +129,8 @@ export async function getCompletedQuizzes(
         eq(quizAttempts.studentId, studentId),
         isNotNull(quizAttempts.completedAt),
         grade ? or(eq(modules.grade, grade), eq(papers.grade, grade)) : undefined,
+        type === "paper" ? isNotNull(quizAttempts.paperId) : undefined,
+        type === "topic_practice" ? isNotNull(quizAttempts.subTopicId) : undefined,
       ),
     )
     .orderBy(desc(quizAttempts.completedAt))
@@ -561,67 +567,35 @@ export async function getOverallStats(studentId: string, grade: "10" | "11"): Pr
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore };
 }
 
-function startOfWeekUTC(date: Date): Date {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = start.getUTCDay(); // 0=Sun..6=Sat
-  const daysSinceMonday = (day + 6) % 7;
-  start.setUTCDate(start.getUTCDate() - daysSinceMonday);
-  return start;
-}
-
-function addDaysUTC(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setUTCDate(result.getUTCDate() + days);
-  return result;
-}
-
-const TREND_WEEKS = 7;
-
-export type SubjectAccuracyPoint = {
-  weekStart: Date;
-  // Cumulative-to-date accuracy as of the end of this week — null when the
-  // student has no completed attempts in this subject yet at all (never 0%,
-  // matching this app's usual "no data yet" vs "scored zero" distinction).
-  accuracy: number | null;
+export type PaperAccuracyPoint = {
+  completedAt: Date;
+  // This attempt's own score — never null, since finalizeAttempt requires
+  // at least one saved answer before an attempt can be completed at all.
+  score: number;
 };
 
-export type SubjectAccuracyTrend = {
+export type PaperAccuracyTrend = {
   subjectId: string;
   subjectName: string;
-  points: SubjectAccuracyPoint[];
+  // One point per completed paper attempt for this subject, in chronological
+  // order — not a weekly bucket, and not a cumulative running average. A
+  // subject with just one paper attempt so far has exactly one point here;
+  // that's a valid, honest state (a single dot on the chart), not something
+  // to pad out or hide behind a placeholder.
+  points: PaperAccuracyPoint[];
 };
 
-// Real historical accuracy trend per subject for the Dashboard's "Subject
-// Performance" chart — the raw data (quiz_attempts.completedAt +
-// quiz_attempt_answers) already exists, but no prior aggregation bucketed
-// it over time (every other stat in this app is a single cumulative
-// total-to-date, not a series), so this is new: weekly (Monday-start UTC)
-// buckets over the last TREND_WEEKS weeks, one series per subject that has
-// at least one completed attempt in this grade. Each point is CUMULATIVE
-// accuracy up to the end of that week (a running "how has my overall
-// accuracy evolved" line), not that week's accuracy in isolation — a
-// single quiet or unlucky week can't make the trend swing wildly, which
-// matters given a student may only have a handful of attempts total.
-// Subjects are resolved via two separate queries (sub-topic attempts via
-// their module, paper attempts via the paper itself) and merged in JS,
-// mirroring getCompletedQuizzes's existing approach — simpler than a
-// single query needing the subjects table joined in twice.
-export async function getSubjectAccuracyTrends(studentId: string, grade: "10" | "11"): Promise<SubjectAccuracyTrend[]> {
-  const subTopicAttempts = await db
-    .select({
-      id: quizAttempts.id,
-      completedAt: quizAttempts.completedAt,
-      subjectId: modules.subjectId,
-      subjectName: subjects.name,
-    })
-    .from(quizAttempts)
-    .innerJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
-    .innerJoin(modules, eq(modules.id, subTopics.moduleId))
-    .innerJoin(subjects, eq(subjects.id, modules.subjectId))
-    .where(
-      and(eq(quizAttempts.studentId, studentId), eq(modules.grade, grade), isNotNull(quizAttempts.completedAt)),
-    );
-
+// Real per-attempt accuracy trend for the Dashboard's "Subject Performance"
+// chart — deliberately restricted to completed PAPER attempts only
+// (quiz_attempts.paper_id set), never sub-topic practice sessions: a full
+// past-paper attempt is the closest thing this app has to an exam-condition
+// signal, and mixing in practice-session scores (typically smaller,
+// single-sub-topic samples) would dilute that. Each point is that one
+// attempt's own score, plotted at its own completedAt — not a weekly-
+// bucketed cumulative average the way this chart used to work — so the
+// line (or lone point) reads as "how did each real paper attempt go,
+// in order," not a smoothed trend.
+export async function getPaperAccuracyTrend(studentId: string, grade: "10" | "11"): Promise<PaperAccuracyTrend[]> {
   const paperAttempts = await db
     .select({
       id: quizAttempts.id,
@@ -634,10 +608,9 @@ export async function getSubjectAccuracyTrends(studentId: string, grade: "10" | 
     .innerJoin(subjects, eq(subjects.id, papers.subjectId))
     .where(and(eq(quizAttempts.studentId, studentId), eq(papers.grade, grade), isNotNull(quizAttempts.completedAt)));
 
-  const allAttempts = [...subTopicAttempts, ...paperAttempts];
-  if (allAttempts.length === 0) return [];
+  if (paperAttempts.length === 0) return [];
 
-  const attemptIds = allAttempts.map((a) => a.id);
+  const attemptIds = paperAttempts.map((a) => a.id);
   const answers = await db
     .select({ quizAttemptId: quizAttemptAnswers.quizAttemptId, isCorrect: quizAttemptAnswers.isCorrect })
     .from(quizAttemptAnswers)
@@ -651,39 +624,23 @@ export async function getSubjectAccuracyTrends(studentId: string, grade: "10" | 
     countsByAttempt.set(answer.quizAttemptId, counts);
   }
 
-  const bySubject = new Map<
-    string,
-    { subjectName: string; attempts: { completedAt: Date; correct: number; total: number }[] }
-  >();
-  for (const attempt of allAttempts) {
+  const bySubject = new Map<string, { subjectName: string; points: PaperAccuracyPoint[] }>();
+  for (const attempt of paperAttempts) {
     if (!attempt.completedAt) continue;
-    const counts = countsByAttempt.get(attempt.id) ?? { correct: 0, total: 0 };
-    const entry = { completedAt: attempt.completedAt, correct: counts.correct, total: counts.total };
+    const counts = countsByAttempt.get(attempt.id);
+    if (!counts || counts.total === 0) continue;
+    const score = Math.round((counts.correct / counts.total) * 10000) / 100;
+    const point: PaperAccuracyPoint = { completedAt: attempt.completedAt, score };
     const group = bySubject.get(attempt.subjectId);
-    if (group) group.attempts.push(entry);
-    else bySubject.set(attempt.subjectId, { subjectName: attempt.subjectName, attempts: [entry] });
+    if (group) group.points.push(point);
+    else bySubject.set(attempt.subjectId, { subjectName: attempt.subjectName, points: [point] });
   }
 
-  const thisWeekStart = startOfWeekUTC(new Date());
-  const weekStarts: Date[] = [];
-  for (let i = TREND_WEEKS - 1; i >= 0; i--) {
-    weekStarts.push(addDaysUTC(thisWeekStart, -7 * i));
-  }
-
-  const trends: SubjectAccuracyTrend[] = [];
-  for (const [subjectId, { subjectName, attempts }] of bySubject) {
-    const points: SubjectAccuracyPoint[] = weekStarts.map((weekStart) => {
-      const cutoff = addDaysUTC(weekStart, 7);
-      const upToDate = attempts.filter((a) => a.completedAt < cutoff);
-      const correct = upToDate.reduce((sum, a) => sum + a.correct, 0);
-      const total = upToDate.reduce((sum, a) => sum + a.total, 0);
-      return {
-        weekStart,
-        accuracy: total === 0 ? null : Math.round((correct / total) * 10000) / 100,
-      };
-    });
-    trends.push({ subjectId, subjectName, points });
-  }
+  const trends: PaperAccuracyTrend[] = [...bySubject.entries()].map(([subjectId, { subjectName, points }]) => ({
+    subjectId,
+    subjectName,
+    points: points.sort((a, b) => a.completedAt.getTime() - b.completedAt.getTime()),
+  }));
 
   return trends.sort((a, b) => a.subjectName.localeCompare(b.subjectName));
 }
