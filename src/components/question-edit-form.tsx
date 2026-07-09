@@ -8,15 +8,6 @@ import { updateQuestion } from "@/app/admin/papers/[paperId]/questions/actions";
 const INPUT_CLASSES = "w-full rounded-md border border-app-border bg-white px-3 py-2 text-[13.5px] text-ink";
 const LABEL_CLASSES = "mb-1.5 block text-[12px] font-bold text-ink-secondary";
 
-type OptionDefaults = { text: string; imageUrl: string };
-
-function optionDefaults(option: AdminQuestionDetail["options"][number] | undefined): OptionDefaults {
-  return {
-    text: option?.type === "text" ? option.content : "",
-    imageUrl: option?.type === "image" ? option.content : "",
-  };
-}
-
 const OPTION_LETTERS = ["A", "B", "C", "D"] as const;
 
 // The Topic select is purely a client-side filter narrowing which
@@ -43,7 +34,7 @@ export function QuestionEditForm({
     setSelectedSubTopicId(newSubTopics[0]?.id ?? "");
   }
 
-  const optionDefaultsByLetter = OPTION_LETTERS.map((_, index) => optionDefaults(question.options[index]));
+  const optionTextByLetter = OPTION_LETTERS.map((_, index) => question.options[index]?.content ?? "");
 
   return (
     <form action={updateQuestion} className="max-w-[720px] rounded-[10px] border border-app-border bg-white p-5">
@@ -79,15 +70,9 @@ export function QuestionEditForm({
             <input
               type="text"
               name={`option${letter}`}
-              defaultValue={optionDefaultsByLetter[index].text}
+              defaultValue={optionTextByLetter[index]}
               placeholder="Option text"
-              className={`${INPUT_CLASSES} mb-2`}
-            />
-            <input
-              type="text"
-              name={`option${letter}ImageUrl`}
-              defaultValue={optionDefaultsByLetter[index].imageUrl}
-              placeholder="…or an image URL instead"
+              required
               className={INPUT_CLASSES}
             />
           </div>

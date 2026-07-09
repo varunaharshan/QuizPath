@@ -28,13 +28,9 @@ function validRow(overrides: Partial<BulkUploadRow> = {}): BulkUploadRow {
     questionText: "What is the powerhouse of the cell?",
     questionImageUrl: "",
     optionA: "Nucleus",
-    optionAImageUrl: "",
     optionB: "Mitochondria",
-    optionBImageUrl: "",
     optionC: "Ribosome",
-    optionCImageUrl: "",
     optionD: "Golgi body",
-    optionDImageUrl: "",
     correctAnswer: "2", // position 2 = Option B = "Mitochondria"
     subject: "Science",
     grade: "10",
@@ -85,16 +81,14 @@ describe("parseBulkCsv", () => {
     expect(parseBulkCsv(csv)).toEqual([]);
   });
 
-  it("parses the optional Question/Option Image URL columns", () => {
+  it("parses the optional Question Image URL column", () => {
     const csv = [
-      "Question Text,Question Image URL,Option A,Option A Image URL,Option B,Option B Image URL,Option C,Option D,Correct Answer,Subject,Grade,Topic,Sub-topic,Difficulty,Keywords,Paper Reference",
-      "What does this diagram show?,https://example.com/q.png,,https://example.com/a.png,Oxygen,,Nitrogen,Carbon,3,Science,10,Chemical Reactions,Types of Chemical Reactions,easy,,",
+      "Question Text,Question Image URL,Option A,Option B,Option C,Option D,Correct Answer,Subject,Grade,Topic,Sub-topic,Difficulty,Keywords,Paper Reference",
+      "What does this diagram show?,https://example.com/q.png,Mitochondria,Oxygen,Nitrogen,Carbon,3,Science,10,Chemical Reactions,Types of Chemical Reactions,easy,,",
     ].join("\n");
 
     const rows = parseBulkCsv(csv);
     expect(rows[0].questionImageUrl).toBe("https://example.com/q.png");
-    expect(rows[0].optionAImageUrl).toBe("https://example.com/a.png");
-    expect(rows[0].optionBImageUrl).toBe("");
   });
 
   it("parses the optional Hint column, defaulting to an empty string when absent", () => {
@@ -254,27 +248,10 @@ describe("validateBulkRow", () => {
     expect(result.errors.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("uses an option's Image URL column instead of its text column when populated", () => {
-    const result = validateBulkRow(
-      validRow({ optionAImageUrl: "https://example.com/nucleus.png" }),
-      REF,
-    );
-    expect(result.errors).toEqual([]);
-    expect(result.resolved?.options[0]).toEqual({ type: "image", content: "https://example.com/nucleus.png" });
-    // The other three, with no image URL, still resolve as text.
-    expect(result.resolved?.options[1]).toEqual({ type: "text", content: "Mitochondria" });
-  });
-
-  it("flags a malformed option Image URL", () => {
-    const result = validateBulkRow(validRow({ optionAImageUrl: "not a url" }), REF);
+  it("flags a blank option as required (options are always plain text now)", () => {
+    const result = validateBulkRow(validRow({ optionA: "" }), REF);
     expect(result.resolved).toBeNull();
-    expect(result.errors).toContain(`Option A Image URL "not a url" is not a well-formed URL`);
-  });
-
-  it("flags an option with neither text nor an Image URL", () => {
-    const result = validateBulkRow(validRow({ optionA: "", optionAImageUrl: "" }), REF);
-    expect(result.resolved).toBeNull();
-    expect(result.errors).toContain("Option A is required (text or an Option A Image URL)");
+    expect(result.errors).toContain("Option A is required");
   });
 
   it("resolves an empty Question Image URL to a null questionImage", () => {

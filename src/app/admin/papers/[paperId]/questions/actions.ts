@@ -74,8 +74,8 @@ function requireField(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value : "";
 }
 
-// Full-field edit — question text/image, all four options (text or image
-// each), correct answer position, difficulty, keywords, and sub-topic
+// Full-field edit — question text/image, all four (plain-text) options,
+// correct answer position, difficulty, keywords, and sub-topic
 // reassignment. Reuses the exact same resolveOption/isWellFormedUrl/
 // parseCorrectAnswerPosition validation Bulk Upload already established, so
 // "what counts as a valid option/correct-answer/image URL" stays defined in
@@ -99,10 +99,10 @@ export async function updateQuestion(formData: FormData) {
     questionImage = { type: "image", content: questionImageUrl };
   }
 
-  const optionA = resolveOption("Option A", requireField(formData.get("optionA")), requireField(formData.get("optionAImageUrl")));
-  const optionB = resolveOption("Option B", requireField(formData.get("optionB")), requireField(formData.get("optionBImageUrl")));
-  const optionC = resolveOption("Option C", requireField(formData.get("optionC")), requireField(formData.get("optionCImageUrl")));
-  const optionD = resolveOption("Option D", requireField(formData.get("optionD")), requireField(formData.get("optionDImageUrl")));
+  const optionA = resolveOption("Option A", requireField(formData.get("optionA")));
+  const optionB = resolveOption("Option B", requireField(formData.get("optionB")));
+  const optionC = resolveOption("Option C", requireField(formData.get("optionC")));
+  const optionD = resolveOption("Option D", requireField(formData.get("optionD")));
   for (const resolved of [optionA, optionB, optionC, optionD]) {
     if (resolved.error) throw new Error(resolved.error);
   }

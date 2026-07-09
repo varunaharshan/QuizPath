@@ -307,50 +307,51 @@ they conflict with this app's existing scoring/feedback model:
 
 ### Question option format
 
-`mcqs.options` (`jsonb`) stores an array of `{type: "text"|"image", content: string}`
-objects — `content` is either the option's literal text or an image URL, depending on
-`type`. This replaced a plain flat string array (e.g. `["3","4","5","6"]`), to support
-image-based options (e.g. a diagram) alongside plain text ones from the same column.
-`correctOption` is still a plain integer index into this array — grading
-(`saveQuizAnswer` in `src/lib/quiz.ts`) only ever compares `selectedOption === correctOption`
-positionally and never reads an option's `content`, so this change is purely about what
-gets *displayed*, not how a question is graded.
+`mcqs.options` (`jsonb`) stores an array of `{type: "text", content: string}` objects — a
+single-variant shape (`type` is always `"text"`) rather than a plain `string[]`, so existing
+rows (all already written in this shape — see `src/db/migrate-options-format.ts` below) need
+no data migration if a per-option variant is ever reintroduced later. `correctOption` is still
+a plain integer index into this array — grading (`saveQuizAnswer` in `src/lib/quiz.ts`) only
+ever compares `selectedOption === correctOption` positionally and never reads an option's
+`content`.
+
+**Per-option images were removed** (an earlier pass added a `"type":"image"` option variant —
+each of Bulk Upload's four option columns had a matching `Option [A-D] Image URL` column, and
+the admin edit form had a matching "...or an image URL instead" field per option). Checking
+the dev database before removing it confirmed **zero existing rows actually used
+`"type":"image"` inside `options`** (out of 150 `mcqs` rows) — it was schema-supported but
+never actually populated by any real seeded/imported/admin-edited question, so this was a
+straightforward format/code change with no data cleanup needed. Options are back to
+**always plain text, always required** — a single question-level image field
+(`mcqs.questionImage`, below) is the only image affordance left on a question.
 
 - **`src/db/migrate-options-format.ts`** (`npm run db:migrate-options-format`) is the
-  one-off, safely re-runnable script that converts existing rows from the old flat-string
-  format into the new shape (`"3"` → `{type:"text", content:"3"}`). Drizzle's `$type` is a
-  compile-time assertion only, not a runtime guarantee, so a row written before this
-  migration is still a plain string array on disk regardless of what the schema now
-  declares — the script checks each row's actual shape (not the declared type) and skips
-  any row already migrated, so re-running it after seeding more old-format fixtures never
-  double-wraps anything. Run this once per environment after pulling this change.
-- **`<QuizForm>`** (`src/components/quiz-form.tsx`) renders each option by checking
-  `option.type`: a `<span>` for `"text"`, or an `<img>` for `"image"` (plain `<img>`, not
-  `next/image` — these are arbitrary admin-supplied external URLs unknown at build time, so
-  Next's image optimizer can't be pre-configured with a `remotePatterns` allowlist for them;
-  this is a deliberate choice, not an oversight, and produces one harmless `no-img-element`
-  lint warning).
-- **`src/lib/bulk-upload.ts`**'s `ResolvedBulkRow.options` wraps each of the CSV's four
-  option columns as `{type:"text", content:<trimmed text>}`, or `{type:"image", ...}` when
-  that option's own `Option A-D Image URL` column is populated instead — see "Questions
-  Bulk Upload" below for the full column/validation details.
+  one-off, safely re-runnable script that converted existing rows from the original flat-string
+  format into the `{type, content}` shape (`"3"` → `{type:"text", content:"3"}`) — unaffected
+  by the per-option-image removal, since it never wrote `"type":"image"` itself and every row
+  it touches is already `"type":"text"` today.
+- **`<QuizForm>`** (`src/components/quiz-form.tsx`) renders every option as plain text
+  (`<span>{option.content}</span>`) — no per-option `<img>` branch anymore.
+- **`src/lib/bulk-upload.ts`**'s `resolveOption(label, text)` just trims and requires the
+  option's own column text — it no longer takes an image-URL argument at all. The template's
+  four `Option [A-D] Image URL` columns are gone from `TEMPLATE_HEADERS`; see "Questions Bulk
+  Upload" below for the current column list.
 - `mcqs.questionImage` (nullable `jsonb`, `{type:"image", content:string} | null`) holds the
-  question stem's own diagram/figure, distinct from an image-type *option* — not stored via
+  question stem's own diagram/figure — the only image field left on a question. Not stored via
   `content_items` (that table requires a `title` and carries its own draft/published status
   meant for something more like attached reading material, not a lightweight image
-  reference). `<QuizForm>` renders it above the question text when present.
+  reference). `<QuizForm>` renders it above the question text when present, unchanged by this
+  pass.
 - **`src/db/backfill-keywords.ts`**'s correct-answer-text extraction (used by
-  `extractKeywords()` to derive a keyword from the correct answer) now reads
-  `options[correctOption].content` only when that option's `type` is `"text"` — an
-  image-type correct answer has no text to derive a keyword from, so it's treated the same
-  as "couldn't derive anything" rather than stringifying the URL.
+  `extractKeywords()` to derive a keyword from the correct answer) now just reads
+  `options[correctOption].content` directly — the `option.type === "text"` guard it used to
+  need is gone, since every option is text now.
 - **`src/db/seed.ts`**'s placeholder-question fixtures are still written as plain option
   strings (much easier to read in bulk) and wrapped via a small local `toTextOptions()`
   helper only at the three `db.insert(mcqs)` call sites, rather than rewriting every
   literal array in the file.
 - Test fixtures across the suite use a shared `textOptions(...)` helper (`tests/helpers.ts`)
-  for the same reason — none of those tests exercise the text/image distinction itself,
-  just that `options` is populated and `correctOption` indexes into it correctly.
+  for the same reason.
 
 ### Question hints
 
@@ -1253,28 +1254,27 @@ the end.
   final, already-valid resolved rows are ever sent to the server — the same "Client Components
   can't import server-only-guarded code" constraint already established for
   `keyword-tag-input-logic.ts`/`topic-card-grid.tsx`.
-- **Template columns**: Question Text, Question Image URL, Option A–D (each immediately
-  followed by its own `Option [A-D] Image URL`), Correct Answer, Subject, **Grade**, Topic,
-  Sub-topic, Difficulty, Keywords, Hint, Paper Reference (see "Question hints" above for the
-  Hint column's own blank-means-`null` rule). Grade is a real column (not just implied)
-  — topic/sub-topic names aren't guaranteed unique across Grade 10 vs. 11 (this codebase's own
-  seeded data already has modules that share a name across grades), so resolving a topic
-  without knowing which grade's module to look inside would risk silently matching the wrong
-  one. Header matching in `parseBulkCsv` is case/whitespace-tolerant (and tolerates
-  "sub-topic"/"sub topic"/"subtopic" spelling variants) rather than requiring an exact string
-  match, since a human hand-editing a downloaded template in a spreadsheet app can easily
-  introduce trivial header differences that shouldn't fail the whole file.
-- **Image support**: `Question Image URL` and the four `Option [A-D] Image URL` columns are
-  all optional. `resolveOption()` (`src/lib/bulk-upload.ts`) resolves each option as
-  `{type:"image", content:<url>}` when its own Image URL column is populated, otherwise as
-  `{type:"text", content:<the Option A-D column>}` — never both, and an option with neither
-  populated is a validation error (`"Option A is required (text or an Option A Image URL)"`).
-  URL validation is **format-only** (parses via the `URL` constructor), not a live
-  reachability check — confirming a URL actually resolves would need a server round-trip
-  (browsers can't reliably read cross-origin fetch results for arbitrary image hosts via
-  CORS) and would turn every review into a live outbound request to an admin-supplied URL, a
-  deliberate scope cut for this pass. `Question Image URL`, if given, becomes
-  `mcqs.questionImage`; if blank, it's `null`.
+- **Template columns**: Question Text, Question Image URL, Option A–D, Correct Answer,
+  Subject, **Grade**, Topic, Sub-topic, Difficulty, Keywords, Hint, Paper Reference (see
+  "Question hints" above for the Hint column's own blank-means-`null` rule). Options are
+  always plain text now — the four `Option [A-D] Image URL` columns from an earlier pass were
+  removed (see "Question option format" above for why: zero real rows ever used them). Grade
+  is a real column (not just implied) — topic/sub-topic names aren't guaranteed unique across
+  Grade 10 vs. 11 (this codebase's own seeded data already has modules that share a name
+  across grades), so resolving a topic without knowing which grade's module to look inside
+  would risk silently matching the wrong one. Header matching in `parseBulkCsv` is
+  case/whitespace-tolerant (and tolerates "sub-topic"/"sub topic"/"subtopic" spelling
+  variants) rather than requiring an exact string match, since a human hand-editing a
+  downloaded template in a spreadsheet app can easily introduce trivial header differences
+  that shouldn't fail the whole file.
+- **`Question Image URL` is the only image column** — optional; if given, becomes
+  `mcqs.questionImage`, if blank it's `null`. URL validation is **format-only** (parses via
+  the `URL` constructor), not a live reachability check — confirming a URL actually resolves
+  would need a server round-trip (browsers can't reliably read cross-origin fetch results for
+  arbitrary image hosts via CORS) and would turn every review into a live outbound request to
+  an admin-supplied URL, a deliberate scope cut for this pass. `resolveOption()` (`src/lib/
+  bulk-upload.ts`) just trims and requires each of Option A-D's own column text — a blank
+  option is a validation error (`"Option A is required"`).
 - **Validation** (`validateBulkRow`, per row): every required field present; grade is `10` or
   `11`; difficulty is `easy`/`medium`/`hard`; Correct Answer is strictly a **position** (`1`-`4`,
   matching Option A-D respectively) — a letter (`"C"`) or the option's own literal text is
@@ -1348,19 +1348,17 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   (`/admin/papers/[paperId]/questions/[mcqId]/edit`), not inline-in-table editing — the same
   "several fields at once" reasoning that already put Papers' own edit on a dedicated page
   rather than Topics' single-field inline rename. A question here has a cascading
-  Topic→Sub-topic dropdown pair plus per-option image fields; a table row genuinely couldn't
-  fit that without becoming unusable, especially on a paper with many questions.
-- **The edit form covers the full field set**, not just Topic/Sub-topic/images: question
-  text, Question Image URL, all four options (each with its own text field *and* Image URL
-  field, exactly mirroring Bulk Upload's CSV columns — an Image URL takes priority over the
-  text field when both are populated, via the same `resolveOption()` bulk-upload already
-  established), Correct Answer (a strict `1`-`4` position select, reusing
-  `parseCorrectAnswerPosition()`), Difficulty, Keywords (comma-separated, same
-  split/trim/drop-empty rule as Bulk Upload), and Hint (see "Question hints" above). This was
-  a deliberate scope decision beyond the
-  original ask (which only named Topic/Sub-topic/images) — once the edit page exists for
-  those, exposing the rest of the fields too is marginal extra work and avoids a
-  "re-run the whole Bulk Upload just to fix a typo" gap.
+  Topic→Sub-topic dropdown pair plus the question's own image field; a table row genuinely
+  couldn't fit that without becoming unusable, especially on a paper with many questions.
+- **The edit form covers the full field set**, not just Topic/Sub-topic/image: question
+  text, Question Image URL, all four options (plain, required text fields — per-option
+  images were removed, see "Question option format" above), Correct Answer (a strict `1`-`4`
+  position select, reusing `parseCorrectAnswerPosition()`), Difficulty, Keywords
+  (comma-separated, same split/trim/drop-empty rule as Bulk Upload), and Hint (see "Question
+  hints" above). This was a deliberate scope decision beyond the original ask (which only
+  named Topic/Sub-topic/image) — once the edit page exists for those, exposing the rest of the
+  fields too is marginal extra work and avoids a "re-run the whole Bulk Upload just to fix a
+  typo" gap.
 - **mcqs has no standalone "Topic" column** — only `sub_topic_id`, which points at a
   sub-topic that itself belongs to a module (topic). So "reassigning a question's Topic" is
   purely a client-side UI convenience: the Topic `<select>` (`src/components/
@@ -1376,10 +1374,10 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   question ending up tagged under a mismatched grade or subject's topic. If no topics exist
   yet for that grade+subject, the edit page shows a message pointing at `/admin/topics`
   instead of rendering a broken empty dropdown.
-- **Image fields are URL-paste only this pass** — no file upload to Supabase Storage.
-  This app has zero Supabase Storage integration today (no SDK, no env vars, no bucket), and
-  building real upload would mean a new dependency, new env vars, and a bucket the admin
-  would need to create in their own Supabase dashboard — not something that could be
+- **The question image field is URL-paste only this pass** — no file upload to Supabase
+  Storage. This app has zero Supabase Storage integration today (no SDK, no env vars, no
+  bucket), and building real upload would mean a new dependency, new env vars, and a bucket
+  the admin would need to create in their own Supabase dashboard — not something that could be
   verified end-to-end in this environment without real credentials. Deferred as clearly
   flagged follow-up work; pasting an existing image URL already works today via the same
   `{type, content}` shape.
@@ -1414,12 +1412,11 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   question).
 - **The list table shows a condensed view, not all four options** — question text, the
   *correct* option only (rendered via `<QuestionOptionPreview>`, a small shared Server
-  Component that renders a `[Image]` link for image-type options or plain text otherwise —
-  also reused on the edit page's... no, only the list page uses it today; the edit form
-  shows raw URL/text inputs instead, since those need to be editable, not just previewed),
-  Topic, Sub-topic, Difficulty, Keywords, the Status pill, and the verification pill — showing
-  all four full options per row would make the table too wide to be "scannable." The full
-  option set is only visible/editable on the dedicated edit page.
+  Component — plain text now that per-option images are gone; only the list page uses it
+  today, since the edit form shows a raw text input instead, which needs to be editable, not
+  just previewed), Topic, Sub-topic, Difficulty, Keywords, the Status pill, and the
+  verification pill — showing all four full options per row would make the table too wide to
+  be "scannable." The full option set is only visible/editable on the dedicated edit page.
 
 Integration coverage: `tests/admin-questions.test.ts` — `getPaperForQuestionsAdmin`'s
 paper+subject-name lookup and not-found `null` case; `getQuestionsForPaper`'s strict
@@ -1429,7 +1426,9 @@ shape and not-found case. As with every other admin Server Action file, `updateQ
 `deleteQuestion`/`setVerificationStatus` themselves aren't directly unit-tested (same
 Clerk-mocking rationale) — verified instead via a temporary scratch test during development
 (since deleted) that exercised all three against this environment's real dev database,
-including a cross-topic sub-topic reassignment and a mixed text/image options update.
+including a cross-topic sub-topic reassignment and an options update (options were still
+text-or-image at the time; per-option images were later removed — see "Question option
+format").
 
 ## What's NOT built yet
 
@@ -1446,12 +1445,12 @@ multiple sub-topics at once ("Practice All Weak Areas"), Incorrect Questions (re
 history of previously-wrong answers), Bookmarked Questions, Analytics (score trends over
 time, avg. time per question), Revision Notes, streaks/gamification, an Exam Board field,
 `.xlsx` support for Bulk Upload, real image file upload to Supabase Storage (Paper Questions
-Management's image fields are URL-paste only — see that section above for why), and
+Management's question image field is URL-paste only — see that section above for why), and
 notification toggles — none of these have any schema or UI today.
 
 Per-question editing (text, options, correct answer, difficulty, keywords, topic/sub-topic
-reassignment, images, and flipping `verification_status`) is now possible, but **only in the
-context of a paper** via `/admin/papers/[paperId]/questions` — there's still no *global*
+reassignment, question image, and flipping `verification_status`) is now possible, but **only
+in the context of a paper** via `/admin/papers/[paperId]/questions` — there's still no *global*
 question-bank browse/search view across all questions regardless of which paper (or no
 paper) they belong to, and no per-question keyword editing outside that same page (keywords
 are one of the fields Paper Questions Management's edit form covers, but a question that

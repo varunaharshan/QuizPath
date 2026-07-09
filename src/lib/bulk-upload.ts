@@ -14,13 +14,9 @@ export const TEMPLATE_HEADERS = [
   "Question Text",
   "Question Image URL",
   "Option A",
-  "Option A Image URL",
   "Option B",
-  "Option B Image URL",
   "Option C",
-  "Option C Image URL",
   "Option D",
-  "Option D Image URL",
   "Correct Answer",
   "Subject",
   "Grade",
@@ -41,17 +37,13 @@ export type BulkUploadRow = {
   // matching how the review grid displays "Row 1, Row 2, …".
   rowNumber: number;
   questionText: string;
-  // Optional — the question stem's own diagram/figure, distinct from an
-  // image-type option.
+  // Optional — the question stem's own diagram/figure. There's no
+  // per-option equivalent: options are always plain text.
   questionImageUrl: string;
   optionA: string;
-  optionAImageUrl: string;
   optionB: string;
-  optionBImageUrl: string;
   optionC: string;
-  optionCImageUrl: string;
   optionD: string;
-  optionDImageUrl: string;
   correctAnswer: string;
   subject: string;
   grade: string;
@@ -67,13 +59,9 @@ const HEADER_KEY_MAP: Record<string, keyof Omit<BulkUploadRow, "rowNumber">> = {
   "question text": "questionText",
   "question image url": "questionImageUrl",
   "option a": "optionA",
-  "option a image url": "optionAImageUrl",
   "option b": "optionB",
-  "option b image url": "optionBImageUrl",
   "option c": "optionC",
-  "option c image url": "optionCImageUrl",
   "option d": "optionD",
-  "option d image url": "optionDImageUrl",
   "correct answer": "correctAnswer",
   subject: "subject",
   grade: "grade",
@@ -113,13 +101,9 @@ export function parseBulkCsv(csvText: string): BulkUploadRow[] {
       questionText: row.questionText ?? "",
       questionImageUrl: row.questionImageUrl ?? "",
       optionA: row.optionA ?? "",
-      optionAImageUrl: row.optionAImageUrl ?? "",
       optionB: row.optionB ?? "",
-      optionBImageUrl: row.optionBImageUrl ?? "",
       optionC: row.optionC ?? "",
-      optionCImageUrl: row.optionCImageUrl ?? "",
       optionD: row.optionD ?? "",
-      optionDImageUrl: row.optionDImageUrl ?? "",
       correctAnswer: row.correctAnswer ?? "",
       subject: row.subject ?? "",
       grade: row.grade ?? "",
@@ -149,7 +133,7 @@ export type BulkUploadReferenceData = {
 // transitively imports it" invariant explicit and self-contained (see
 // file-level comment above), even though schema.ts itself doesn't currently
 // import @/db.
-export type QuestionOption = { type: "text"; content: string } | { type: "image"; content: string };
+export type QuestionOption = { type: "text"; content: string };
 export type QuestionImage = { type: "image"; content: string };
 
 export type ResolvedBulkRow = {
@@ -205,26 +189,15 @@ export function isWellFormedUrl(value: string): boolean {
   }
 }
 
-// An option is either an image (if its "Image URL" column is populated) or
-// plain text (the existing Option A-D column) — never both, and never
-// neither. Pulled into a helper since all four options resolve identically,
-// and exported for the same per-question edit form reuse reason as
-// isWellFormedUrl above.
-export function resolveOption(
-  label: string,
-  text: string,
-  imageUrl: string,
-): { error?: string; option?: QuestionOption } {
-  const trimmedImageUrl = imageUrl.trim();
-  if (trimmedImageUrl) {
-    if (!isWellFormedUrl(trimmedImageUrl)) {
-      return { error: `${label} Image URL "${imageUrl}" is not a well-formed URL` };
-    }
-    return { option: { type: "image", content: trimmedImageUrl } };
-  }
+// An option is always plain text — pulled into a helper since all four
+// options resolve identically, and exported for the same per-question edit
+// form reuse reason as isWellFormedUrl above. Per-option images were
+// dropped (never used by any real seeded/imported row); a question's own
+// diagram/figure is still supported via the single questionImage field.
+export function resolveOption(label: string, text: string): { error?: string; option?: QuestionOption } {
   const trimmedText = text.trim();
   if (!trimmedText) {
-    return { error: `${label} is required (text or an ${label} Image URL)` };
+    return { error: `${label} is required` };
   }
   return { option: { type: "text", content: trimmedText } };
 }
@@ -320,10 +293,10 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
     }
   }
 
-  const optionA = resolveOption("Option A", row.optionA, row.optionAImageUrl);
-  const optionB = resolveOption("Option B", row.optionB, row.optionBImageUrl);
-  const optionC = resolveOption("Option C", row.optionC, row.optionCImageUrl);
-  const optionD = resolveOption("Option D", row.optionD, row.optionDImageUrl);
+  const optionA = resolveOption("Option A", row.optionA);
+  const optionB = resolveOption("Option B", row.optionB);
+  const optionC = resolveOption("Option C", row.optionC);
+  const optionD = resolveOption("Option D", row.optionD);
   for (const resolvedOpt of [optionA, optionB, optionC, optionD]) {
     if (resolvedOpt.error) errors.push(resolvedOpt.error);
   }
