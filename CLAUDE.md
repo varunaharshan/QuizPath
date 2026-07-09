@@ -742,27 +742,34 @@ backed, mirroring `getProgressStats`'s own rollup shape). They were only made *c
 spirit* (both group by Topic with the same rollup shape and the same shared UI component), not
 merged into one function or one data source.
 
-- **`/practice/weak-areas`** — one row per Topic (module) the student has actually attempted
-  **and** whose rolled-up score is itself `needs_work` (< 60%, the same threshold used
-  everywhere else in this app) — not merely "the lowest-scoring among attempted topics." A
-  topic that's attempted and imperfect but still scores, say, 73% is deliberately excluded, the
-  same way an untouched topic is; both would just be noise on a page meant to surface real
-  problems. Sorted ascending by score (weakest topic first), spanning every subject for the
-  grade in one list — there's no more subject-tile grouping or per-subject "View All" mode
-  (see "Removed as dead code" below).
+- **`/practice/weak-areas`** — inclusion is driven entirely by individual sub-topics, not the
+  topic's own rolled-up score: a topic appears here if and only if at least one of its
+  sub-topics is itself `needs_work` (< 60%, the same threshold used everywhere else in this
+  app). A topic sitting at 85% overall still shows up if one sub-topic is individually weak —
+  the topic's own aggregate is irrelevant to inclusion (a deliberate change from an earlier
+  pass of this same feature, which filtered on the topic's own rolled-up score instead; that
+  version couldn't surface exactly this "mostly strong, one weak pocket" case). Within an
+  included topic, the drill-down (`subTopics`) is filtered to **only** that weak slice —
+  sub-topics scoring >= 60% and never-attempted ones (no data isn't weakness) are both
+  omitted — while the topic row's own progress bar/score still reflects its **true full
+  aggregate** across every sub-topic, hidden ones included, so a student sees "this topic's
+  fine overall, but here's the specific pocket dragging on it." Sorted ascending by that true
+  aggregate (weakest topic first), spanning every subject for the grade in one list — there's
+  no subject-tile grouping or per-subject "View All" mode (see "Removed as dead code" below).
+  An empty state ("No sub-topics are below 60% right now — nice work!") covers the case where
+  nothing anywhere is weak.
   - **`getWeakTopicsForGrade(studentId, grade)`** (`src/lib/dashboard.ts`) does the rollup:
     fetches every module+sub-topic for the grade (same relational shape `getProgressStats`
     uses) and every `mastery_scores` row for the student, reconstructs each sub-topic's
     `correctCount` as `round(score / 100 × questionsAnswered)` (`mastery_scores` stores only
-    the percentage and a denominator, not a raw correct count), then sums up to the topic level
-    and reuses `getProgressStats`'s own `scoreAndLabel()` helper to derive the topic's score
-    and label — the two functions share that one small helper, not the whole rollup, since
-    their surrounding fetch logic (a live SQL join vs. a cache lookup) is different enough that
-    forcing both through one generic function would trade a little duplication for an added
-    layer of indirection. A topic only makes the list when its rolled-up label is `needs_work`
-    **and** `questionsAnswered > 0`; each included topic still lists every one of its
-    sub-topics (including never-attempted ones, `not_started`) for the drill-down, not just the
-    weak ones.
+    the percentage and a denominator, not a raw correct count). For each module: build every
+    sub-topic's own row, filter to just the `needs_work` ones — if none, skip the topic
+    entirely — otherwise sum **all** sub-topics' (not just the weak ones') counts and reuse
+    `getProgressStats`'s own `scoreAndLabel()` helper for the topic's true score/label, and
+    return only the filtered weak sub-topics as `subTopics`. The two functions share that one
+    small helper, not the whole rollup, since their surrounding fetch logic (a live SQL join
+    vs. a cache lookup) is different enough that forcing both through one generic function
+    would trade a little duplication for an added layer of indirection.
   - **Reading from `mastery_scores` instead of live `quiz_attempt_answers` (like
     `getProgressStats`) carries two narrow, pre-existing risks**, neither introduced by this
     function: (1) the `correctCount` reconstruction above is exact for realistic question
@@ -773,11 +780,10 @@ merged into one function or one data source.
     attempt there, whereas a live query would reflect the change immediately. Both are
     already-accepted properties of every `getSubTopicStatusesForGrade`/`mastery_scores`
     consumer (Dashboard, By Keyword), not something Weak Areas introduces.
-  - A per-topic **"N of M weak"** badge shows how many of that topic's own sub-topics are
-    themselves `needs_work` — the same 60% threshold as topic inclusion, not a second,
-    separate cutoff. `<TopicProgressTable>` (`src/components/topic-progress-table.tsx`, shared
-    with By Topic) gained an optional `weakBadge` field on `TopicProgressData` for this; By
-    Topic's own page never sets it, so its rows render with no badge, unchanged.
+  - **No "N of M weak" badge** — an earlier pass of this feature had one, but it's redundant
+    now that the drill-down only ever shows the weak sub-topics anyway (the visible row count
+    already communicates it). `<TopicProgressTable>`'s `TopicProgressData` type has no
+    weak-specific field at all; it's the exact same shape By Topic uses.
   - The mockup's "Practice All Weak Areas" button (one mixed quiz pooling questions across
     several sub-topics at once) is deliberately **not** built — every quiz attempt today is
     scoped to exactly one sub-topic or one paper (`quiz_attempts_exactly_one_target`), and a
@@ -973,11 +979,14 @@ covers the autocomplete's pure matching/ranking/highlight-splitting/dedup logic 
 `tests/dashboard.test.ts` covers `getMostRecentlyPracticedSubjectId` against a two-subject
 fixture (one resolved via a sub-topic attempt, one via a paper attempt, so subject
 *resolution* is actually exercised, not just grade scoping) and its no-history null case.
-`tests/weak-areas.test.ts` covers `getWeakTopicsForGrade`'s topic-level rollup: inclusion
-(attempted-and-needs_work only, excluding both an untouched topic and one that's attempted but
-not actually weak), the rollup math itself (multiple sub-topics summing correctly, with an
-unattempted sub-topic still listed in the drill-down), the weak-badge count, grade-wide
-sorting across more than one subject, and the empty-list case.
+`tests/weak-areas.test.ts` covers `getWeakTopicsForGrade`'s sub-topic-driven inclusion: a topic
+at 83.33% true aggregate still appearing because one sub-topic is individually weak, excluding
+a topic where every sub-topic is >= 60% despite an imperfect overall score, excluding an
+untouched topic and a different grade's topic, the drill-down filtered to only the weak
+sub-topic(s) (a strong and a never-attempted sub-topic under the same topic both omitted), the
+topic row's own numbers reflecting the true full aggregate rather than just the weak slice,
+grade-wide sorting by that true aggregate across more than one subject, and the empty-list
+case.
 
 ### Question keyword tagging
 

@@ -369,14 +369,6 @@ export async function getProgressStats(
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
 }
 
-export type WeakTopic = TopicProgress & {
-  // How many of this topic's own sub-topics are themselves needs_work (the
-  // same score < 60 threshold as everywhere else in this app, not a second,
-  // separate cutoff) — shown as a small badge on the collapsed row.
-  weakSubTopicCount: number;
-  totalSubTopicCount: number;
-};
-
 // Powers the Weak Areas page's topic-primary list — mirrors getProgressStats's
 // rollup shape (TopicProgress/SubTopicProgress, the shared scoreAndLabel
 // helper) but reads from the mastery_scores cache instead of live
@@ -395,13 +387,20 @@ export type WeakTopic = TopicProgress & {
 // property of every getSubTopicStatusesForGrade consumer, not something
 // this function introduces.
 //
-// Only topics the student has actually attempted (questionsAnswered > 0)
-// AND whose rolled-up score is itself needs_work (< 60%) are included —
-// matching the existing sub-topic-level weakAreas() filter, not just
-// "attempted." A topic with an 85% aggregate score never appears here even
-// if it happens to be the lowest-scoring among attempted topics for this
-// grade. Sorted ascending by score — weakest topic first.
-export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11"): Promise<WeakTopic[]> {
+// Inclusion is driven entirely by individual sub-topics, not the topic's
+// own rolled-up score: a topic appears here if and only if at least one of
+// its sub-topics is itself needs_work (score < 60%, attempted). A topic
+// sitting at 85% overall still shows up if one sub-topic is individually
+// weak — the topic's own aggregate is irrelevant to inclusion. `subTopics`
+// on each returned topic is filtered down to only that weak slice (never
+// attempted sub-topics, and sub-topics scoring >= 60%, are both omitted —
+// "no data" isn't weakness, and a fine sub-topic isn't what this page is
+// for) — but the topic row's own questionsAnswered/correctCount/score/label
+// still reflect its TRUE full aggregate across every sub-topic, including
+// the ones hidden from the list, so a student sees "this topic's fine
+// overall, but here's the specific pocket dragging on it." Sorted ascending
+// by that true aggregate score — weakest topic first.
+export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11"): Promise<TopicProgress[]> {
   const gradeModules = await db.query.modules.findMany({
     where: eq(modules.grade, grade),
     orderBy: modules.sortOrder,
@@ -413,9 +412,9 @@ export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11
     scores.map((s) => [s.subTopicId, { score: Number(s.score), questionsAnswered: s.questionsAnswered }]),
   );
 
-  const topics: WeakTopic[] = [];
+  const topics: TopicProgress[] = [];
   for (const gradeModule of gradeModules) {
-    const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
+    const allSubTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
       const mastery = scoreBySubTopic.get(subTopic.id);
       const questionsAnswered = mastery?.questionsAnswered ?? 0;
       const score = mastery?.score ?? null;
@@ -430,12 +429,12 @@ export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11
       };
     });
 
-    const questionsAnswered = subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0);
-    if (questionsAnswered === 0) continue;
+    const weakSubTopicRows = allSubTopicRows.filter((s) => s.label === "needs_work");
+    if (weakSubTopicRows.length === 0) continue;
 
-    const correctCount = subTopicRows.reduce((sum, s) => sum + s.correctCount, 0);
+    const questionsAnswered = allSubTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0);
+    const correctCount = allSubTopicRows.reduce((sum, s) => sum + s.correctCount, 0);
     const { score, label } = scoreAndLabel({ questionsAnswered, correctCount });
-    if (label !== "needs_work") continue;
 
     topics.push({
       id: gradeModule.id,
@@ -444,9 +443,7 @@ export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11
       correctCount,
       score,
       label,
-      subTopics: subTopicRows,
-      weakSubTopicCount: subTopicRows.filter((s) => s.label === "needs_work").length,
-      totalSubTopicCount: subTopicRows.length,
+      subTopics: weakSubTopicRows,
     });
   }
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getWeakTopicsForGrade, type WeakTopic } from "@/lib/dashboard";
+import { getCompletedQuizzes, getWeakTopicsForGrade, type TopicProgress } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
 import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
@@ -9,7 +9,7 @@ import { TopicProgressTable, type TopicProgressData } from "@/components/topic-p
 // transitively imports the server-only-guarded @/db) — this remaps the
 // Server Component's already-fetched data into that plain shape, same
 // pattern as the By Topic page.
-function toTopicProgressData(topic: WeakTopic): TopicProgressData {
+function toTopicProgressData(topic: TopicProgress): TopicProgressData {
   return {
     id: topic.id,
     name: topic.name,
@@ -17,7 +17,6 @@ function toTopicProgressData(topic: WeakTopic): TopicProgressData {
     correctCount: topic.correctCount,
     score: topic.score,
     label: topic.label,
-    weakBadge: { weakCount: topic.weakSubTopicCount, totalCount: topic.totalSubTopicCount },
     subTopics: topic.subTopics.map((subTopic) => ({
       id: subTopic.id,
       name: subTopic.name,
@@ -30,12 +29,14 @@ function toTopicProgressData(topic: WeakTopic): TopicProgressData {
 }
 
 // Topic-primary, expandable list — same pattern as By Topic
-// (<TopicProgressTable>, reused as-is here, just with the weakBadge field
-// populated) — rather than the earlier subject-tile grid. One row per
-// topic (module) the student has actually attempted and that's itself
-// needs_work (score < 60%, the same threshold used everywhere else in this
-// app), sorted weakest-first; expanding a row reveals its own sub-topics.
-// See src/lib/dashboard.ts's getWeakTopicsForGrade for the rollup itself.
+// (<TopicProgressTable>, reused as-is here) rather than the earlier
+// subject-tile grid. A topic appears here if at least one of its
+// sub-topics is individually needs_work (score < 60%); the topic row's own
+// progress bar/score is still its true full aggregate across every
+// sub-topic (not just the weak slice), while the expanded drill-down shows
+// only the weak sub-topics — never-attempted or already-fine ones are
+// omitted there. See src/lib/dashboard.ts's getWeakTopicsForGrade for the
+// rollup/filtering itself.
 export default async function WeakAreasPage() {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
@@ -61,12 +62,12 @@ export default async function WeakAreasPage() {
     >
       <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Weak Areas</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Topics where your accuracy is lowest — practice these first.
+        Topics with at least one sub-topic below 60% accuracy — practice these first.
       </p>
 
       {weakTopics.length === 0 ? (
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
-          No weak areas right now — nice work! Keep practicing to stay sharp.
+          No sub-topics are below 60% right now — nice work! Keep practicing to stay sharp.
         </div>
       ) : (
         <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">

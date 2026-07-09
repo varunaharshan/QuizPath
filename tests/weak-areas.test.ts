@@ -6,41 +6,43 @@ import { mcqs, modules, subjects, subTopics, users } from "@/db/schema";
 import { getWeakTopicsForGrade } from "@/lib/dashboard";
 import { submitFullSubTopicQuiz, textOptions } from "./helpers";
 
-// Confirms the Weak Areas page's topic-primary rollup: one row per Topic
-// (module) the student has actually attempted AND that's itself needs_work
-// (score < 60%) — never a bare sub-topic row, never a topic that's merely
-// "the least good among attempted" but still scoring fine, and never an
-// untouched topic. Grade-wide across every subject (not scoped to one), and
-// sorted weakest-first.
+// Confirms the Weak Areas page's sub-topic-driven inclusion rule: a topic
+// appears if and only if at least one of its sub-topics is individually
+// needs_work (score < 60%) — the topic's own rolled-up aggregate is
+// irrelevant to inclusion, so a topic can appear here even while sitting
+// well above 60% overall (dragged down by one weak pocket). The drill-down
+// (`subTopics`) is filtered to only that weak slice — strong sub-topics and
+// never-attempted ones are both omitted — while the topic row's own
+// questionsAnswered/correctCount/score/label still reflect its TRUE full
+// aggregate across every sub-topic, hidden ones included.
 describe("getWeakTopicsForGrade", () => {
   const runId = randomUUID().slice(0, 8);
   let subjectAId: string;
   let subjectBId: string;
   let studentId: string;
 
-  // Subject A, Grade 10: a genuinely weak topic — two attempted sub-topics
-  // (both needs_work) plus one never-attempted sub-topic under the same
-  // module, rolling up to 1/5 = 20% overall.
+  // Subject A, Grade 10: a topic that's mostly strong (83.33% true
+  // aggregate — well above 60%) but has one individually-weak sub-topic
+  // (X, 50%) alongside a strong one (Y, 90%) and a never-attempted one (Z).
+  // This is the exact "topic at ~85% should still show up" scenario.
   let moduleWeakId: string;
-  let subXId: string; // sortOrder 0, 1/2 correct -> 50% (needs_work)
-  let subYId: string; // sortOrder 1, 0/3 correct -> 0% (needs_work)
-  let subZId: string; // sortOrder 2, never attempted (not_started)
+  let subXId: string; // sortOrder 0, 1/2 correct -> 50% (weak, shown)
+  let subYId: string; // sortOrder 1, 9/10 correct -> 90% (strong, hidden)
+  let subZId: string; // sortOrder 2, never attempted (hidden)
 
-  // Subject A, Grade 10: a topic that's attempted and imperfect, but not
-  // actually needs_work at the rolled-up level (73.33%) — must be excluded
-  // even though, absent a real threshold, it could look like "the weakest
-  // topic that has any imperfection."
+  // Subject A, Grade 10: attempted and imperfect (73.33%), but every
+  // individual sub-topic is itself >= 60% — must be excluded entirely,
+  // since no sub-topic is actually weak. Q lands exactly on the 60%
+  // boundary to confirm "below 60%" is strict, not inclusive.
   let moduleOkId: string;
 
-  // Subject A, Grade 10: attempted by nobody — must never appear (that's
-  // what By Topic is for).
+  // Subject A, Grade 10: nobody has touched it — must never appear.
   let moduleUntouchedId: string;
 
-  // Subject B, Grade 10: a second weak topic in a different subject,
-  // scoring worse than moduleWeakId (25% vs 20%)... actually scoring
-  // BETTER (25% > 20%) so it must sort after moduleWeakId — proves this
-  // function is grade-wide (spans subjects) and genuinely sorts by score,
-  // not by subject or insertion order.
+  // Subject B, Grade 10: a second weak topic, with a lower true aggregate
+  // (25%) than moduleWeakId's 83.33% — proves sorting uses the topic's own
+  // true aggregate (not e.g. the weak sub-topic's own score) and that the
+  // function spans every subject for the grade, not just one.
   let moduleOtherWeakId: string;
 
   // Subject A, Grade 11: the student's own profile grade — must never
@@ -114,7 +116,7 @@ describe("getWeakTopicsForGrade", () => {
     }
 
     const xMcqs = await makeMcqs(subXId, 2);
-    const yMcqs = await makeMcqs(subYId, 3);
+    const yMcqs = await makeMcqs(subYId, 10);
     await makeMcqs(subZId, 1); // exists, but never attempted
     const pMcqs = await makeMcqs(subP.id, 10);
     const qMcqs = await makeMcqs(subQ.id, 5);
@@ -129,11 +131,11 @@ describe("getWeakTopicsForGrade", () => {
 
     // X: 1/2 -> 50% (needs_work).
     await submitFullSubTopicQuiz({ studentId, subTopicId: subXId, answers: { [xMcqs[0]]: 0, [xMcqs[1]]: 1 } });
-    // Y: 0/3 -> 0% (needs_work).
+    // Y: 9/10 -> 90% (mastered).
     await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subYId,
-      answers: Object.fromEntries(yMcqs.map((id) => [id, 1])),
+      answers: Object.fromEntries(yMcqs.map((id, i) => [id, i === 9 ? 1 : 0])),
     });
     // P: 8/10 -> 80% (mastered).
     await submitFullSubTopicQuiz({
@@ -141,7 +143,7 @@ describe("getWeakTopicsForGrade", () => {
       subTopicId: subP.id,
       answers: Object.fromEntries(pMcqs.map((id, i) => [id, i < 8 ? 0 : 1])),
     });
-    // Q: 3/5 -> 60% (in_progress).
+    // Q: 3/5 -> exactly 60% (in_progress — the boundary, not needs_work).
     await submitFullSubTopicQuiz({
       studentId,
       subTopicId: subQ.id,
@@ -168,62 +170,63 @@ describe("getWeakTopicsForGrade", () => {
     await pool.end();
   });
 
-  it("includes only attempted topics that are themselves needs_work, excluding an untouched topic and a merely-imperfect one", async () => {
+  it("includes a topic whose true aggregate is well above 60% because one sub-topic is individually weak", async () => {
     const weak = await getWeakTopicsForGrade(studentId, "10");
-    const ids = weak.map((t) => t.id);
-
-    expect(ids).toContain(moduleWeakId);
-    expect(ids).toContain(moduleOtherWeakId);
-    expect(ids).not.toContain(moduleOkId); // 73.33% — attempted, imperfect, but not needs_work
-    expect(ids).not.toContain(moduleUntouchedId); // zero attempts
-    expect(ids).not.toContain(moduleGrade11WeakId); // wrong grade
+    const weakTopic = weak.find((t) => t.id === moduleWeakId);
+    expect(weakTopic).toBeDefined();
+    // (1 + 9) / (2 + 10) = 83.33% -> "mastered" at the topic level, yet it
+    // still appears because X alone is needs_work.
+    expect(weakTopic!.score).toBeCloseTo(83.33, 1);
+    expect(weakTopic!.label).toBe("mastered");
   });
 
-  it("rolls up a topic's sub-topics without double-counting, including an unattempted sub-topic under it", async () => {
+  it("excludes a topic where every sub-topic scores >= 60%, even though it's attempted and imperfect overall", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "10");
+    expect(weak.some((t) => t.id === moduleOkId)).toBe(false);
+  });
+
+  it("excludes an untouched topic and a different grade's topic", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "10");
+    expect(weak.some((t) => t.id === moduleUntouchedId)).toBe(false);
+    expect(weak.some((t) => t.id === moduleGrade11WeakId)).toBe(false);
+  });
+
+  it("filters the drill-down to only the weak sub-topic(s), omitting the strong one and the never-attempted one", async () => {
     const weak = await getWeakTopicsForGrade(studentId, "10");
     const weakTopic = weak.find((t) => t.id === moduleWeakId)!;
 
-    // X (1/2) + Y (0/3) = 1/5 correct -> 20%, needs_work.
-    expect(weakTopic.questionsAnswered).toBe(5);
-    expect(weakTopic.correctCount).toBe(1);
-    expect(weakTopic.score).toBeCloseTo(20, 1);
-    expect(weakTopic.label).toBe("needs_work");
-
-    // The drill-down lists all three sub-topics in syllabus order, including
-    // Z (never attempted, not_started) — not filtered out just because it
-    // has no data of its own.
-    expect(weakTopic.subTopics.map((s) => s.id)).toEqual([subXId, subYId, subZId]);
-    expect(weakTopic.subTopics.map((s) => s.label)).toEqual(["needs_work", "needs_work", "not_started"]);
-    expect(weakTopic.subTopics.find((s) => s.id === subZId)?.score).toBeNull();
-    expect(weakTopic.subTopics.find((s) => s.id === subZId)?.questionsAnswered).toBe(0);
+    expect(weakTopic.subTopics.map((s) => s.id)).toEqual([subXId]);
+    expect(weakTopic.subTopics.some((s) => s.id === subYId)).toBe(false);
+    expect(weakTopic.subTopics.some((s) => s.id === subZId)).toBe(false);
   });
 
-  it("counts only the needs_work sub-topics toward the weak badge, out of every sub-topic in the topic", async () => {
+  it("keeps the topic row's own numbers as the true full aggregate, not just the weak slice shown", async () => {
     const weak = await getWeakTopicsForGrade(studentId, "10");
     const weakTopic = weak.find((t) => t.id === moduleWeakId)!;
 
-    // X and Y are needs_work; Z is not_started (not counted as "weak").
-    expect(weakTopic.weakSubTopicCount).toBe(2);
-    expect(weakTopic.totalSubTopicCount).toBe(3);
+    // Includes Y's (hidden) 9/10 and Z's (hidden) 0/0, not just X's 1/2.
+    expect(weakTopic.questionsAnswered).toBe(12);
+    expect(weakTopic.correctCount).toBe(10);
   });
 
-  it("spans every subject for the grade (not scoped to one) and sorts ascending by score", async () => {
+  it("spans every subject for the grade and sorts by the topic's true aggregate score, ascending", async () => {
     const weak = await getWeakTopicsForGrade(studentId, "10");
 
-    // Weak Module (Subject A, 20%) must sort before Other Weak Module
-    // (Subject B, 25%) — proves both subjects are included in one list,
-    // genuinely sorted by score rather than grouped by subject.
-    const weakIndex = weak.findIndex((t) => t.id === moduleWeakId);
+    const otherWeakTopic = weak.find((t) => t.id === moduleOtherWeakId);
+    expect(otherWeakTopic).toBeDefined();
+    expect(otherWeakTopic!.score).toBeCloseTo(25, 1);
+
+    // Other Weak Module (25% true aggregate) sorts before Weak Module
+    // (83.33% true aggregate), even though Weak Module's own weak
+    // sub-topic (50%) scores worse than Other Weak Module's (25%) — proving
+    // sort order follows the topic's true aggregate, not the weak
+    // sub-topic's own score.
     const otherWeakIndex = weak.findIndex((t) => t.id === moduleOtherWeakId);
-    expect(weakIndex).toBeGreaterThanOrEqual(0);
-    expect(otherWeakIndex).toBeGreaterThan(weakIndex);
-
-    const otherWeakTopic = weak.find((t) => t.id === moduleOtherWeakId)!;
-    expect(otherWeakTopic.score).toBeCloseTo(25, 1);
+    const weakIndex = weak.findIndex((t) => t.id === moduleWeakId);
+    expect(otherWeakIndex).toBeLessThan(weakIndex);
   });
 
-  it("returns an empty list for a grade with no weak topics", async () => {
-    // A grade nobody has touched at all for this student.
+  it("returns an empty list for a student with no weak sub-topics anywhere", async () => {
     const weak = await getWeakTopicsForGrade(randomUUID(), "10");
     expect(weak).toEqual([]);
   });
