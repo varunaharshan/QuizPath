@@ -529,23 +529,18 @@ export type OverallStats = {
 // Dashboard's restyled stat row — sits above a per-subject breakdown rather
 // than being scoped to one subject itself, unlike getProgressStats (which
 // is deliberately grade+subject scoped, for the Progress tab, and is left
-// untouched here). Mirrors getProgressStats's own aggregation approach
-// (cumulative correct/total across every completed attempt for the grade)
-// just without a subject filter.
+// untouched here). Deliberately restricted to completed PAPER attempts
+// only, same as getPaperAccuracyTrend — a full past-paper attempt is the
+// closest thing this app has to an exam-condition signal, and blending in
+// practice-session (sub-topic) attempts would let a handful of small,
+// single-sub-topic drills dominate what's meant to read as "how are you
+// doing on real tests."
 export async function getOverallStats(studentId: string, grade: "10" | "11"): Promise<OverallStats> {
   const attempts = await db
     .select({ id: quizAttempts.id })
     .from(quizAttempts)
-    .leftJoin(subTopics, eq(subTopics.id, quizAttempts.subTopicId))
-    .leftJoin(modules, eq(modules.id, subTopics.moduleId))
-    .leftJoin(papers, eq(papers.id, quizAttempts.paperId))
-    .where(
-      and(
-        eq(quizAttempts.studentId, studentId),
-        isNotNull(quizAttempts.completedAt),
-        or(eq(modules.grade, grade), eq(papers.grade, grade)),
-      ),
-    );
+    .innerJoin(papers, eq(papers.id, quizAttempts.paperId))
+    .where(and(eq(quizAttempts.studentId, studentId), isNotNull(quizAttempts.completedAt), eq(papers.grade, grade)));
 
   const quizzesCompleted = attempts.length;
   let totalQuestionsAnswered = 0;

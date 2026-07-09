@@ -266,14 +266,14 @@ describe("getMostRecentlyPracticedSubjectId", () => {
     expect(await getMostRecentlyPracticedSubjectId(studentId, "11")).toBeNull();
   });
 
-  it("getOverallStats aggregates across every subject for the grade, not just one", async () => {
-    // Both attempts are 1/1 correct (see beforeAll's answers), across two
-    // different subjects — getOverallStats must combine both rather than
-    // reflecting only whichever subject getProgressStats would be scoped to.
+  it("getOverallStats counts only the paper attempt, excluding the sub-topic practice attempt", async () => {
+    // Subject A's attempt is a sub-topic (practice) attempt, subject B's is
+    // a paper attempt — getOverallStats is restricted to paper attempts, so
+    // only subject B's 1/1 should count, not both.
     const stats = await getOverallStats(studentId, "10");
-    expect(stats.quizzesCompleted).toBe(2);
-    expect(stats.totalQuestionsAnswered).toBe(2);
-    expect(stats.totalCorrectAnswers).toBe(2);
+    expect(stats.quizzesCompleted).toBe(1);
+    expect(stats.totalQuestionsAnswered).toBe(1);
+    expect(stats.totalCorrectAnswers).toBe(1);
     expect(stats.averageScore).toBe(100);
   });
 

@@ -499,14 +499,18 @@ layout at all), not carried forward or renamed.
   (`ink`/`progress`/`mastered`/`warn`/`teal`) untouched. Card radius is `14px` here (matching
   the mockup), not this app's usual `10px` — another intentional, screen-scoped deviation.
 - **Stat row (4 cards)**: Tests Completed / Average Score / Questions Answered / Correct
-  Answers — real numbers via a new `getOverallStats(studentId, grade)`, deliberately
+  Answers — real numbers via `getOverallStats(studentId, grade)`, deliberately
   **account-wide** (every subject for the grade), not scoped to one subject like
   `getProgressStats` — it sits above a per-subject breakdown rather than being one subject's
-  own card. The mockup's 4th card is "Study Time"; there's no reliable source for that
-  (`quiz_attempts.started_at`/`completed_at` would badly overstate it for any attempt that
-  used save-and-resume — e.g. started, closed the tab, resumed 3 days later, and that gap
-  would count as "study time"), so Correct Answers takes that slot instead, reusing a number
-  already computed reliably.
+  own card. Also deliberately restricted to completed **paper** attempts only, same as the
+  chart below it and the same reasoning: this row reads as "how are you doing on real tests,"
+  and blending in practice-session (sub-topic) attempts — typically small, single-sub-topic
+  drills — would understate/overstate that signal depending on how much a student happens to
+  be practicing versus sitting full papers. The mockup's 4th card is "Study Time"; there's no
+  reliable source for that (`quiz_attempts.started_at`/`completed_at` would badly overstate it
+  for any attempt that used save-and-resume — e.g. started, closed the tab, resumed 3 days
+  later, and that gap would count as "study time"), so Correct Answers takes that slot instead,
+  reusing a number already computed reliably.
 - **Your Subject Performance chart** — restricted to completed **paper** attempts only,
   deliberately excluding practice-session (sub-topic) attempts entirely: `getPaperAccuracyTrend
   (studentId, grade)` (`src/lib/dashboard.ts`) returns one series per subject, one point per
@@ -602,9 +606,11 @@ layout at all), not carried forward or renamed.
   tests) rather than left unused — both were exclusively called by the two dropped sections
   above and had no other callers.
 
-Integration coverage: `tests/dashboard.test.ts` — `getOverallStats`'s account-wide aggregation
-across two different subjects (proving it isn't scoped to just one, unlike `getProgressStats`)
-and its all-zero/null case for an untouched grade; `getPaperAccuracyTrend`'s one-point-per-
+Integration coverage: `tests/dashboard.test.ts` — `getOverallStats`'s account-wide-but-paper-only
+aggregation (counting a paper attempt in one subject while excluding a practice/sub-topic
+attempt in a different subject, proving it's restricted to paper attempts rather than scoped
+to just one subject like `getProgressStats`) and its all-zero/null case for an untouched grade;
+`getPaperAccuracyTrend`'s one-point-per-
 completed-paper-attempt chronological ordering (a 50%-then-100% pair of paper attempts, sorted
 by `completedAt` and never cumulatively averaged), its exclusion of a same-subject
 practice-session (sub-topic) attempt from the trend entirely, its strict grade scoping in both
