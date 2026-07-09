@@ -539,17 +539,31 @@ layout at all), not carried forward or renamed.
   column by default grid stretching.
 - **Topic Performance** — subject-tab switcher + accuracy table, reusing the exact tab-state
   mechanic `<TopicCardGrid>` established for Practice by Topic (pure client state, no
-  navigation; `groupTopicsBySubject(getSubTopicStatusesForGrade(studentId, grade))` — every
-  subject, not just one), defaulting to the most-recently-practiced subject via the existing
+  navigation), defaulting to the most-recently-practiced subject via the existing
   `getMostRecentlyPracticedSubjectId`. `<DashboardTopicTable>` is its own component rather
   than reusing `<TopicCardGrid>` directly, since the visual shape (table vs. card grid) and
   active-tab color (`dash-blue` here vs. `navy-900` on Practice by Topic) both genuinely
   differ — only the tab-switching mechanic and the `SubjectTopicTab` data shape are shared.
+  **Rows are Topics (modules), not sub-topics** — `getTopicStatusesForGrade(studentId, grade)`
+  (`src/lib/dashboard.ts`) is the topic-level analog of `getSubTopicStatusesForGrade`: same
+  `mastery_scores`-cache data source and rollup math `getWeakTopicsForGrade` already
+  established (each topic's `questionsAnswered`/`correctCount`/`score` summed across every
+  sub-topic it contains, `correctCount` reconstructed as `round(score/100 × questionsAnswered)`
+  since the cache has no raw count column), just without the `needs_work` filter — every topic
+  for the grade comes back, including `not_started` ones, across every subject.
+  `groupTopicStatusesBySubject` (`src/lib/practice.ts`) is the topic-level analog of
+  `groupTopicsBySubject`, bucketing that by subject the same way. This replaced an earlier
+  version of this card that listed sub-topics directly (e.g. "Displacement and Distance"
+  instead of the topic it belongs to) — the wrong grain once By Topic/Weak Areas both
+  established "Topic is the primary row, sub-topic is the drill-down" elsewhere in this app.
   Shows the **top 3 highest-scoring attempted topics per subject** (not syllabus order, and
   not a fixed 5) — a "where am I doing well" preview complementing Weak Areas' "where am I
   struggling" one below it; topics with no score yet are excluded from the ranking rather
-  than padding the preview out. "View all topics →" links to `/practice/by-topic` for the
-  complete, syllabus-ordered list.
+  than padding the preview out. **No per-row Practice link** — a Topic row has no single quiz
+  to launch (this app has no pooled multi-sub-topic quiz mode), the same reason
+  `<TopicProgressTable>` only ever puts a Practice button on its expanded sub-topic rows, never
+  the topic row itself; "View all topics →" (linking to `/practice/by-topic`) is this card's
+  entry point into that drill-down and the complete, syllabus-ordered list.
 - **Recent Test Activity** — `getCompletedQuizzes(studentId, { grade, limit: 5 })`, unchanged
   except `CompletedQuiz` gained a `durationMinutes` field (`completedAt − startedAt`, in
   minutes) for the mockup's "Time" column. This is wall-clock elapsed time, **not** active
@@ -572,7 +586,12 @@ across two different subjects (proving it isn't scoped to just one, unlike `getP
 and its all-zero/null case for an untouched grade; `getSubjectAccuracyTrends`'s weekly
 cumulative bucketing (null before any data, then updating as backdated/current attempts land,
 verified against hand-computed expected percentages per week) and its strict grade scoping in
-both directions; `getCompletedQuizzes`'s new `durationMinutes` field.
+both directions; `getCompletedQuizzes`'s new `durationMinutes` field; `getTopicStatusesForGrade`'s
+topic-level rollup (multiple sub-topics under one module summing to the topic's true aggregate),
+its inclusion of a never-attempted topic (`null` score, not omitted), its grade scoping, and its
+subjectId/subjectName resolution across more than one subject. `tests/practice.test.ts` covers
+`groupTopicStatusesBySubject`'s per-subject bucketing/order-preservation/subject-name sort and its
+empty-input case, mirroring `groupTopicsBySubject`'s own tests.
 
 ## Medium and papers
 
@@ -869,12 +888,13 @@ merged into one function or one data source.
     one of its listed sub-topics. This is unchanged, pre-existing behavior: an untagged paper
     question (`sub_topic_id` null) has never contributed to any topic/sub-topic mastery number
     anywhere in this app.
-  - **This rollup is scoped to this page only** (`getProgressStats`). Weak Areas and the
-    Dashboard's own "Topic Performance" card both read from `getSubTopicStatusesForGrade`
-    instead (the `mastery_scores` cache, not a live re-aggregation), which is still sub-topic-
-    only — it has no module-level rollup or drill-down. Applying the same topic-primary/
-    sub-topic-drill-down pattern there was a deliberate follow-up decision, not done in this
-    pass — flagged here rather than silently left inconsistent.
+  - **This live-query rollup is scoped to this page only** (`getProgressStats`). Weak Areas
+    (`getWeakTopicsForGrade`) and the Dashboard's own "Topic Performance" card
+    (`getTopicStatusesForGrade`) both now also roll up to Topic (module) rows with a sub-topic
+    drill-down, but read from the `mastery_scores` cache instead of live `quiz_attempt_answers`
+    — a deliberate, separate follow-up decision (see "Practice" and "Dashboard" below for each),
+    not this page's own function, and each carries `mastery_scores`'s own pre-existing
+    staleness/precision caveats that a live query like this one doesn't have.
   - Integration coverage: `tests/progress.test.ts` — own-grade progress with a single topic
     row (never a bare sub-topic row) confirmed by asserting the sub-topic's own id is absent
     from `stats.topics`, a different grade the student has practiced (mirroring Practice's
@@ -894,8 +914,9 @@ merged into one function or one data source.
   Keyword results page below also renders it directly; only the tab-switcher wrapper around it
   is gone. `<DashboardTopicTable>` (Dashboard's own "Topic Performance" card) previously
   imported its `SubjectTopicTab` type from `topic-card-grid.tsx`; that type now lives directly
-  in `dashboard-topic-table.tsx` itself, sourced from `topic-card.tsx`'s `TopicCardData`
-  instead, so it has no dependency on the deleted file. `groupTopicsBySubject()`
+  in `dashboard-topic-table.tsx` itself (as does its own `DashboardTopicRow` row shape, once
+  this card's rows became Topics rather than sub-topics — see "Dashboard" above), so it has no
+  dependency on the deleted file. `groupTopicsBySubject()`
   (`src/lib/practice.ts`) and `getMostRecentlyPracticedSubjectId()` (`src/lib/dashboard.ts`)
   both stay — the old page was never their only caller (the Dashboard and/or By Keyword page
   already used them too) — as does `getPracticeSubjects()` (`src/lib/papers.ts`), still used

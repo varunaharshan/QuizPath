@@ -1,13 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import type { TopicCardData } from "@/components/topic-card";
+
+// One row per Topic (module), not a bare sub-topic — mirrors the
+// topic-primary rule <TopicProgressTable> established for By Topic/Weak
+// Areas (see CLAUDE.md "Dashboard"/"Practice"). No `moduleName` field here
+// (unlike TopicCardData, which this used to reuse): at this grain the topic
+// *is* the module, so a separate parent-module label would be redundant.
+export type DashboardTopicRow = {
+  id: string;
+  name: string;
+  icon: string;
+  score: number | null;
+  questionsAnswered: number;
+};
 
 export type SubjectTopicTab = {
   subjectId: string;
   subjectName: string;
-  topics: TopicCardData[];
+  topics: DashboardTopicRow[];
 };
 
 // Subject-tab switcher + accuracy table for the Dashboard's "Topic
@@ -17,7 +28,11 @@ export type SubjectTopicTab = {
 // <TopicCardGrid> directly" (that card-grid component backed the old
 // "Practice by Topic" page, since replaced by the topic-rollup "By topic"
 // page — see CLAUDE.md "App shell"); this component and its data shape are
-// otherwise unaffected by that removal.
+// otherwise unaffected by that removal. No per-row Practice link: a Topic
+// row has no single quiz to launch (this app has no pooled multi-sub-topic
+// quiz mode), the same reason <TopicProgressTable> only ever puts a
+// Practice button on its expanded sub-topic rows — "View all topics →"
+// below this table is the entry point into that drill-down.
 export function DashboardTopicTable({
   groups,
   defaultSubjectId,
@@ -57,10 +72,9 @@ export function DashboardTopicTable({
               <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
                 Accuracy
               </th>
-              <th className="border-b border-app-border pb-2.5 pr-2 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
+              <th className="border-b border-app-border pb-2.5 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary">
                 Questions
               </th>
-              <th className="border-b border-app-border pb-2.5 text-left text-[11.5px] font-semibold uppercase tracking-wide text-ink-secondary" />
             </tr>
           </thead>
           <tbody>
@@ -84,15 +98,7 @@ export function DashboardTopicTable({
                     </>
                   )}
                 </td>
-                <td className="border-b border-app-border py-2.5 pr-2">{topic.questionsAnswered}</td>
-                <td className="border-b border-app-border py-2.5 text-right">
-                  <Link
-                    href={`/quiz/${topic.id}`}
-                    className="rounded-md bg-dash-blue-bg px-3 py-1 text-[12px] font-semibold text-dash-blue hover:opacity-80"
-                  >
-                    Practice
-                  </Link>
-                </td>
+                <td className="border-b border-app-border py-2.5">{topic.questionsAnswered}</td>
               </tr>
             ))}
           </tbody>

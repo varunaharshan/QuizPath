@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, modules, subTopics } from "@/db/schema";
-import type { SubTopicStatus } from "./dashboard";
+import type { SubTopicStatus, TopicStatus } from "./dashboard";
 
 // Weak Areas lists topics the student has actually attempted and scored
 // below the "needs work" threshold — not_started topics aren't included
@@ -31,6 +31,35 @@ export type SubjectTopicGroup = {
 // subject name, giving a stable, deterministic tab order.
 export function groupTopicsBySubject(topics: SubTopicStatus[]): SubjectTopicGroup[] {
   const bySubject = new Map<string, { subjectName: string; topics: SubTopicStatus[] }>();
+  for (const topic of topics) {
+    const group = bySubject.get(topic.subjectId);
+    if (group) {
+      group.topics.push(topic);
+    } else {
+      bySubject.set(topic.subjectId, { subjectName: topic.subjectName, topics: [topic] });
+    }
+  }
+
+  return [...bySubject.entries()]
+    .map(([subjectId, { subjectName, topics: subjectTopics }]) => ({ subjectId, subjectName, topics: subjectTopics }))
+    .sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+}
+
+export type TopicStatusSubjectGroup = {
+  subjectId: string;
+  subjectName: string;
+  topics: TopicStatus[];
+};
+
+// Topic (module)-level analog of groupTopicsBySubject, for the Dashboard's
+// "Topic Performance" card now that its rows are Topics rather than
+// sub-topics (see getTopicStatusesForGrade). Same bucket-by-subject,
+// sort-groups-by-subject-name shape — kept as its own function rather than
+// generalizing groupTopicsBySubject to accept either shape, since
+// SubTopicStatus and TopicStatus aren't interchangeable beyond both
+// carrying subjectId/subjectName.
+export function groupTopicStatusesBySubject(topics: TopicStatus[]): TopicStatusSubjectGroup[] {
+  const bySubject = new Map<string, { subjectName: string; topics: TopicStatus[] }>();
   for (const topic of topics) {
     const group = bySubject.get(topic.subjectId);
     if (group) {

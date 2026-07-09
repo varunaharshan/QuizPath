@@ -450,6 +450,68 @@ export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11
   return topics.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
 }
 
+export type TopicStatus = TopicProgress & {
+  subjectId: string;
+  subjectName: string;
+};
+
+// Topic (module)-level analog of getSubTopicStatusesForGrade, for the
+// Dashboard's "Topic Performance" card — that card previously listed
+// sub-topics directly (e.g. "Displacement and Distance"), which reads as
+// the wrong grain once By Topic/Weak Areas both established "Topic is the
+// primary row, sub-topic is the drill-down" elsewhere in this app. Same
+// mastery_scores-cache data source and rollup math as getWeakTopicsForGrade
+// (correctCount reconstructed as round(score/100 * questionsAnswered), same
+// known staleness/precision caveats documented there), just without the
+// needs_work filter — every topic for the grade is returned, across every
+// subject, including not_started ones (score null), so callers can pick
+// whichever slice they need (the Dashboard selects the top 3 highest-scoring
+// per subject) rather than this function baking in one specific selection.
+export async function getTopicStatusesForGrade(studentId: string, grade: "10" | "11"): Promise<TopicStatus[]> {
+  const gradeModules = await db.query.modules.findMany({
+    where: eq(modules.grade, grade),
+    orderBy: modules.sortOrder,
+    with: { subTopics: { orderBy: subTopics.sortOrder }, subject: true },
+  });
+
+  const scores = await db.select().from(masteryScores).where(eq(masteryScores.studentId, studentId));
+  const scoreBySubTopic = new Map(
+    scores.map((s) => [s.subTopicId, { score: Number(s.score), questionsAnswered: s.questionsAnswered }]),
+  );
+
+  return gradeModules.map((gradeModule) => {
+    const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
+      const mastery = scoreBySubTopic.get(subTopic.id);
+      const questionsAnswered = mastery?.questionsAnswered ?? 0;
+      const score = mastery?.score ?? null;
+      const correctCount = mastery ? Math.round((mastery.score / 100) * questionsAnswered) : 0;
+      return {
+        id: subTopic.id,
+        name: subTopic.name,
+        questionsAnswered,
+        correctCount,
+        score,
+        label: score === null ? "not_started" : masteryLabelForScore(score),
+      };
+    });
+
+    const topicCounts = {
+      questionsAnswered: subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0),
+      correctCount: subTopicRows.reduce((sum, s) => sum + s.correctCount, 0),
+    };
+
+    return {
+      id: gradeModule.id,
+      name: gradeModule.name,
+      subjectId: gradeModule.subject.id,
+      subjectName: gradeModule.subject.name,
+      ...topicCounts,
+      ...scoreAndLabel(topicCounts),
+      subTopics: subTopicRows,
+    };
+  });
+}
+
 export type OverallStats = {
   quizzesCompleted: number;
   totalQuestionsAnswered: number;

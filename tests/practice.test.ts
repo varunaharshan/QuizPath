@@ -3,10 +3,11 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
-import type { SubTopicStatus } from "@/lib/dashboard";
+import type { SubTopicStatus, TopicStatus } from "@/lib/dashboard";
 import {
   getKeywordSuggestions,
   getTopKeywords,
+  groupTopicStatusesBySubject,
   groupTopicsBySubject,
   groupWeakAreasBySubject,
   searchSubTopicIdsByKeyword,
@@ -25,6 +26,21 @@ function status(overrides: Partial<SubTopicStatus>): SubTopicStatus {
     score: null,
     label: "not_started",
     questionsAnswered: 0,
+    ...overrides,
+  };
+}
+
+function topicStatus(overrides: Partial<TopicStatus>): TopicStatus {
+  return {
+    id: randomUUID(),
+    name: "Topic",
+    subjectId: "subject-1",
+    subjectName: "Science",
+    score: null,
+    label: "not_started",
+    questionsAnswered: 0,
+    correctCount: 0,
+    subTopics: [],
     ...overrides,
   };
 }
@@ -83,6 +99,37 @@ describe("groupTopicsBySubject", () => {
 
   it("returns an empty list for an empty input", () => {
     expect(groupTopicsBySubject([])).toEqual([]);
+  });
+});
+
+// Topic (module)-level analog of groupTopicsBySubject's own tests, backing
+// the Dashboard's Topic Performance card now that its rows are Topics
+// rather than sub-topics (see CLAUDE.md "Dashboard").
+describe("groupTopicStatusesBySubject", () => {
+  it("groups every topic by subject regardless of label, preserving each group's original order", () => {
+    const sci1 = topicStatus({ name: "Sci1", subjectId: "sci", subjectName: "Science", label: "mastered", score: 90 });
+    const sci2 = topicStatus({ name: "Sci2", subjectId: "sci", subjectName: "Science", label: "not_started", score: null });
+    const biz1 = topicStatus({ name: "Biz1", subjectId: "biz", subjectName: "Business Studies", label: "needs_work", score: 30 });
+
+    const groups = groupTopicStatusesBySubject([sci1, sci2, biz1]);
+
+    const science = groups.find((g) => g.subjectId === "sci");
+    expect(science?.topics.map((t) => t.name)).toEqual(["Sci1", "Sci2"]);
+    const business = groups.find((g) => g.subjectId === "biz");
+    expect(business?.topics.map((t) => t.name)).toEqual(["Biz1"]);
+  });
+
+  it("sorts groups by subject name for a stable, deterministic tab order", () => {
+    const biz = topicStatus({ name: "B", subjectId: "biz", subjectName: "Business Studies" });
+    const geo = topicStatus({ name: "G", subjectId: "geo", subjectName: "Geography" });
+    const sci = topicStatus({ name: "S", subjectId: "sci", subjectName: "Science" });
+
+    const groups = groupTopicStatusesBySubject([sci, biz, geo]);
+    expect(groups.map((g) => g.subjectName)).toEqual(["Business Studies", "Geography", "Science"]);
+  });
+
+  it("returns an empty list for an empty input", () => {
+    expect(groupTopicStatusesBySubject([])).toEqual([]);
   });
 });
 

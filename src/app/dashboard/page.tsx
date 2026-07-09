@@ -8,10 +8,11 @@ import {
   getProgressStats,
   getSubTopicStatusesForGrade,
   getSubjectAccuracyTrends,
+  getTopicStatusesForGrade,
   iconForModule,
   iconForSubject,
 } from "@/lib/dashboard";
-import { groupTopicsBySubject, groupWeakAreasBySubject, weakAreas } from "@/lib/practice";
+import { groupTopicStatusesBySubject, groupTopicsBySubject, groupWeakAreasBySubject, weakAreas } from "@/lib/practice";
 import { getPracticeSubjects } from "@/lib/papers";
 import { AppShell } from "@/components/app-shell";
 import { DashboardTopicTable, type SubjectTopicTab } from "@/components/dashboard-topic-table";
@@ -33,14 +34,16 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const [subjects, statuses, completedQuizzes, overallStats, trends, mostRecentSubjectId] = await Promise.all([
-    getPracticeSubjects(),
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getCompletedQuizzes(appUser.id, { grade: profile.grade, limit: 5 }),
-    getOverallStats(appUser.id, profile.grade),
-    getSubjectAccuracyTrends(appUser.id, profile.grade),
-    getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
-  ]);
+  const [subjects, statuses, topicStatuses, completedQuizzes, overallStats, trends, mostRecentSubjectId] =
+    await Promise.all([
+      getPracticeSubjects(),
+      getSubTopicStatusesForGrade(appUser.id, profile.grade),
+      getTopicStatusesForGrade(appUser.id, profile.grade),
+      getCompletedQuizzes(appUser.id, { grade: profile.grade, limit: 5 }),
+      getOverallStats(appUser.id, profile.grade),
+      getSubjectAccuracyTrends(appUser.id, profile.grade),
+      getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
+    ]);
 
   const topicGroups = groupTopicsBySubject(statuses);
   const weakGroups = groupWeakAreasBySubject(weakAreas(statuses));
@@ -66,10 +69,13 @@ export default async function DashboardPage() {
   );
 
   // Topic Performance is a "top performers" preview (not the full syllabus
-  // list By Topic already owns) — the 3 highest-scoring attempted topics
-  // per subject, descending. Not-started topics have no score to rank by,
+  // list By Topic already owns) — the 3 highest-scoring attempted Topics
+  // (modules) per subject, descending, rolled up across each Topic's own
+  // sub-topics rather than listing sub-topics directly (see
+  // getTopicStatusesForGrade). Not-started topics have no score to rank by,
   // so they're excluded here rather than padding the preview out to 3.
-  const topicTabs: SubjectTopicTab[] = topicGroups.map((group) => ({
+  const topicStatusGroups = groupTopicStatusesBySubject(topicStatuses);
+  const topicTabs: SubjectTopicTab[] = topicStatusGroups.map((group) => ({
     subjectId: group.subjectId,
     subjectName: group.subjectName,
     topics: group.topics
@@ -79,8 +85,7 @@ export default async function DashboardPage() {
       .map((topic) => ({
         id: topic.id,
         name: topic.name,
-        moduleName: topic.moduleName,
-        icon: iconForModule(topic.moduleName),
+        icon: iconForModule(topic.name),
         score: topic.score,
         questionsAnswered: topic.questionsAnswered,
       })),

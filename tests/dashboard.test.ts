@@ -9,6 +9,7 @@ import {
   getMostRecentlyPracticedSubjectId,
   getOverallStats,
   getSubjectAccuracyTrends,
+  getTopicStatusesForGrade,
 } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
@@ -426,6 +427,157 @@ describe("getSubjectAccuracyTrends", () => {
     } finally {
       await db.delete(users).where(eq(users.id, student.id));
     }
+  });
+});
+
+// getTopicStatusesForGrade backs the Dashboard's "Topic Performance" card —
+// confirms it rolls up to Topic (module), not sub-topic, rows: a topic with
+// two attempted sub-topics (60% + 100%) reports the true combined
+// aggregate, a not_started topic is still returned (score null, not
+// omitted), and everything stays scoped to the requested grade/spans every
+// subject. Mirrors getWeakTopicsForGrade's own fixture/aggregation style
+// (tests/weak-areas.test.ts) minus the needs_work filter.
+describe("getTopicStatusesForGrade", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectAId: string;
+  let subjectBId: string;
+  let moduleMixedId: string;
+  let moduleUntouchedId: string;
+  let moduleOtherSubjectId: string;
+  let moduleGrade11Id: string;
+  let studentId: string;
+
+  beforeAll(async () => {
+    const [subjectA] = await db.insert(subjects).values({ name: `Test TopicStatus Subject A ${runId}` }).returning();
+    subjectAId = subjectA.id;
+    const [subjectB] = await db.insert(subjects).values({ name: `Test TopicStatus Subject B ${runId}` }).returning();
+    subjectBId = subjectB.id;
+
+    const [moduleMixed] = await db
+      .insert(modules)
+      .values({ subjectId: subjectAId, grade: "10", name: `Mixed Module ${runId}`, sortOrder: 0 })
+      .returning();
+    moduleMixedId = moduleMixed.id;
+    const [moduleUntouched] = await db
+      .insert(modules)
+      .values({ subjectId: subjectAId, grade: "10", name: `Untouched Module ${runId}`, sortOrder: 1 })
+      .returning();
+    moduleUntouchedId = moduleUntouched.id;
+    const [moduleOtherSubject] = await db
+      .insert(modules)
+      .values({ subjectId: subjectBId, grade: "10", name: `Other Subject Module ${runId}`, sortOrder: 0 })
+      .returning();
+    moduleOtherSubjectId = moduleOtherSubject.id;
+    const [moduleGrade11] = await db
+      .insert(modules)
+      .values({ subjectId: subjectAId, grade: "11", name: `Grade11 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    moduleGrade11Id = moduleGrade11.id;
+
+    const [subM] = await db.insert(subTopics).values({ moduleId: moduleMixedId, name: `M ${runId}`, sortOrder: 0 }).returning();
+    const [subN] = await db.insert(subTopics).values({ moduleId: moduleMixedId, name: `N ${runId}`, sortOrder: 1 }).returning();
+    await db.insert(subTopics).values({ moduleId: moduleUntouchedId, name: `Untouched ${runId}`, sortOrder: 0 });
+    const [subO] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleOtherSubjectId, name: `O ${runId}`, sortOrder: 0 })
+      .returning();
+    const [subG11] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleGrade11Id, name: `G11 ${runId}`, sortOrder: 0 })
+      .returning();
+
+    async function makeMcqs(subTopicId: string, count: number) {
+      const rows = await db
+        .insert(mcqs)
+        .values(
+          Array.from({ length: count }, (_, i) => ({
+            subTopicId,
+            questionText: `Q${i} for ${subTopicId}`,
+            options: textOptions("A", "B"),
+            correctOption: 0,
+            status: "published" as const,
+          })),
+        )
+        .returning({ id: mcqs.id });
+      return rows.map((r) => r.id);
+    }
+
+    const mMcqs = await makeMcqs(subM.id, 5);
+    const nMcqs = await makeMcqs(subN.id, 5);
+    const oMcqs = await makeMcqs(subO.id, 4);
+    const g11Mcqs = await makeMcqs(subG11.id, 2);
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-topicstatus-auth-${runId}`, email: `test-topicstatus-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    // M: 3/5 -> 60%. N: 5/5 -> 100%. Mixed Module true aggregate: 8/10 -> 80%.
+    await submitFullSubTopicQuiz({
+      studentId,
+      subTopicId: subM.id,
+      answers: Object.fromEntries(mMcqs.map((id, i) => [id, i < 3 ? 0 : 1])),
+    });
+    await submitFullSubTopicQuiz({
+      studentId,
+      subTopicId: subN.id,
+      answers: Object.fromEntries(nMcqs.map((id) => [id, 0])),
+    });
+    // O (Subject B): 1/4 -> 25%.
+    await submitFullSubTopicQuiz({
+      studentId,
+      subTopicId: subO.id,
+      answers: Object.fromEntries(oMcqs.map((id, i) => [id, i === 0 ? 0 : 1])),
+    });
+    // G11 (Grade 11): must not appear when querying Grade 10.
+    await submitFullSubTopicQuiz({
+      studentId,
+      subTopicId: subG11.id,
+      answers: Object.fromEntries(g11Mcqs.map((id) => [id, 1])),
+    });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectAId));
+    await db.delete(subjects).where(eq(subjects.id, subjectBId));
+    await db.delete(users).where(eq(users.id, studentId));
+  });
+
+  it("rolls up a topic's own numbers across every sub-topic it contains, not just one", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "10");
+    const mixed = topics.find((t) => t.id === moduleMixedId)!;
+
+    expect(mixed.questionsAnswered).toBe(10);
+    expect(mixed.correctCount).toBe(8);
+    expect(mixed.score).toBeCloseTo(80, 1);
+    expect(mixed.label).toBe("mastered");
+    expect(mixed.subTopics).toHaveLength(2);
+  });
+
+  it("still returns a never-attempted topic, with a null score rather than omitting it", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "10");
+    const untouched = topics.find((t) => t.id === moduleUntouchedId);
+    expect(untouched).toBeDefined();
+    expect(untouched!.score).toBeNull();
+    expect(untouched!.label).toBe("not_started");
+    expect(untouched!.questionsAnswered).toBe(0);
+  });
+
+  it("spans every subject for the grade and carries the correct subjectId/subjectName", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "10");
+    const otherSubject = topics.find((t) => t.id === moduleOtherSubjectId);
+    expect(otherSubject).toBeDefined();
+    expect(otherSubject!.subjectId).toBe(subjectBId);
+    expect(otherSubject!.score).toBeCloseTo(25, 1);
+
+    const mixed = topics.find((t) => t.id === moduleMixedId)!;
+    expect(mixed.subjectId).toBe(subjectAId);
+  });
+
+  it("excludes a different grade's topic", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "10");
+    expect(topics.some((t) => t.id === moduleGrade11Id)).toBe(false);
   });
 });
 
