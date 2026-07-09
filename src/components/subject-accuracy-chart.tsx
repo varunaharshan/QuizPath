@@ -39,16 +39,21 @@ export function SubjectAccuracyChart({ trends }: { trends: SubjectAccuracyTrend[
   const pointCount = trends[0].points.length;
   const stepX = pointCount > 1 ? (WIDTH - 2 * PADDING) / (pointCount - 1) : 0;
 
+  // Per-point (x, y) coordinates, not just a joined polyline string — a
+  // subject whose entire history falls inside a single week bucket (e.g. a
+  // lightly-used account whose only attempts so far were this week) ends up
+  // with exactly one plotted point, and an SVG <polyline> with only one
+  // point draws nothing at all. Circles (below) make that single point
+  // visible even when there aren't yet two points to connect with a line.
   const series = trends.map((trend) => {
     let carried: number | null = null;
-    const coords = trend.points
-      .map((point, index) => {
-        if (point.accuracy !== null) carried = point.accuracy;
-        if (carried === null) return null;
-        return `${PADDING + index * stepX},${yFor(carried)}`;
-      })
-      .filter((coord): coord is string => coord !== null);
-    return { ...trend, coords: coords.join(" ") };
+    const plotted: { x: number; y: number }[] = [];
+    trend.points.forEach((point, index) => {
+      if (point.accuracy !== null) carried = point.accuracy;
+      if (carried === null) return;
+      plotted.push({ x: PADDING + index * stepX, y: yFor(carried) });
+    });
+    return { ...trend, plotted };
   });
 
   return (
@@ -58,18 +63,24 @@ export function SubjectAccuracyChart({ trends }: { trends: SubjectAccuracyTrend[
           const y = PADDING + fraction * (HEIGHT - 2 * PADDING);
           return <line key={fraction} x1={0} y1={y} x2={WIDTH} y2={y} stroke="var(--color-app-border)" />;
         })}
-        {series.map(
-          (s, index) =>
-            s.coords && (
-              <polyline
-                key={s.subjectId}
-                fill="none"
-                stroke={LINE_COLORS[index % LINE_COLORS.length]}
-                strokeWidth={2.5}
-                points={s.coords}
-              />
-            ),
-        )}
+        {series.map((s, index) => {
+          const color = LINE_COLORS[index % LINE_COLORS.length];
+          return (
+            <g key={s.subjectId}>
+              {s.plotted.length > 1 && (
+                <polyline
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={2.5}
+                  points={s.plotted.map((p) => `${p.x},${p.y}`).join(" ")}
+                />
+              )}
+              {s.plotted.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r={3} fill={color} />
+              ))}
+            </g>
+          );
+        })}
       </svg>
       <div className="mt-1.5 flex flex-wrap gap-4 text-xs text-ink-secondary">
         {trends.map((trend, index) => (

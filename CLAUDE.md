@@ -519,7 +519,12 @@ layout at all), not carried forward or renamed.
   joining the `subjects` table in twice. `<SubjectAccuracyChart>` (a plain Server Component,
   static inline SVG, no client JS) carries the last known cumulative value forward across
   weeks with no new attempts rather than breaking the line, and omits leading weeks entirely
-  before a subject's first-ever attempt rather than drawing them at 0%.
+  before a subject's first-ever attempt rather than drawing them at 0%. Each plotted week also
+  gets a small `<circle>` marker, not just the `<polyline>` connecting them — a subject whose
+  entire history falls inside a single week bucket (e.g. a freshly-active account whose only
+  attempts so far were this week) has exactly one non-null point, and an SVG `<polyline>` with
+  only one point renders nothing at all; the circle is what makes that single point visible
+  rather than the chart silently appearing blank.
 - **Subject breakdown mini-list** (beside the chart) — one row per subject that has any
   sub-topic for this grade (from `groupTopicsBySubject`), each showing that subject's overall
   average score via `getProgressStats(studentId, grade, subjectId)` called once per subject
