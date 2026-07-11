@@ -4,11 +4,62 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, papers, subjects, subTopics } from "@/db/schema";
 import {
+  getAdjacentQuestionIds,
   getPaperForQuestionsAdmin,
   getQuestionForEdit,
   getQuestionsForPaper,
 } from "@/lib/admin-questions";
 import { textOptions } from "./helpers";
+
+// Pure function, no DB — backs the question edit page's Prev/Next toolbar.
+describe("getAdjacentQuestionIds", () => {
+  const questions = [{ id: "q1" }, { id: "q2" }, { id: "q3" }];
+
+  it("returns null prevId and the next question's id for the first question", () => {
+    expect(getAdjacentQuestionIds(questions, "q1")).toEqual({
+      position: 1,
+      total: 3,
+      prevId: null,
+      nextId: "q2",
+    });
+  });
+
+  it("returns both prevId and nextId for a middle question", () => {
+    expect(getAdjacentQuestionIds(questions, "q2")).toEqual({
+      position: 2,
+      total: 3,
+      prevId: "q1",
+      nextId: "q3",
+    });
+  });
+
+  it("returns null nextId for the last question", () => {
+    expect(getAdjacentQuestionIds(questions, "q3")).toEqual({
+      position: 3,
+      total: 3,
+      prevId: "q2",
+      nextId: null,
+    });
+  });
+
+  it("returns position 0 and both ids null for an id not in the list", () => {
+    expect(getAdjacentQuestionIds(questions, "unknown")).toEqual({
+      position: 0,
+      total: 3,
+      prevId: null,
+      nextId: null,
+    });
+  });
+
+  it("handles a single-question paper: both prev and next are null", () => {
+    expect(getAdjacentQuestionIds([{ id: "only" }], "only")).toEqual({
+      position: 1,
+      total: 1,
+      prevId: null,
+      nextId: null,
+    });
+  });
+});
 
 describe("admin-questions: paper question review/management", () => {
   const runId = randomUUID().slice(0, 8);

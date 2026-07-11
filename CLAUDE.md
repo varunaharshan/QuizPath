@@ -1417,8 +1417,68 @@ this hangs entirely off a specific paper's own context rather than being a top-l
   just previewed), Topic, Sub-topic, Difficulty, Keywords, the Status pill, and the
   verification pill — showing all four full options per row would make the table too wide to
   be "scannable." The full option set is only visible/editable on the dedicated edit page.
+- **Prev/Next navigation between questions in the same paper** — a toolbar above the form
+  ("← Prev · Question N of M · Next →") backed by `getAdjacentQuestionIds()`
+  (`src/lib/admin-questions.ts`), a pure function over the same `getQuestionsForPaper`-ordered
+  list the list page's own `#` column numbers from (so Prev/Next numbering always matches),
+  fetched fresh by the edit page (`page.tsx`) on every load rather than a new dedicated query.
+  Deliberately paper-scoped, never across every question in the database — adjacency is just
+  "the previous/next index in this one array." Prev is disabled (not just visually — the
+  button itself, via `disabled`) on the first question and Next on the last; a single-question
+  paper disables both.
+  - **Unsaved-changes warning**: no "dirty form" pattern existed anywhere in this admin area
+    before this — every other admin form here (Topics, Papers, this same edit form previously)
+    uses plain uncontrolled `defaultValue` inputs with no change tracking at all. Rather than
+    converting every field to controlled state, `<QuestionEditForm>` attaches one `onChange` at
+    the `<form>` level (change events bubble up from every input/textarea/select to their
+    parent form in React, so this needs no per-field wiring) that flips a single `isDirty`
+    boolean. Clicking Prev/Next calls `window.confirm("You have unsaved changes. Leave without
+    saving?")` first if `isDirty` — the same "no custom modal, just `window.confirm()`" idiom
+    already established for the quiz-taking partial-submit gate and every admin
+    `<ConfirmSubmitButton>` delete warning, not a new pattern. The existing "← Back without
+    saving" link below the form is untouched (its own label already says what it does, so it
+    doesn't need the same guard).
+  - "Preserve my place on the list page" needed no actual work — that list has no pagination
+    or filters (a single flat table), so there's no scroll/filter state Prev/Next could lose in
+    the first place.
+- **"Preview" reuses the real student-facing `<QuizForm>` component directly**, not a
+  lookalike — `<QuizForm>` was already decoupled from attempt-tracking (it takes
+  `saveAnswer`/`submitQuiz` as *injected* async function props; the component itself has zero
+  direct knowledge of `attemptId`, Clerk auth, or the database), so no rework was needed to
+  make it safely reusable outside a real quiz attempt. Preview passes a true no-op
+  `saveAnswer` (selecting an option only updates `<QuizForm>`'s own local state — nothing is
+  ever persisted, no attempt row is ever created) and a `submitQuiz` that just closes the
+  preview panel instead of finalizing anything. `AdminQuestionDetail` → `QuizQuestion` (the
+  shape `<QuizForm>` expects) is a trivial field subset (`id`, `questionText`, `options`,
+  `questionImage`, `hint`, `subTopicName`) — no adapter logic needed. `<QuizForm>`'s own
+  "Submit quiz" button is intentionally disabled until at least one option is answered
+  (unrelated pre-existing behavior, unchanged), so the preview panel has its **own** always-
+  enabled "✕ Close" button in its header rather than relying on that button as the only way
+  out.
+  - **Reflects live, unsaved edits, not just the last-saved version** — a deliberate choice
+    over the simpler fallback (previewing only what's in the database), made explicitly with
+    the user rather than assumed. Since the edit form's fields are uncontrolled
+    (`defaultValue`, not `value`), the preview reads their *current* DOM values via
+    `new FormData(formRef.current)` (a `ref` on the `<form>` element) rather than requiring a
+    full rewrite to controlled state — `FormData` reads live input values regardless of
+    whether a field is controlled. The same form-level `onChange` that flips `isDirty` also
+    bumps a `formVersion` counter; a `useEffect` keyed on `[previewOpen, formVersion, ...]`
+    re-derives the preview question from the form's current values on every keystroke while
+    the panel is open, so it's genuinely live, not a stale snapshot taken only when Preview was
+    first clicked. (Reading `formRef.current` happens inside that `useEffect`, not inline
+    during render — `react-hooks/refs` flags ref reads during render as unsafe for concurrent
+    rendering, so this is a real constraint, not a style preference.) The Sub-topic tag shown
+    in preview also reflects whichever Sub-topic is currently selected in the (already
+    controlled) Topic/Sub-topic dropdowns, not the question's original saved sub-topic.
+  - Rendered as a toggleable inline panel below the form (a `<QuizForm>` instance styled with
+    the existing `quiz-*` tokens, consistent with the rest of the take-quiz screen — see
+    "Quiz-taking visual design"), not a modal/dialog — this app has never built a modal
+    primitive, only `window.confirm()`, so this avoids introducing one just for Preview.
 
-Integration coverage: `tests/admin-questions.test.ts` — `getPaperForQuestionsAdmin`'s
+Integration coverage: `tests/admin-questions.test.ts` — `getAdjacentQuestionIds`'s pure
+prev/next/position resolution (first question has a null `prevId`, last has a null `nextId`,
+a middle question has both, an id not found in the list returns `position: 0` and both null,
+and a single-question paper returns both null); `getPaperForQuestionsAdmin`'s
 paper+subject-name lookup and not-found `null` case; `getQuestionsForPaper`'s strict
 per-paper scoping (a question belonging to a different paper never leaks in) and correct
 null-handling for an untagged (no sub-topic) question; `getQuestionForEdit`'s full detail

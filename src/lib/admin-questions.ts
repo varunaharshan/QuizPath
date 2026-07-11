@@ -104,6 +104,32 @@ export async function getQuestionsForPaper(paperId: string): Promise<AdminPaperQ
   }));
 }
 
+export type AdjacentQuestionIds = {
+  // 1-based, matching the list page's own "#" column.
+  position: number;
+  total: number;
+  prevId: string | null;
+  nextId: string | null;
+};
+
+// Backs the edit page's Prev/Next toolbar — adjacency is always within the
+// same paper, in the same createdAt order getQuestionsForPaper already
+// serves (so numbering matches the list page's own row numbers), never
+// across every question in the database. A pure function over an
+// already-fetched, already-ordered list rather than a new query.
+export function getAdjacentQuestionIds(
+  questions: { id: string }[],
+  currentId: string,
+): AdjacentQuestionIds {
+  const index = questions.findIndex((q) => q.id === currentId);
+  return {
+    position: index + 1,
+    total: questions.length,
+    prevId: index > 0 ? questions[index - 1].id : null,
+    nextId: index !== -1 && index < questions.length - 1 ? questions[index + 1].id : null,
+  };
+}
+
 export type AdminQuestionDetail = AdminPaperQuestion & { paperId: string | null };
 
 export async function getQuestionForEdit(mcqId: string): Promise<AdminQuestionDetail | null> {

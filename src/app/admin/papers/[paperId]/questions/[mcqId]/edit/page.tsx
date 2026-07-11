@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getPaperForQuestionsAdmin, getQuestionForEdit } from "@/lib/admin-questions";
+import {
+  getAdjacentQuestionIds,
+  getPaperForQuestionsAdmin,
+  getQuestionForEdit,
+  getQuestionsForPaper,
+} from "@/lib/admin-questions";
 import { getTopicsForSubjectGrade } from "@/lib/admin-topics";
 import { QuestionEditForm } from "@/components/question-edit-form";
 
@@ -13,15 +18,17 @@ export default async function EditQuestionPage({
   params: Promise<{ paperId: string; mcqId: string }>;
 }) {
   const { paperId, mcqId } = await params;
-  const [paper, question] = await Promise.all([
+  const [paper, question, paperQuestions] = await Promise.all([
     getPaperForQuestionsAdmin(paperId),
     getQuestionForEdit(mcqId),
+    getQuestionsForPaper(paperId),
   ]);
   if (!paper || !question || question.paperId !== paperId) {
     notFound();
   }
 
   const topics = await getTopicsForSubjectGrade(paper.subjectId, paper.grade);
+  const adjacent = getAdjacentQuestionIds(paperQuestions, mcqId);
 
   return (
     <>
@@ -38,7 +45,15 @@ export default async function EditQuestionPage({
         </div>
       ) : (
         <>
-          <QuestionEditForm question={question} topics={topics} paperId={paperId} />
+          <QuestionEditForm
+            question={question}
+            topics={topics}
+            paperId={paperId}
+            prevQuestionId={adjacent.prevId}
+            nextQuestionId={adjacent.nextId}
+            position={adjacent.position}
+            total={adjacent.total}
+          />
           <p className="mt-3">
             <Link
               href={`/admin/papers/${paperId}/questions`}
