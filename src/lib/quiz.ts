@@ -58,10 +58,19 @@ export type Quiz = {
 
 // The quiz-serving core: published MCQs for a sub-topic, capped at
 // QUIZ_LENGTH, with the answer key stripped out before it ever reaches a
-// client. Ordered by createdAt (stable) rather than left unordered — once
+// client. Ordered by (createdAt, id) rather than left unordered — once
 // answers can be saved incrementally and resumed, the serve-set for a given
 // sub-topic must stay identical across requests, or a resumed quiz could
-// show a different set of questions than the ones already answered.
+// show a different set of questions than the ones already answered. id is a
+// real tiebreaker, not decoration: a sub-topic's questions can share an
+// identical createdAt (Bulk Upload inserts a whole paper's questions in one
+// statement, and Postgres evaluates defaultNow() once per statement), and
+// ordering by createdAt alone let any later UPDATE on one of those tied
+// rows (e.g. an admin verifying it) silently reshuffle — and with LIMIT
+// here, potentially swap out — the served set. Unlike a paper's own
+// questions, there's no canonical "original order" to preserve for this
+// heterogeneous bag of sub-topic-tagged questions, so a plain id tiebreaker
+// (not a stored sortOrder) is enough: it only needs to be stable.
 export async function getQuizForSubTopic(subTopicId: string): Promise<Quiz> {
   const subTopic = await db.query.subTopics.findFirst({
     where: eq(subTopics.id, subTopicId),
@@ -80,7 +89,7 @@ export async function getQuizForSubTopic(subTopicId: string): Promise<Quiz> {
     })
     .from(mcqs)
     .where(and(eq(mcqs.subTopicId, subTopicId), eq(mcqs.status, "published")))
-    .orderBy(mcqs.createdAt)
+    .orderBy(mcqs.createdAt, mcqs.id)
     .limit(QUIZ_LENGTH);
 
   // Every question in a sub-topic quiz belongs to that same sub-topic, so
@@ -313,7 +322,11 @@ export type PaperQuiz = {
 // sub-topic quizzes, since a paper attempt is meant to cover the whole paper.
 // Includes grade/subjectId so the paper-taking page can link back to the
 // right spot in the Grade → Subject → Papers navigation, whichever grade the
-// student was browsing when they opened it.
+// student was browsing when they opened it. Ordered by (sortOrder, id) —
+// the paper's own original CSV/import order, matching what an admin sees on
+// the question list — not createdAt, which a whole paper's questions can
+// share (see mcqs.sortOrder's own comment in schema.ts) and which let any
+// later UPDATE on a tied row silently reorder what a student is served.
 export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
   const paper = await db.query.papers.findFirst({ where: eq(papers.id, paperId) });
   if (!paper) {
@@ -335,7 +348,7 @@ export async function getQuizForPaper(paperId: string): Promise<PaperQuiz> {
     .from(mcqs)
     .leftJoin(subTopics, eq(subTopics.id, mcqs.subTopicId))
     .where(and(eq(mcqs.paperId, paperId), eq(mcqs.status, "published")))
-    .orderBy(mcqs.createdAt);
+    .orderBy(mcqs.sortOrder, mcqs.id);
 
   return {
     paper: { id: paper.id, title: paper.title, grade: paper.grade, subjectId: paper.subjectId },

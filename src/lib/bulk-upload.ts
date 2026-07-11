@@ -352,3 +352,28 @@ export function validateBulkRow(row: BulkUploadRow, ref: BulkUploadReferenceData
 export function validateBulkRows(rows: BulkUploadRow[], ref: BulkUploadReferenceData): ValidatedBulkRow[] {
   return rows.map((row) => validateBulkRow(row, ref));
 }
+
+// Assigns each resolved row's mcqs.sortOrder — its position within its own
+// paper's original CSV row order (see schema.ts's own comment on
+// mcqs.sortOrder for why ordering by createdAt alone isn't reliable). A row
+// with no paperId gets 0 (a standalone sub-topic question has no
+// "original order" to preserve). Continues after whatever sortOrder values
+// already exist for a referenced paper — via maxSortOrderByPaperId, the
+// current MAX(sort_order) per paper the caller (bulkImportQuestions)
+// fetches — so re-uploading more questions into an already-populated paper
+// appends after the existing ones rather than colliding with them. Pure,
+// so it's testable without a DB: this only ever needs the paperIds in
+// their already-CSV-ordered sequence and each referenced paper's current
+// max, not a live query itself.
+export function assignSortOrders(
+  paperIds: (string | null)[],
+  maxSortOrderByPaperId: Map<string, number>,
+): number[] {
+  const runningMax = new Map(maxSortOrderByPaperId);
+  return paperIds.map((paperId) => {
+    if (!paperId) return 0;
+    const next = (runningMax.get(paperId) ?? -1) + 1;
+    runningMax.set(paperId, next);
+    return next;
+  });
+}

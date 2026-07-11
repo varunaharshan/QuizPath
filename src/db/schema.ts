@@ -153,6 +153,18 @@ export const mcqs = pgTable("mcqs", {
   // so sub-topic mastery tracking keeps working for those.
   subTopicId: uuid("sub_topic_id").references(() => subTopics.id, { onDelete: "cascade" }),
   paperId: uuid("paper_id").references(() => papers.id, { onDelete: "cascade" }),
+  // Position within its own paper (0-based, in original CSV/import row
+  // order) — 0/unused for a question with no paperId, since a standalone
+  // sub-topic practice-bank question has no canonical "original order" to
+  // preserve. Exists because ordering paper questions by createdAt alone is
+  // unreliable: Bulk Upload inserts a whole paper's questions in one
+  // multi-row INSERT, and Postgres evaluates now()/defaultNow() once per
+  // statement, not per row, so every question in that batch gets an
+  // identical createdAt — any later UPDATE (e.g. verifying one question)
+  // can then silently reshuffle the tied group's apparent order. See
+  // src/db/backfill-question-sort-order.ts for the one-off backfill this
+  // column needed when it was introduced.
+  sortOrder: integer("sort_order").notNull().default(0),
   questionText: text("question_text").notNull(),
   // Array of QuestionOption rather than plain strings — see
   // src/db/migrate-options-format.ts for the one-off conversion of rows

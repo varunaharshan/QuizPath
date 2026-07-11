@@ -201,4 +201,62 @@ describe("admin-questions: paper question review/management", () => {
 
     expect(await getQuestionForEdit(randomUUID())).toBeNull();
   });
+
+  // Regression test for the reported bug: a paper's question numbering
+  // shifted after verifying/publishing any one of its questions. Root
+  // cause was ordering by createdAt alone — Bulk Upload inserts a whole
+  // paper's questions in one statement, so they can share an identical
+  // createdAt (Postgres evaluates defaultNow() once per statement, not per
+  // row), and an UPDATE on one of those tied rows could then reshuffle the
+  // apparent order. Inserting all five rows here in one multi-row
+  // .values([...]) call reproduces that identical-createdAt condition
+  // exactly; getQuestionsForPaper now orders by sortOrder instead, so the
+  // order must survive an update on any row untouched.
+  it("keeps question order stable after verifying a question, even when every row shares an identical createdAt", async () => {
+    const [orderPaper] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "10",
+        medium: "english",
+        paperType: "school",
+        title: `Test AdminQuestions Order Paper ${runId}`,
+      })
+      .returning();
+
+    const inserted = await db
+      .insert(mcqs)
+      .values(
+        Array.from({ length: 5 }, (_, i) => ({
+          paperId: orderPaper.id,
+          sortOrder: i,
+          questionText: `Order Q${i + 1} ${runId}`,
+          options: textOptions("A", "B"),
+          correctOption: 0,
+        })),
+      )
+      .returning({ id: mcqs.id, questionText: mcqs.questionText });
+
+    // Every row in this batch insert shares one createdAt — the exact
+    // condition that exposed the bug.
+    const createdAtRows = await db
+      .select({ createdAt: mcqs.createdAt })
+      .from(mcqs)
+      .where(eq(mcqs.paperId, orderPaper.id));
+    const distinctTimestamps = new Set(createdAtRows.map((r) => r.createdAt.getTime()));
+    expect(distinctTimestamps.size).toBe(1);
+
+    const beforeOrder = (await getQuestionsForPaper(orderPaper.id)).map((q) => q.questionText);
+    expect(beforeOrder).toEqual(inserted.map((r) => r.questionText));
+
+    // "Click Verify" on the middle question — the same single-column
+    // update setVerificationStatus performs.
+    await db
+      .update(mcqs)
+      .set({ verificationStatus: "verified" })
+      .where(eq(mcqs.id, inserted[2].id));
+
+    const afterOrder = (await getQuestionsForPaper(orderPaper.id)).map((q) => q.questionText);
+    expect(afterOrder).toEqual(beforeOrder);
+  });
 });

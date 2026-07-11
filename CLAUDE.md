@@ -1490,6 +1490,78 @@ including a cross-topic sub-topic reassignment and an options update (options we
 text-or-image at the time; per-option images were later removed — see "Question option
 format").
 
+### Question ordering stability (`mcqs.sort_order`)
+
+Fixes a real bug: verifying/publishing a question in Paper Questions Management could change
+its displayed question number, and the identical underlying instability also affected the
+order (and, for sub-topic quizzes, the served *set*) of questions a student sees when taking a
+quiz. **Root cause, confirmed by direct reproduction** — this was a query/ordering bug, not a
+mutation bug: `getQuestionsForPaper`/`getQuizForPaper`/`getQuizForSubTopic` all ordered by
+`mcqs.createdAt` alone. Bulk Upload inserts a whole paper's questions in **one** multi-row
+`INSERT` statement, and Postgres evaluates `now()`/`defaultNow()` **once per statement, not
+once per row** — so every question imported together for a paper shares an identical
+`created_at`, down to the microsecond. With no tiebreaker, Postgres has no defined order for
+those tied rows; a plain scan happens to return them in insertion order until any one of them
+is `UPDATE`d — which, under Postgres's MVCC, rewrites the row as a new physical tuple that can
+land elsewhere in the heap, silently reshuffling the tied group's apparent order on the very
+next query. Reproduced directly: a 5-row batch insert (identical `created_at` confirmed),
+verifying the 3rd question moved it to *last* in a subsequent `ORDER BY created_at` — with
+`verification_status` the only column the mutation ever touched (`created_at` was untouched,
+confirmed before/after).
+
+**The fix is two different tiers, not one uniform tiebreaker**, because the three affected
+call sites don't have the same requirement:
+
+- **`getQuestionsForPaper`** (`src/lib/admin-questions.ts`) and **`getQuizForPaper`**
+  (`src/lib/quiz.ts`) now order by **`(mcqs.sortOrder, mcqs.id)`** — a new, real stored column.
+  A specific exam paper has a genuine "original order" (its CSV/import row order) worth
+  preserving, and only a stored column survives an `UPDATE` on a tied row, which the previous
+  `createdAt`-only order couldn't. `sortOrder` is `0`/unused for a question with no `paperId` —
+  a standalone sub-topic practice-bank question has no canonical order to preserve.
+- **`getQuizForSubTopic`** (`src/lib/quiz.ts`) just adds `mcqs.id` as a tiebreaker —
+  `.orderBy(mcqs.createdAt, mcqs.id)` — no new column needed. Its own pre-existing code comment
+  already stated the actual requirement: the `QUIZ_LENGTH`-capped serve-set "must stay identical
+  across requests, or a resumed quiz could show a different set of questions than the ones
+  already answered." That's a stability requirement, not an original-order requirement — a
+  sub-topic's serve-set is a heterogeneous mix of standalone and paper-linked questions with no
+  single canonical order to begin with, so a plain (immutable, since `id` never changes)
+  tiebreaker is sufficient and doesn't need a stored column.
+- **`bulkImportQuestions`** (`src/app/admin/questions/bulk-upload/actions.ts`) assigns
+  `sortOrder` at import time via a new pure, testable helper, **`assignSortOrders`**
+  (`src/lib/bulk-upload.ts`): each resolved row gets the next sequential value *within its own
+  referenced paper*, continuing after that paper's current `MAX(sort_order)` (fetched once per
+  referenced paper inside the same transaction) rather than restarting at 0 — so re-uploading
+  more questions into an already-populated paper appends after the existing ones instead of
+  colliding. A single CSV can reference multiple different papers (or none, for standalone
+  sub-topic questions) via the per-row Paper Reference column, so this is grouped per paper, not
+  one global counter across the whole batch. A row with no `paperId` gets `sortOrder: 0`.
+- **`src/db/backfill-question-sort-order.ts`** (`npm run db:backfill-question-sort-order`) is
+  the one-off (but safely re-runnable) backfill for every *existing* row, run once when this
+  column was introduced. For each paper, it orders that paper's questions by
+  **`(created_at, ctid)`** — `ctid`, a row's current physical location, is the best available
+  proxy for original insertion order for a question that hasn't been `UPDATE`d since it was
+  imported (an `UPDATE` relocates `ctid` under MVCC, which is exactly the mechanism that exposed
+  the bug in the first place). This is a **best-effort recovery, not a guarantee**: for any
+  paper where a question was already verified or published *before* this backfill ran, that
+  question's `ctid` had already moved, so its true original position can't be recovered — there's
+  no reorder UI yet to fix that by hand, so such a paper is worth a manual spot-check. Always
+  recomputes every paper from scratch (no "skip if already set" check), the same reasoning
+  `backfill-keywords.ts` already documents for itself — there's no admin UI yet to hand-adjust
+  `sortOrder` that a re-run could clobber.
+
+Integration coverage: `tests/admin-questions.test.ts` has a direct regression test —
+inserting 5 questions in one multi-row statement (confirming they share an identical
+`created_at`), then verifying the same "verify" mutation reproduces (only `verification_status`
+changes) and asserting `getQuestionsForPaper`'s order is unchanged afterward.
+`tests/paper-flow.test.ts` covers the same regression for `getQuizForPaper`.
+`tests/quiz-flow.test.ts` covers `getQuizForSubTopic`'s serve-set stability specifically (more
+than `QUIZ_LENGTH` questions inserted identically, confirming the served 10-question set/order
+survives an update on one of them — deliberately not asserting it matches original insertion
+order, since that was never the requirement for this call site). `tests/bulk-upload.test.ts`
+covers `assignSortOrders` directly: sequential-per-paper numbering from a blank slate,
+continuing after an existing max, independently tracking multiple papers in one mixed batch,
+`0` for a row with no paperId, and the empty-input case.
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of

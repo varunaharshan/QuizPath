@@ -121,7 +121,6 @@ describe("paper-based quiz flow", () => {
     // Deleting the subject cascades papers -> mcqs/quiz_attempts (-> quiz_attempt_answers).
     await db.delete(subjects).where(eq(subjects.id, subjectId));
     await db.delete(users).where(eq(users.id, studentId));
-    await pool.end();
   });
 
   it("lists the paper for its grade/medium with status not_started, excluding a different grade's paper", async () => {
@@ -287,4 +286,75 @@ describe("paper-based quiz flow", () => {
     const attempt = await db.query.quizAttempts.findFirst({ where: eq(quizAttempts.id, attemptId) });
     expect(attempt!.completedAt).toBeNull();
   });
+});
+
+// Regression test: getQuizForPaper serves a paper's questions in
+// (sortOrder, id) order now, not createdAt — a whole paper's questions are
+// inserted in one Bulk Upload statement, so they can share an identical
+// createdAt (Postgres evaluates defaultNow() once per statement, not per
+// row), and ordering by that alone let any later UPDATE on one of those
+// tied rows (e.g. an admin verifying a question) silently reorder what a
+// student is served mid-way through a paper attempt.
+describe("getQuizForPaper question order stability", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let paperId: string;
+  let mcqIds: string[];
+
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: `Test OrderStability Subject ${runId}` }).returning();
+    subjectId = subject.id;
+    const [paper] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "10",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test OrderStability Paper ${runId}`,
+        status: "published",
+      })
+      .returning();
+    paperId = paper.id;
+
+    // Inserted in one statement (mirroring bulkImportQuestions), with
+    // explicit sequential sortOrder — every row still shares an identical
+    // createdAt, the exact condition that exposed the bug.
+    const inserted = await db
+      .insert(mcqs)
+      .values(
+        Array.from({ length: 5 }, (_, i) => ({
+          paperId,
+          sortOrder: i,
+          questionText: `Stability Q${i + 1} ${runId}`,
+          options: textOptions("A", "B"),
+          correctOption: 0,
+          status: "published" as const,
+        })),
+      )
+      .returning({ id: mcqs.id });
+    mcqIds = inserted.map((r) => r.id);
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+  });
+
+  it("serves questions in the same order after an update on one of them", async () => {
+    const createdAtRows = await db.select({ createdAt: mcqs.createdAt }).from(mcqs).where(eq(mcqs.paperId, paperId));
+    expect(new Set(createdAtRows.map((r) => r.createdAt.getTime())).size).toBe(1);
+
+    const before = await getQuizForPaper(paperId);
+    expect(before.questions.map((q) => q.id)).toEqual(mcqIds);
+
+    // The same single-column update setVerificationStatus/setQuestionStatus performs.
+    await db.update(mcqs).set({ verificationStatus: "verified" }).where(eq(mcqs.id, mcqIds[2]));
+
+    const after = await getQuizForPaper(paperId);
+    expect(after.questions.map((q) => q.id)).toEqual(before.questions.map((q) => q.id));
+  });
+});
+
+afterAll(async () => {
+  await pool.end();
 });

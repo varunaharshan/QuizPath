@@ -73,6 +73,12 @@ export async function getPaperForQuestionsAdmin(paperId: string): Promise<AdminP
   return rows[0] ?? null;
 }
 
+// Ordered by sortOrder (each question's position within its own paper's
+// original CSV/import order), not createdAt — a whole paper's questions are
+// inserted in one Bulk Upload statement, so they can share an identical
+// createdAt, and ordering by that alone let any later UPDATE (e.g.
+// verifying a question) silently reshuffle the apparent order. mcqs.id is
+// a final tiebreaker only (sortOrder should already be unique per paper).
 export async function getQuestionsForPaper(paperId: string): Promise<AdminPaperQuestion[]> {
   const rows = await db
     .select({
@@ -95,7 +101,7 @@ export async function getQuestionsForPaper(paperId: string): Promise<AdminPaperQ
     .leftJoin(subTopics, eq(subTopics.id, mcqs.subTopicId))
     .leftJoin(modules, eq(modules.id, subTopics.moduleId))
     .where(eq(mcqs.paperId, paperId))
-    .orderBy(mcqs.createdAt);
+    .orderBy(mcqs.sortOrder, mcqs.id);
 
   return rows.map((row) => ({
     ...row,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignSortOrders,
   generateTemplateCsv,
   parseBulkCsv,
   TEMPLATE_HEADERS,
@@ -281,5 +282,39 @@ describe("validateBulkRows", () => {
     expect(results).toHaveLength(2);
     expect(results[0].errors).toEqual([]);
     expect(results[1].errors.length).toBeGreaterThan(0);
+  });
+});
+
+// Backs mcqs.sortOrder — a question's position within its own paper's
+// original CSV row order (see schema.ts's own comment on why ordering by
+// createdAt alone isn't reliable). Pure so it's testable without a DB;
+// bulkImportQuestions supplies each referenced paper's current
+// MAX(sort_order) as maxSortOrderByPaperId.
+describe("assignSortOrders", () => {
+  it("assigns sequential sortOrders per paper, starting from 0 for a brand-new paper", () => {
+    expect(assignSortOrders(["p1", "p1", "p1"], new Map())).toEqual([0, 1, 2]);
+  });
+
+  it("continues after a paper's existing max sortOrder rather than restarting at 0", () => {
+    expect(assignSortOrders(["p1", "p1"], new Map([["p1", 4]]))).toEqual([5, 6]);
+  });
+
+  it("tracks each paper independently in a mixed batch, preserving each row's own relative order", () => {
+    const result = assignSortOrders(
+      ["p1", "p2", "p1", "p2", "p1"],
+      new Map([
+        ["p1", 9],
+        ["p2", -1],
+      ]),
+    );
+    expect(result).toEqual([10, 0, 11, 1, 12]);
+  });
+
+  it("assigns 0 to a row with no paperId, regardless of position", () => {
+    expect(assignSortOrders(["p1", null, "p1"], new Map([["p1", 0]]))).toEqual([1, 0, 2]);
+  });
+
+  it("returns an empty array for an empty input", () => {
+    expect(assignSortOrders([], new Map())).toEqual([]);
   });
 });

@@ -1,9 +1,10 @@
 "use server";
 
+import { inArray, max } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
-import type { ResolvedBulkRow } from "@/lib/bulk-upload";
+import { assignSortOrders, type ResolvedBulkRow } from "@/lib/bulk-upload";
 
 // Called directly from <BulkUploadForm> (a Client Component) with the
 // already-validated, already-resolved rows — the same "Client Component
@@ -24,13 +25,33 @@ export async function bulkImportQuestions(rows: ResolvedBulkRow[]): Promise<{ im
     throw new Error("No rows to import.");
   }
 
-  const inserted = await db.transaction(async (tx) =>
-    tx
+  const inserted = await db.transaction(async (tx) => {
+    // Each referenced paper's current highest sortOrder, so this import's
+    // rows continue after whatever's already there rather than colliding
+    // with it (see assignSortOrders' own comment in src/lib/bulk-upload.ts).
+    const paperIds = [...new Set(rows.map((row) => row.paperId).filter((id): id is string => id !== null))];
+    const maxSortOrderRows = paperIds.length
+      ? await tx
+          .select({ paperId: mcqs.paperId, maxSortOrder: max(mcqs.sortOrder) })
+          .from(mcqs)
+          .where(inArray(mcqs.paperId, paperIds))
+          .groupBy(mcqs.paperId)
+      : [];
+    const maxSortOrderByPaperId = new Map(
+      maxSortOrderRows.map((r) => [r.paperId as string, Number(r.maxSortOrder ?? -1)]),
+    );
+    const sortOrders = assignSortOrders(
+      rows.map((row) => row.paperId),
+      maxSortOrderByPaperId,
+    );
+
+    return tx
       .insert(mcqs)
       .values(
-        rows.map((row) => ({
+        rows.map((row, index) => ({
           subTopicId: row.subTopicId,
           paperId: row.paperId,
+          sortOrder: sortOrders[index],
           questionText: row.questionText,
           questionImage: row.questionImage,
           options: row.options,
@@ -41,8 +62,8 @@ export async function bulkImportQuestions(rows: ResolvedBulkRow[]): Promise<{ im
           hint: row.hint,
         })),
       )
-      .returning({ id: mcqs.id }),
-  );
+      .returning({ id: mcqs.id });
+  });
 
   return { importedCount: inserted.length };
 }

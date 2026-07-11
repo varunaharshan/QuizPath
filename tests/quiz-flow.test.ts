@@ -102,7 +102,6 @@ describe("quiz-taking flow", () => {
     await db.delete(modules).where(eq(modules.id, moduleId));
     await db.delete(subjects).where(eq(subjects.id, subjectId));
     await db.delete(users).where(eq(users.id, studentId));
-    await pool.end();
   });
 
   it("lists the sub-topic under the student's grade (select sub-topic step)", async () => {
@@ -251,4 +250,84 @@ describe("quiz-taking flow", () => {
     const nextAttemptId = await ensureSubTopicAttemptStarted(studentId, subTopicId);
     expect(nextAttemptId).not.toBe(resumedAttemptId);
   });
+});
+
+// Regression test: getQuizForSubTopic's own comment already flags that its
+// serve-set (QUIZ_LENGTH-capped) must stay identical across requests, or a
+// resumed quiz could show a different set of questions than the ones
+// already answered. Ordering by createdAt alone couldn't guarantee that —
+// a sub-topic's questions can share an identical createdAt (Bulk Upload
+// inserts many questions in one statement, and Postgres evaluates
+// defaultNow() once per statement, not per row), and an UPDATE on one of
+// those tied rows (e.g. an admin editing/verifying it) could silently swap
+// which questions got served next. Reproduces that identical-createdAt
+// condition with a one-statement multi-row insert, more sub-topic questions
+// than QUIZ_LENGTH, then confirms the served set/order survives an update.
+describe("getQuizForSubTopic serve-set stability", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let subTopicId: string;
+  let mcqIds: string[];
+
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: `Test OrderStability Subject ${runId}` }).returning();
+    subjectId = subject.id;
+    const [testModule] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Test OrderStability Module ${runId}` })
+      .returning();
+    const [subTopic] = await db
+      .insert(subTopics)
+      .values({ moduleId: testModule.id, name: `Test OrderStability Sub-topic ${runId}` })
+      .returning();
+    subTopicId = subTopic.id;
+
+    // More than QUIZ_LENGTH (10) questions, inserted in one statement so
+    // every row shares an identical createdAt.
+    const inserted = await db
+      .insert(mcqs)
+      .values(
+        Array.from({ length: 12 }, (_, i) => ({
+          subTopicId,
+          questionText: `Stability Q${i + 1} ${runId}`,
+          options: textOptions("A", "B"),
+          correctOption: 0,
+          status: "published" as const,
+        })),
+      )
+      .returning({ id: mcqs.id });
+    mcqIds = inserted.map((r) => r.id);
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+  });
+
+  it("serves the same set and order of questions after an update on one of them", async () => {
+    const createdAtRows = await db
+      .select({ createdAt: mcqs.createdAt })
+      .from(mcqs)
+      .where(eq(mcqs.subTopicId, subTopicId));
+    expect(new Set(createdAtRows.map((r) => r.createdAt.getTime())).size).toBe(1);
+
+    // There's no canonical "original order" to preserve for a heterogeneous
+    // sub-topic serve-set (unlike a paper's own questions) — only that it
+    // stays exactly the same across requests, so `before` here is the
+    // baseline to compare against, not an expectation of matching insertion
+    // order.
+    const before = await getQuizForSubTopic(subTopicId);
+    expect(before.questions).toHaveLength(10);
+    expect(new Set(before.questions.map((q) => q.id)).size).toBe(10);
+
+    // Simulate an admin editing one already-served question's difficulty —
+    // any single-column update on a tied row is enough to trigger the bug.
+    await db.update(mcqs).set({ difficulty: "hard" }).where(eq(mcqs.id, mcqIds[3]));
+
+    const after = await getQuizForSubTopic(subTopicId);
+    expect(after.questions.map((q) => q.id)).toEqual(before.questions.map((q) => q.id));
+  });
+});
+
+afterAll(async () => {
+  await pool.end();
 });
