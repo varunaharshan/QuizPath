@@ -127,7 +127,7 @@ export function AppShell({
           ))}
         </nav>
 
-        <main className="max-w-[900px] flex-1 p-7">{children}</main>
+        <main className="min-w-0 max-w-[900px] flex-1 p-7">{children}</main>
       </div>
     </div>
   );
