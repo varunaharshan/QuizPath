@@ -2,15 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getProgressStats, type TopicProgress } from "@/lib/dashboard";
-import { getPracticeSubjects, isValidGrade } from "@/lib/papers";
+import { getPracticeSubjects } from "@/lib/papers";
+import { getGrades, isValidGrade } from "@/lib/reference-data";
 import { AppShell } from "@/components/app-shell";
 import { ProgressFilterForm } from "@/components/progress-filter-form";
 import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
-
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
 
 // <TopicProgressTable> is "use client" and deliberately defines its own
 // local types rather than importing TopicProgress from @/lib/dashboard
@@ -64,15 +60,16 @@ export default async function ByTopicPage({
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
   const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
 
+  const [subjects, completedQuizzes, grades] = await Promise.all([
+    getPracticeSubjects(),
+    getCompletedQuizzes(appUser.id),
+    getGrades(),
+  ]);
+
   // Both filter values are free query-string choices (a Grade 11 student can
   // browse Grade 10 progress, same free-browsing rule Papers has), so
   // anything invalid just falls back to a sane default rather than 404ing.
-  const grade = rawGrade && isValidGrade(rawGrade) ? rawGrade : profile.grade;
-
-  const [subjects, completedQuizzes] = await Promise.all([
-    getPracticeSubjects(),
-    getCompletedQuizzes(appUser.id),
-  ]);
+  const grade = rawGrade && isValidGrade(rawGrade, grades) ? rawGrade : profile.grade;
 
   const subjectId =
     rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
@@ -98,7 +95,11 @@ export default async function ByTopicPage({
         </div>
       ) : (
         <>
-          <ProgressFilterForm grades={GRADES.map((g) => ({ ...g }))} subjects={subjects} selected={{ grade, subjectId }} />
+          <ProgressFilterForm
+            grades={grades.map((g) => ({ value: g.value, label: g.label }))}
+            subjects={subjects}
+            selected={{ grade, subjectId }}
+          />
 
           {stats.quizzesCompleted === 0 ? (
             <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">

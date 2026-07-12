@@ -5,10 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { modules, subTopics } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
-
-function isValidGrade(value: FormDataEntryValue | null): value is "10" | "11" {
-  return value === "10" || value === "11";
-}
+import { getGrades, isValidGrade } from "@/lib/reference-data";
 
 export async function createModule(formData: FormData) {
   await requireAdminUser();
@@ -19,7 +16,7 @@ export async function createModule(formData: FormData) {
   if (typeof subjectId !== "string" || !subjectId) {
     throw new Error("Invalid subject.");
   }
-  if (!isValidGrade(grade)) {
+  if (typeof grade !== "string" || !isValidGrade(grade, await getGrades())) {
     throw new Error("Invalid grade.");
   }
   if (typeof name !== "string" || !name.trim()) {

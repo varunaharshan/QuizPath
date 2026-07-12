@@ -2,18 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPaperForAdmin } from "@/lib/admin-papers";
 import { getSubjectsForAdmin } from "@/lib/admin-topics";
-import { PAPER_TYPE_LABELS } from "@/lib/papers";
+import { getGrades, getPaperTypes } from "@/lib/reference-data";
 import { updatePaper } from "../../actions";
-
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
-
-const PAPER_TYPES = (Object.keys(PAPER_TYPE_LABELS) as (keyof typeof PAPER_TYPE_LABELS)[]).map((value) => ({
-  value,
-  label: PAPER_TYPE_LABELS[value],
-}));
 
 const INPUT_CLASSES = "w-full rounded-md border border-app-border bg-white px-3 py-2 text-[13.5px] text-ink";
 
@@ -24,7 +14,12 @@ const INPUT_CLASSES = "w-full rounded-md border border-app-border bg-white px-3 
 // rather than falling back to a default.
 export default async function EditPaperPage({ params }: { params: Promise<{ paperId: string }> }) {
   const { paperId } = await params;
-  const [paper, subjects] = await Promise.all([getPaperForAdmin(paperId), getSubjectsForAdmin()]);
+  const [paper, subjects, GRADES, PAPER_TYPES] = await Promise.all([
+    getPaperForAdmin(paperId),
+    getSubjectsForAdmin(),
+    getGrades(),
+    getPaperTypes(),
+  ]);
   if (!paper) {
     notFound();
   }

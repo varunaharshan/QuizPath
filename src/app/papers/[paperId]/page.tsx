@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes } from "@/lib/dashboard";
-import { getPaperOverview, PAPER_TYPE_LABELS } from "@/lib/papers";
+import { getPaperOverview } from "@/lib/papers";
+import { getPaperTypes, labelForPaperType } from "@/lib/reference-data";
 import { AppShell } from "@/components/app-shell";
 
 const BUTTON_LABEL: Record<"not_started" | "in_progress" | "completed", string> = {
@@ -33,9 +34,10 @@ export default async function PaperOverviewPage({
     redirect("/onboarding");
   }
 
-  const [overview, completedQuizzes] = await Promise.all([
+  const [overview, completedQuizzes, paperTypes] = await Promise.all([
     getPaperOverview({ paperId, studentId: appUser.id }),
     getCompletedQuizzes(appUser.id),
+    getPaperTypes(),
   ]);
   if (!overview) {
     notFound();
@@ -67,7 +69,7 @@ export default async function PaperOverviewPage({
 
       <h1 className="m-0 mt-2 mb-1 text-lg font-bold text-navy-900">{overview.title}</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Grade {overview.grade} · {overview.subjectName} · {PAPER_TYPE_LABELS[overview.paperType]}
+        Grade {overview.grade} · {overview.subjectName} · {labelForPaperType(overview.paperType, paperTypes)}
         {overview.year ? ` · ${overview.year}` : ""}
       </p>
 

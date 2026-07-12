@@ -2,11 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes } from "@/lib/dashboard";
-import { getGradesWithPapers, getPapersForGrade, groupPapersBySubject, isValidGrade } from "@/lib/papers";
+import { getGradesWithPapers, getPapersForGrade, groupPapersBySubject } from "@/lib/papers";
+import { getGrades, getPaperTypes, isValidGrade, labelForGrade, labelForPaperType } from "@/lib/reference-data";
 import { AppShell } from "@/components/app-shell";
 import { PapersGrid } from "@/components/papers-grid";
-
-const GRADE_LABELS: Record<string, string> = { "10": "Grade 10", "11": "Grade 11" };
 
 export default async function PapersPage({
   searchParams,
@@ -26,16 +25,19 @@ export default async function PapersPage({
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
 
+  const [allGrades, allPaperTypes, grades, completedQuizzes] = await Promise.all([
+    getGrades(),
+    getPaperTypes(),
+    getGradesWithPapers(),
+    getCompletedQuizzes(appUser.id),
+  ]);
+
   // Grade is a free browsing choice (like every other cascading filter in
   // this app) — invalid/missing falls back to the student's own grade
   // rather than 404ing, even if that grade happens to have zero papers.
-  const grade = rawGrade && isValidGrade(rawGrade) ? rawGrade : profile.grade;
+  const grade = rawGrade && isValidGrade(rawGrade, allGrades) ? rawGrade : profile.grade;
 
-  const [grades, papersForGrade, completedQuizzes] = await Promise.all([
-    getGradesWithPapers(),
-    getPapersForGrade({ grade, studentMedium: profile.medium, studentId: appUser.id }),
-    getCompletedQuizzes(appUser.id),
-  ]);
+  const papersForGrade = await getPapersForGrade({ grade, studentMedium: profile.medium, studentId: appUser.id });
 
   const groups = groupPapersBySubject(papersForGrade);
 
@@ -68,7 +70,7 @@ export default async function PapersPage({
                     : "bg-app-surface-muted text-ink-secondary hover:bg-app-border"
                 }`}
               >
-                {GRADE_LABELS[g]}
+                {labelForGrade(g, allGrades)}
               </Link>
             ))}
           </div>
@@ -86,7 +88,7 @@ export default async function PapersPage({
                 papers: group.papers.map((p) => ({
                   id: p.id,
                   title: p.title,
-                  paperType: p.paperType,
+                  paperTypeLabel: labelForPaperType(p.paperType, allPaperTypes),
                   year: p.year,
                   questionCount: p.questionCount,
                   totalMarks: p.totalMarks,

@@ -1,5 +1,5 @@
 import { getSubjectsForAdmin, getTopicsForSubjectGrade } from "@/lib/admin-topics";
-import { isValidGrade } from "@/lib/papers";
+import { getGrades, isValidGrade } from "@/lib/reference-data";
 import { AdminTopicsFilterForm } from "@/components/admin-topics-filter-form";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import {
@@ -13,11 +13,6 @@ import {
   reorderSubTopic,
 } from "./actions";
 
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
-
 const DELETE_BUTTON_CLASSES =
   "rounded-md border border-red-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-red-600 hover:bg-red-50";
 
@@ -30,13 +25,13 @@ export default async function AdminTopicsPage({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const subjects = await getSubjectsForAdmin();
+  const [subjects, grades] = await Promise.all([getSubjectsForAdmin(), getGrades()]);
 
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
   const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
 
-  const grade = rawGrade && isValidGrade(rawGrade) ? rawGrade : "10";
+  const grade = rawGrade && isValidGrade(rawGrade, grades) ? rawGrade : (grades[0]?.value ?? "10");
   const subjectId =
     rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
   const subject = subjects.find((s) => s.id === subjectId) ?? null;
@@ -57,7 +52,7 @@ export default async function AdminTopicsPage({
       ) : (
         <>
           <AdminTopicsFilterForm
-            grades={GRADES.map((g) => ({ ...g }))}
+            grades={grades.map((g) => ({ value: g.value, label: g.label }))}
             subjects={subjects}
             selected={{ grade, subjectId }}
           />

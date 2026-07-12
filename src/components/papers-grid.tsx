@@ -3,27 +3,21 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
-// Local types + labels, not imported from @/lib/papers — that module
-// transitively imports @/db (server-only-guarded), so a Client Component
-// importing it at runtime would fail at build time. Mirrors the same
-// "thin Client Component, plain data shape" pattern <TopicCardGrid> already
-// established for Practice by Topic.
+// Local types, not imported from @/lib/papers — that module transitively
+// imports @/db (server-only-guarded), so a Client Component importing it at
+// runtime would fail at build time. Mirrors the same "thin Client Component,
+// plain data shape" pattern <TopicCardGrid> already established for
+// Practice by Topic. paperTypeLabel arrives already resolved (via
+// labelForPaperType, src/lib/reference-data.ts) from the Server Component
+// parent — this component has no way to look a label up itself now that
+// Paper Type is a real, admin-extensible reference table rather than a
+// fixed 3-value enum.
 type PaperStatus = "not_started" | "in_progress" | "completed";
-
-// Record<string, ...>, not a narrow literal union — paperType is no longer a
-// Postgres enum (see src/db/migrate-grade-paper-type-to-tables.ts), so this
-// Client Component (which can't import @/lib/papers's own PAPER_TYPE_LABELS —
-// see the file-level comment above) gets a plain string here too.
-const PAPER_TYPE_LABELS: Record<string, string> = {
-  provincial: "Provincial",
-  district: "District",
-  school: "School",
-};
 
 export type PaperCardData = {
   id: string;
   title: string;
-  paperType: string;
+  paperTypeLabel: string;
   year: number | null;
   questionCount: number;
   totalMarks: number;
@@ -54,7 +48,7 @@ function PaperGridCard({ paper, subjectId, grade }: { paper: PaperCardData; subj
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <p className="m-0 text-sm font-semibold text-ink">{paper.title}</p>
         <span className="shrink-0 rounded-full bg-app-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">
-          {PAPER_TYPE_LABELS[paper.paperType]}
+          {paper.paperTypeLabel}
         </span>
       </div>
       {paper.year && <p className="m-0 mb-1.5 text-xs text-ink-secondary">{paper.year}</p>}

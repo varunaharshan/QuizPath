@@ -6,8 +6,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { mcqs, papers, subjects } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
-import { isValidGrade, isValidPaperType } from "@/lib/papers";
 import { getMasteryPairsForMcqs, recalculateMasteryPairs } from "@/lib/quiz";
+import { getGrades, getPaperTypes, isValidGrade, isValidPaperType } from "@/lib/reference-data";
 
 function isValidStatus(value: FormDataEntryValue | null): value is "draft" | "published" {
   return value === "draft" || value === "published";
@@ -53,10 +53,10 @@ export async function createPaper(formData: FormData) {
   if (typeof subjectId !== "string" || !subjectId) {
     throw new Error("Invalid subject.");
   }
-  if (typeof grade !== "string" || !isValidGrade(grade)) {
+  if (typeof grade !== "string" || !isValidGrade(grade, await getGrades())) {
     throw new Error("Invalid grade.");
   }
-  if (typeof paperType !== "string" || !isValidPaperType(paperType)) {
+  if (typeof paperType !== "string" || !isValidPaperType(paperType, await getPaperTypes())) {
     throw new Error("Invalid paper type.");
   }
   if (typeof title !== "string" || !title.trim()) {
@@ -97,10 +97,10 @@ export async function updatePaper(formData: FormData) {
   if (typeof subjectId !== "string" || !subjectId) {
     throw new Error("Invalid subject.");
   }
-  if (typeof grade !== "string" || !isValidGrade(grade)) {
+  if (typeof grade !== "string" || !isValidGrade(grade, await getGrades())) {
     throw new Error("Invalid grade.");
   }
-  if (typeof paperType !== "string" || !isValidPaperType(paperType)) {
+  if (typeof paperType !== "string" || !isValidPaperType(paperType, await getPaperTypes())) {
     throw new Error("Invalid paper type.");
   }
   if (typeof title !== "string" || !title.trim()) {

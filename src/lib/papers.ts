@@ -2,13 +2,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, modules, papers, quizAttemptAnswers, quizAttempts, subjects } from "@/db/schema";
 import { MARKS_PER_QUESTION } from "@/lib/quiz";
-
-// Practice's Grade step is a free browsing choice (not tied to the student's
-// own student_profiles.grade), so route params need validating rather than
-// trusted as "10" | "11" outright.
-export function isValidGrade(value: string): value is "10" | "11" {
-  return value === "10" || value === "11";
-}
+import { getGrades } from "@/lib/reference-data";
 
 export type PracticeSubject = { id: string; name: string };
 
@@ -60,24 +54,6 @@ export type SubjectInfo = {
 export async function getSubjectById(subjectId: string): Promise<SubjectInfo | null> {
   const subject = await db.query.subjects.findFirst({ where: eq(subjects.id, subjectId) });
   return subject ?? null;
-}
-
-export type PaperTypeValue = "provincial" | "district" | "school";
-
-// Record<string, ...> rather than Record<PaperTypeValue, ...> — papers.paperType
-// is no longer a Postgres enum (it's now a reference-table-backed column, see
-// src/db/migrate-grade-paper-type-to-tables.ts), so every caller passes a
-// plain string rather than something already narrowed to PaperTypeValue.
-export const PAPER_TYPE_LABELS: Record<string, string> = {
-  provincial: "Provincial",
-  district: "District",
-  school: "School",
-};
-
-// The Papers filter form's Paper Type dropdown is a free query-string choice
-// (like grade), so it needs validating rather than trusted outright.
-export function isValidPaperType(value: string): value is PaperTypeValue {
-  return value === "provincial" || value === "district" || value === "school";
 }
 
 export type PaperAttemptStatus = "not_started" | "in_progress" | "completed";
@@ -137,15 +113,19 @@ async function resolvePaperStatuses(
 
 // Real distinct grades that actually have a published paper, for the Papers
 // grid's Grade pill row — not hardcoded, so a grade with no papers yet
-// (or not yet used) simply doesn't get a pill. Ordered "10" before "11"
-// rather than however Postgres happens to return them.
-export async function getGradesWithPapers(): Promise<("10" | "11")[]> {
+// (or not yet used) simply doesn't get a pill. Ordered the same way
+// getGrades() itself is (by the grades table's own sortOrder), not
+// whatever order Postgres happens to return the DISTINCT rows in — a
+// plain alphabetical sort of the raw values would be wrong the moment a
+// grade like "6" exists alongside "10"/"11" ("10" < "6" lexicographically).
+export async function getGradesWithPapers(): Promise<string[]> {
   const rows = await db
     .selectDistinct({ grade: papers.grade })
     .from(papers)
     .where(eq(papers.status, "published"));
   const present = new Set(rows.map((r) => r.grade));
-  return (["10", "11"] as const).filter((g) => present.has(g));
+  const allGrades = await getGrades();
+  return allGrades.map((g) => g.value).filter((value) => present.has(value));
 }
 
 export type SubjectPaperGroup = {

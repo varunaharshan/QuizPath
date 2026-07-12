@@ -1,15 +1,10 @@
 import Link from "next/link";
 import { getPapersForAdmin } from "@/lib/admin-papers";
 import { getSubjectsForAdmin } from "@/lib/admin-topics";
-import { PAPER_TYPE_LABELS } from "@/lib/papers";
+import { getGrades, getPaperTypes, isValidGrade, labelForPaperType } from "@/lib/reference-data";
 import { AdminPapersFilterForm } from "@/components/admin-papers-filter-form";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { deletePaper } from "./actions";
-
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
 
 const STATUS_PILL_CLASSES: Record<"draft" | "published", string> = {
   draft: "bg-warn-bg text-warn",
@@ -23,18 +18,21 @@ export default async function AdminPapersPage({
 }) {
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : "";
-  const grade = rawGrade === "10" || rawGrade === "11" ? rawGrade : "";
   const subjectId = typeof params.subjectId === "string" ? params.subjectId : "";
   const search = typeof params.search === "string" ? params.search : "";
 
-  const [subjects, papersList] = await Promise.all([
+  const [subjects, GRADES, PAPER_TYPES] = await Promise.all([
     getSubjectsForAdmin(),
-    getPapersForAdmin({
-      subjectId: subjectId || undefined,
-      grade: grade || undefined,
-      search: search || undefined,
-    }),
+    getGrades(),
+    getPaperTypes(),
   ]);
+  const grade = rawGrade && isValidGrade(rawGrade, GRADES) ? rawGrade : "";
+
+  const papersList = await getPapersForAdmin({
+    subjectId: subjectId || undefined,
+    grade: grade || undefined,
+    search: search || undefined,
+  });
 
   return (
     <>
@@ -51,7 +49,11 @@ export default async function AdminPapersPage({
         </Link>
       </div>
 
-      <AdminPapersFilterForm grades={GRADES.map((g) => ({ ...g }))} subjects={subjects} selected={{ grade, subjectId, search }} />
+      <AdminPapersFilterForm
+        grades={GRADES.map((g) => ({ value: g.value, label: g.label }))}
+        subjects={subjects}
+        selected={{ grade, subjectId, search }}
+      />
 
       {papersList.length === 0 ? (
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
@@ -81,7 +83,7 @@ export default async function AdminPapersPage({
                     </td>
                     <td className="px-3.5 py-2.5 text-ink-secondary">{paper.subjectName}</td>
                     <td className="px-3.5 py-2.5 text-ink-secondary">Grade {paper.grade}</td>
-                    <td className="px-3.5 py-2.5 text-ink-secondary">{PAPER_TYPE_LABELS[paper.paperType]}</td>
+                    <td className="px-3.5 py-2.5 text-ink-secondary">{labelForPaperType(paper.paperType, PAPER_TYPES)}</td>
                     <td className="px-3.5 py-2.5 text-right text-ink-secondary">{paper.questionCount}</td>
                     <td className="px-3.5 py-2.5">
                       <span

@@ -1705,6 +1705,100 @@ score), deleting a single non-paper question likewise (a wrong answer's removal 
 raises the remaining score to 100%, with no need to retake anything), and
 `getMasteryPairsForMcqs` returns an empty list (safe no-op) for a never-answered question.
 
+### Reference Data — Grades, Subjects, Paper Types (`/admin/reference-data`)
+
+Grade and Paper Type used to be **Postgres enums** (`grade_enum`, `paper_type_enum`), which
+meant adding a new grade (say, expanding beyond Grade 10/11) or a new paper type required an
+actual schema migration and a code deploy — not something this MVP's single admin could do
+themselves. This was a 3-part migration to make both real, admin-extensible reference tables,
+plus (as part of the third part) the actual admin screen to manage them:
+
+- **New `grades` and `paper_types` tables** (`src/db/schema.ts`): `id` (uuid pk), `value`
+  (the short string every existing query/column already used, e.g. `"10"`/`"provincial"` —
+  `unique`), `label` (the display string, e.g. `"Grade 10"`/`"Provincial"`), `sortOrder`
+  (integer, defaults `0`). The 4 columns that used to be the Postgres enums directly
+  (`student_profiles.grade`, `modules.grade`, `papers.grade`, `papers.paperType`) are now
+  `varchar` with a real FK to `grades.value`/`paperTypes.value` — **deliberately referencing
+  the reference table's `value` column, not its `id`**, since every existing route/query/
+  searchParam in this app already passes grade/paperType around as that plain string, never a
+  uuid; keying the FK on `value` meant zero call sites needed to change how they read/write
+  grade or paperType, only how they *validate* one (see below).
+- **`src/db/migrate-grade-paper-type-to-tables.ts`** is the one-off migration script that
+  performed the enum→table conversion against a real database, run in the specific two-`drizzle-
+  kit push`-with-a-seed-in-between sequence its own header comment documents: Postgres validates
+  a new FK constraint against every existing row immediately, so the reference tables have to be
+  pushed and seeded with the existing enum's values *before* the second push that actually adds
+  the FK columns, or the second push fails against rows that would otherwise be orphaned.
+  `tests/global-setup.ts` mirrors the same two-push-plus-seed dance for the test database (the
+  expected first-push FK-constraint failure is caught and swallowed rather than crashing the
+  test run).
+- **`src/lib/reference-data.ts`** is the single, consolidated query/validation module that
+  replaced three independent, hand-written validators that used to each check membership in
+  the same hardcoded `["10", "11"]` set without knowing about each other: `isValidGrade` in
+  `src/lib/papers.ts`, a second `isValidGrade` in `src/app/admin/topics/actions.ts`, and
+  `isGradeValue` in `src/lib/bulk-upload.ts`. `getGrades()`/`getPaperTypes()` fetch the live,
+  `sortOrder`-ordered list; `isValidGrade(value, list)`/`isValidPaperType(value, list)` are pure
+  membership checks over an *already-fetched* list (the same "pass already-fetched data to a
+  pure checker" convention `getAdjacentQuestionIds` already established) rather than each doing
+  its own query, since a caller that needs to validate a grade almost always also needs the
+  list itself (for a pill row, a dropdown, or an error message). `labelForGrade`/
+  `labelForPaperType` resolve a value to its display label, falling back to the raw value itself
+  if a value somehow isn't in the list (safer than throwing; can't actually happen today since
+  neither table has a delete path yet). `isDuplicateName(value, existingNames)` (case-
+  insensitive) and `nextSortOrder(existing)` (continues after the current max, matching the
+  same convention Bulk Upload's `assignSortOrders` already established for paper questions) are
+  shared by the three create actions below, pulled out as pure functions for the same
+  direct-testability reason `assignSortOrders` was.
+- **Every hardcoded `GRADES`/`PAPER_TYPES` literal array or `Record` that predated the reference
+  tables was swept out and replaced with a real `getGrades()`/`getPaperTypes()` call** — this
+  was necessary, not optional, for the feature to actually deliver "a new grade/paper-type
+  becomes selectable everywhere," since a page holding onto its own hardcoded list would keep
+  silently omitting anything newly added. Touched: `admin/topics` (page + `actions.ts`),
+  `admin/papers` (list, `new`, `[paperId]/edit`, `actions.ts`), `practice/by-topic`,
+  `api/keywords`, `/papers` and `/papers/[paperId]`. `getGradesWithPapers()`
+  (`src/lib/papers.ts`) specifically had to stop sorting grade values alphabetically as raw
+  strings (`"10" < "6"` lexicographically breaks the moment a single-digit grade exists
+  alongside the two-digit ones) — it now orders by intersecting with `getGrades()`'s own
+  `sortOrder`-ordered list instead. `<PapersGrid>` (a Client Component, so it can't call
+  `getPaperTypes()`/`labelForPaperType()` itself) now takes an already-resolved
+  `paperTypeLabel: string` per card instead of a raw `paperType` value plus its own local
+  `PAPER_TYPE_LABELS` lookup table — the same "Client Component gets precomputed data from its
+  Server Component parent" pattern `<TopicCardGrid>` already established. The old
+  `PaperTypeValue` type, `PAPER_TYPE_LABELS` record, and `isValidPaperType`/`isValidGrade`
+  (the `papers.ts`/`bulk-upload.ts`/`admin/topics/actions.ts` versions) were deleted outright
+  once every caller migrated, per this codebase's "remove dead code, don't leave it unused"
+  convention.
+- **`/admin/reference-data`** (new nav item in `<AdminNavLinks>`) is a **list-plus-add-form
+  only** page — deliberately no edit/delete for any of the three, matching the original scope:
+  reordering, renaming, or removing a value already referenced by
+  `student_profiles`/`modules`/`papers`/`subjects` rows is a materially bigger feature (it would
+  need its own "warn, don't block" cascade story the way Topics/Papers management already have
+  for delete) and wasn't part of this pass. Three sections — Grades, Subjects, Paper Types —
+  each show the existing rows in a simple list, plus a small form calling `createGrade`/
+  `createSubject`/`createPaperType` (`src/app/admin/reference-data/actions.ts`). Grades/Paper
+  Types take Value + Label; Subjects takes Name + an optional Fixed Medium dropdown (mirroring
+  `subjects.fixedMedium`'s existing meaning — see "Medium and papers"). All three reject a blank
+  value/label/name, and reject a case-insensitive duplicate name for that type (`"Science"` can't
+  be added twice, differently-cased or not) via `isDuplicateName` — backed by each table's own
+  real `unique` constraint on `value`/`name` as a hard backstop, same as every other
+  duplicate-rejection check in this app. `sortOrder` for a newly-added Grade/Paper Type is
+  auto-assigned (current max + 1) rather than exposed as a form field, matching the same
+  no-manual-number convention Bulk Upload's `assignSortOrders` already established. Subject
+  create reuses the exact `subjects` insert shape Topics management already expects (just
+  `name`/`fixedMedium`, no grade/subject-level content of its own) — there's still no
+  subject-level *content* CRUD here (that's Topics management's job); this only adds the
+  `subjects` row itself.
+
+Integration coverage: `tests/reference-data.test.ts` — `getGrades`/`getPaperTypes`' `sortOrder`
+ordering (inserted out of order, asserted back in order); `isValidGrade`/`isValidPaperType`'s
+membership logic including the empty-list case; `labelForGrade`/`labelForPaperType`'s
+found-value and fallback-to-raw-value cases; `isDuplicateName`'s case-insensitive matching and
+its empty-list/no-match cases; `nextSortOrder`'s max+1 continuation and its empty-list `0`
+case. As with every other admin Server Action in this app, `createGrade`/`createSubject`/
+`createPaperType` themselves aren't directly unit-tested (same Clerk-mocking rationale as
+Topics/Papers/Bulk Upload's own actions) — their duplicate-check and sortOrder-assignment logic
+is what's covered directly, via the pure functions above.
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of

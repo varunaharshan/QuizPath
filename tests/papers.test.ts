@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupPapersBySubject, isValidPaperType, type GradePaperCard } from "@/lib/papers";
+import { groupPapersBySubject, type GradePaperCard } from "@/lib/papers";
 
 function paperCard(overrides: Partial<GradePaperCard> = {}): GradePaperCard {
   return {
@@ -17,21 +17,6 @@ function paperCard(overrides: Partial<GradePaperCard> = {}): GradePaperCard {
     ...overrides,
   };
 }
-
-describe("isValidPaperType", () => {
-  it("accepts exactly the three real paper types", () => {
-    expect(isValidPaperType("provincial")).toBe(true);
-    expect(isValidPaperType("district")).toBe(true);
-    expect(isValidPaperType("school")).toBe(true);
-  });
-
-  it("rejects anything else, including the mockup's fictional GCSE/Zonal/Model types", () => {
-    expect(isValidPaperType("gcse")).toBe(false);
-    expect(isValidPaperType("zonal")).toBe(false);
-    expect(isValidPaperType("model")).toBe(false);
-    expect(isValidPaperType("")).toBe(false);
-  });
-});
 
 // Backs the Papers grid's subject-tab switcher: an already-fetched grade-wide
 // paper list gets bucketed by subject, client-side tab-switching over the

@@ -13,6 +13,7 @@ const ADMIN_NAV_ITEMS = [
   { href: "/admin/topics", label: "Topics", icon: "▤" },
   { href: "/admin/papers", label: "Papers", icon: "📄" },
   { href: "/admin/questions/bulk-upload", label: "Questions", icon: "❓" },
+  { href: "/admin/reference-data", label: "Reference Data", icon: "🗂️" },
 ] as const;
 
 export function AdminNavLinks() {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { isValidGrade } from "@/lib/papers";
 import { getKeywordSuggestions } from "@/lib/practice";
+import { getGrades, isValidGrade } from "@/lib/reference-data";
 
 // Backs the keyword-tag autocomplete input's one-time (per grade, per short
 // cache window) fetch of the full distinct-keyword list — see
@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   }
 
   const grade = new URL(req.url).searchParams.get("grade") ?? "";
-  if (!isValidGrade(grade)) {
+  if (!isValidGrade(grade, await getGrades())) {
     return NextResponse.json({ error: "Invalid or missing grade" }, { status: 400 });
   }
 

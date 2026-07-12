@@ -1,22 +1,12 @@
 import Link from "next/link";
 import { getSubjectsForAdmin } from "@/lib/admin-topics";
-import { PAPER_TYPE_LABELS } from "@/lib/papers";
+import { getGrades, getPaperTypes } from "@/lib/reference-data";
 import { createPaper } from "../actions";
-
-const GRADES = [
-  { value: "10", label: "Grade 10" },
-  { value: "11", label: "Grade 11" },
-] as const;
-
-const PAPER_TYPES = (Object.keys(PAPER_TYPE_LABELS) as (keyof typeof PAPER_TYPE_LABELS)[]).map((value) => ({
-  value,
-  label: PAPER_TYPE_LABELS[value],
-}));
 
 const INPUT_CLASSES = "w-full rounded-md border border-app-border bg-white px-3 py-2 text-[13.5px] text-ink";
 
 export default async function NewPaperPage() {
-  const subjects = await getSubjectsForAdmin();
+  const [subjects, GRADES, PAPER_TYPES] = await Promise.all([getSubjectsForAdmin(), getGrades(), getPaperTypes()]);
 
   return (
     <>
