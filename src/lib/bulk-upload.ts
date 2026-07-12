@@ -123,9 +123,9 @@ export function parseBulkCsv(csvText: string): BulkUploadRow[] {
 // during validation.
 export type BulkUploadReferenceData = {
   subjects: { id: string; name: string }[];
-  modules: { id: string; name: string; subjectId: string; grade: "10" | "11" }[];
+  modules: { id: string; name: string; subjectId: string; grade: string }[];
   subTopics: { id: string; name: string; moduleId: string }[];
-  papers: { id: string; title: string; subjectId: string; grade: "10" | "11" }[];
+  papers: { id: string; title: string; subjectId: string; grade: string }[];
 };
 
 // Duplicated from src/db/schema.ts's QuestionOption/QuestionImage rather than

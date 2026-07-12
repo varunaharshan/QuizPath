@@ -1,15 +1,14 @@
 import { and, count, eq, ilike, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, papers, subjects } from "@/db/schema";
-import type { PaperTypeValue } from "@/lib/papers";
 
 export type AdminPaper = {
   id: string;
   title: string;
   subjectId: string;
   subjectName: string;
-  grade: "10" | "11";
-  paperType: PaperTypeValue;
+  grade: string;
+  paperType: string;
   year: number | null;
   status: "draft" | "published";
   timeLimitMinutes: number | null;
@@ -18,7 +17,7 @@ export type AdminPaper = {
 
 export type AdminPapersFilters = {
   subjectId?: string;
-  grade?: "10" | "11";
+  grade?: string;
   // Case-insensitive substring match against the paper's title.
   search?: string;
 };
@@ -70,8 +69,8 @@ export type AdminPaperDetail = {
   id: string;
   title: string;
   subjectId: string;
-  grade: "10" | "11";
-  paperType: PaperTypeValue;
+  grade: string;
+  paperType: string;
   year: number | null;
   status: "draft" | "published";
   timeLimitMinutes: number | null;

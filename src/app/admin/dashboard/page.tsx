@@ -10,7 +10,7 @@ import {
 import { getTopicsForSubjectGrade } from "@/lib/admin-topics";
 import { AdminContentCoverageTable } from "@/components/admin-content-coverage-table";
 
-const GRADE_LABELS: Record<"10" | "11", string> = { "10": "Grade 10", "11": "Grade 11" };
+const GRADE_LABELS: Record<string, string> = { "10": "Grade 10", "11": "Grade 11" };
 
 function KpiCard({
   icon,

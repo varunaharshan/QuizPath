@@ -138,7 +138,7 @@ export function groupWeakAreasBySubject(topics: SubTopicStatus[], limit = 3): We
 // statuses itself, so there's only one place (getSubTopicStatusesForGrade)
 // that computes mastery.
 export async function searchSubTopicIdsByKeyword(
-  grade: "10" | "11",
+  grade: string,
   query: string,
 ): Promise<Set<string>> {
   const trimmed = query.trim().toLowerCase();
@@ -175,7 +175,7 @@ export async function searchSubTopicIdsByKeyword(
 // match, mirroring a typical multi-select filter rather than requiring
 // every term to be satisfied at once. Reuses the existing single-term
 // function as-is rather than duplicating its matching logic.
-export async function searchSubTopicIdsByKeywords(grade: "10" | "11", queries: string[]): Promise<Set<string>> {
+export async function searchSubTopicIdsByKeywords(grade: string, queries: string[]): Promise<Set<string>> {
   const results = await Promise.all(queries.map((query) => searchSubTopicIdsByKeyword(grade, query)));
   const union = new Set<string>();
   for (const result of results) {
@@ -193,7 +193,7 @@ export type TopKeyword = {
 // same raw per-keyword frequency count for a grade, just presented
 // differently (top-N by popularity vs. a full, near-duplicate-merged list
 // for autocomplete).
-async function tallyKeywordsForGrade(grade: "10" | "11"): Promise<Map<string, number>> {
+async function tallyKeywordsForGrade(grade: string): Promise<Map<string, number>> {
   const rows = await db
     .select({ keywords: mcqs.keywords })
     .from(mcqs)
@@ -217,7 +217,7 @@ async function tallyKeywordsForGrade(grade: "10" | "11"): Promise<Map<string, nu
 // clicked: a keyword only tagged on a different grade's questions would
 // otherwise show up but search to empty. Ties broken alphabetically for a
 // stable, deterministic order.
-export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<TopKeyword[]> {
+export async function getTopKeywords(grade: string, limit = 10): Promise<TopKeyword[]> {
   const counts = await tallyKeywordsForGrade(grade);
   return [...counts.entries()]
     .map(([keyword, count]) => ({ keyword, count }))
@@ -239,7 +239,7 @@ export async function getTopKeywords(grade: "10" | "11", limit = 10): Promise<To
 // aren't exact case-insensitive matches (e.g. a plural variant) still land
 // next to each other for a human scanning the list, without attempting
 // risky stemming/pluralization logic.
-export async function getKeywordSuggestions(grade: "10" | "11"): Promise<string[]> {
+export async function getKeywordSuggestions(grade: string): Promise<string[]> {
   const counts = await tallyKeywordsForGrade(grade);
 
   const byNormalized = new Map<string, { display: string; displayCount: number }>();

@@ -31,7 +31,7 @@ export async function getPracticeSubjects(): Promise<PracticeSubject[]> {
 // joined in twice. A module has no draft/published status of its own (only
 // mcqs/papers do), so any module for the grade counts; a paper only counts
 // once it's published, matching every other student-facing paper query.
-export async function getSubjectsForGrade(grade: "10" | "11"): Promise<PracticeSubject[]> {
+export async function getSubjectsForGrade(grade: string): Promise<PracticeSubject[]> {
   const moduleSubjectRows = await db
     .selectDistinct({ id: modules.subjectId })
     .from(modules)
@@ -64,7 +64,11 @@ export async function getSubjectById(subjectId: string): Promise<SubjectInfo | n
 
 export type PaperTypeValue = "provincial" | "district" | "school";
 
-export const PAPER_TYPE_LABELS: Record<PaperTypeValue, string> = {
+// Record<string, ...> rather than Record<PaperTypeValue, ...> — papers.paperType
+// is no longer a Postgres enum (it's now a reference-table-backed column, see
+// src/db/migrate-grade-paper-type-to-tables.ts), so every caller passes a
+// plain string rather than something already narrowed to PaperTypeValue.
+export const PAPER_TYPE_LABELS: Record<string, string> = {
   provincial: "Provincial",
   district: "District",
   school: "School",
@@ -174,7 +178,7 @@ export type GradePaperCard = {
   title: string;
   subjectId: string;
   subjectName: string;
-  paperType: PaperTypeValue;
+  paperType: string;
   year: number | null;
   questionCount: number;
   totalMarks: number;
@@ -194,7 +198,7 @@ export type GradePaperCard = {
 // grade-wide fetch can span subjects with different fixed mediums, unlike
 // the old single-subject getPapersForSubject which took one resolved medium.
 export async function getPapersForGrade(params: {
-  grade: "10" | "11";
+  grade: string;
   studentMedium: "sinhala" | "tamil" | "english";
   studentId: string;
 }): Promise<GradePaperCard[]> {
@@ -254,8 +258,8 @@ export type PaperOverview = {
   title: string;
   subjectId: string;
   subjectName: string;
-  grade: "10" | "11";
-  paperType: PaperTypeValue;
+  grade: string;
+  paperType: string;
   year: number | null;
   questionCount: number;
   totalMarks: number;

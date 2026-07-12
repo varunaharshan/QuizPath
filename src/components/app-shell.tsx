@@ -51,7 +51,7 @@ export function AppShell({
 }: {
   active: ActiveNav;
   studentName: string;
-  grade: "10" | "11";
+  grade: string;
   isActiveLearner: boolean;
   children: ReactNode;
 }) {

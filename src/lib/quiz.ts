@@ -356,7 +356,7 @@ export async function finalizeSubTopicAttempt(params: {
 }
 
 export type PaperQuiz = {
-  paper: { id: string; title: string; grade: "10" | "11"; subjectId: string } | null;
+  paper: { id: string; title: string; grade: string; subjectId: string } | null;
   questions: QuizQuestion[];
 };
 

@@ -94,7 +94,7 @@ export async function getAdminContentCoverageBySubject(): Promise<SubjectCoverag
 // any status (unlike the student-facing getGradesWithPapers, which is
 // published-only — an admin needs to see a grade that only has draft
 // content too).
-export async function getGradesWithContent(): Promise<("10" | "11")[]> {
+export async function getGradesWithContent(): Promise<string[]> {
   const [moduleGrades, paperGrades] = await Promise.all([
     db.selectDistinct({ grade: modules.grade }).from(modules),
     db.selectDistinct({ grade: papers.grade }).from(papers),
@@ -106,7 +106,7 @@ export async function getGradesWithContent(): Promise<("10" | "11")[]> {
 // Subject pill row, scoped to a grade — same "any status" reasoning as
 // getGradesWithContent, so this is a distinct admin-only function rather
 // than reusing the student-facing getSubjectsForGrade (published-papers-only).
-export async function getSubjectsWithContentForGrade(grade: "10" | "11"): Promise<{ id: string; name: string }[]> {
+export async function getSubjectsWithContentForGrade(grade: string): Promise<{ id: string; name: string }[]> {
   const [moduleSubjectRows, paperSubjectRows] = await Promise.all([
     db.selectDistinct({ id: modules.subjectId }).from(modules).where(eq(modules.grade, grade)),
     db.selectDistinct({ id: papers.subjectId }).from(papers).where(eq(papers.grade, grade)),
@@ -133,7 +133,7 @@ export type ScopedKpis = {
 // that topic tree.
 export async function getScopedKpis(
   subjectId: string,
-  grade: "10" | "11",
+  grade: string,
   topics: AdminTopic[],
 ): Promise<ScopedKpis> {
   const totalQuestions = topics.reduce((sum, t) => sum + t.questionCount, 0);
@@ -184,7 +184,7 @@ export type UnverifiedQuestion = {
   id: string;
   questionText: string;
   subjectName: string | null;
-  grade: "10" | "11" | null;
+  grade: string | null;
   paperId: string | null;
   paperTitle: string | null;
 };

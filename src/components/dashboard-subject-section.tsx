@@ -138,7 +138,7 @@ export function DashboardSubjectSection({
 }: {
   subjects: SubjectBundle[];
   initialActiveSubjectId: string;
-  grade: "10" | "11";
+  grade: string;
   weakAreasSlot: ReactNode;
 }) {
   const [activeSubjectId, setActiveSubjectId] = useState(initialActiveSubjectId);

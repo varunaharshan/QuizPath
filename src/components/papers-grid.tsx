@@ -9,9 +9,12 @@ import Link from "next/link";
 // "thin Client Component, plain data shape" pattern <TopicCardGrid> already
 // established for Practice by Topic.
 type PaperStatus = "not_started" | "in_progress" | "completed";
-type PaperTypeValue = "provincial" | "district" | "school";
 
-const PAPER_TYPE_LABELS: Record<PaperTypeValue, string> = {
+// Record<string, ...>, not a narrow literal union — paperType is no longer a
+// Postgres enum (see src/db/migrate-grade-paper-type-to-tables.ts), so this
+// Client Component (which can't import @/lib/papers's own PAPER_TYPE_LABELS —
+// see the file-level comment above) gets a plain string here too.
+const PAPER_TYPE_LABELS: Record<string, string> = {
   provincial: "Provincial",
   district: "District",
   school: "School",
@@ -20,7 +23,7 @@ const PAPER_TYPE_LABELS: Record<PaperTypeValue, string> = {
 export type PaperCardData = {
   id: string;
   title: string;
-  paperType: PaperTypeValue;
+  paperType: string;
   year: number | null;
   questionCount: number;
   totalMarks: number;

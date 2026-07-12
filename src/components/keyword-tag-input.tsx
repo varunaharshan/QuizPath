@@ -13,7 +13,7 @@ import { addTag, dedupeTags, filterSuggestions, splitHighlightMatch } from "@/li
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const keywordCache = new Map<string, { data: string[]; fetchedAt: number }>();
 
-async function fetchKeywords(grade: "10" | "11"): Promise<string[]> {
+async function fetchKeywords(grade: string): Promise<string[]> {
   const cached = keywordCache.get(grade);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.data;
@@ -56,7 +56,7 @@ export function KeywordTagInput({
   fieldName = "tags",
 }: {
   initialTags: string[];
-  grade: "10" | "11";
+  grade: string;
   placeholder?: string;
   fieldName?: string;
 }) {

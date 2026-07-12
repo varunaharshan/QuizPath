@@ -6,7 +6,7 @@ import { getGradesWithPapers, getPapersForGrade, groupPapersBySubject, isValidGr
 import { AppShell } from "@/components/app-shell";
 import { PapersGrid } from "@/components/papers-grid";
 
-const GRADE_LABELS: Record<"10" | "11", string> = { "10": "Grade 10", "11": "Grade 11" };
+const GRADE_LABELS: Record<string, string> = { "10": "Grade 10", "11": "Grade 11" };
 
 export default async function PapersPage({
   searchParams,

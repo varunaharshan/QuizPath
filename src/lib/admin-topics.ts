@@ -35,7 +35,7 @@ export type AdminTopic = {
 // with its sub-topics (also in order) and a live question count per
 // sub-topic — used both for display and for the delete-confirmation
 // warning, not derived from any cached count.
-export async function getTopicsForSubjectGrade(subjectId: string, grade: "10" | "11"): Promise<AdminTopic[]> {
+export async function getTopicsForSubjectGrade(subjectId: string, grade: string): Promise<AdminTopic[]> {
   const moduleRows = await db.query.modules.findMany({
     where: and(eq(modules.subjectId, subjectId), eq(modules.grade, grade)),
     orderBy: modules.sortOrder,

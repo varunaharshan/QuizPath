@@ -39,7 +39,7 @@ export type SubTopicStatus = {
 // narrows to a specific subject.
 export async function getSubTopicStatusesForGrade(
   studentId: string,
-  grade: "10" | "11",
+  grade: string,
   subjectId?: string,
 ): Promise<SubTopicStatus[]> {
   const gradeModules = await db.query.modules.findMany({
@@ -113,7 +113,7 @@ export type CompletedQuiz = {
 // already-fetched data rather than a new request.
 export async function getCompletedQuizzes(
   studentId: string,
-  options: { grade?: "10" | "11"; limit?: number; type?: "paper" | "topic_practice"; subjectId?: string } = {},
+  options: { grade?: string; limit?: number; type?: "paper" | "topic_practice"; subjectId?: string } = {},
 ): Promise<CompletedQuiz[]> {
   const { grade, limit = 20, type, subjectId } = options;
 
@@ -200,7 +200,7 @@ export async function getCompletedQuizzes(
 // *completed* attempt instead of the most recent *incomplete* one.
 export async function getMostRecentlyPracticedSubjectId(
   studentId: string,
-  grade: "10" | "11",
+  grade: string,
 ): Promise<string | null> {
   const [row] = await db
     .select({ subTopicSubjectId: modules.subjectId, paperSubjectId: papers.subjectId })
@@ -288,7 +288,7 @@ function scoreAndLabel(counts: { questionsAnswered: number; correctCount: number
 // relative to the per-sub-topic numbers already being computed.
 export async function getProgressStats(
   studentId: string,
-  grade: "10" | "11",
+  grade: string,
   subjectId: string,
 ): Promise<ProgressStats> {
   const gradeModules = await db.query.modules.findMany({
@@ -412,7 +412,7 @@ export async function getProgressStats(
 // the ones hidden from the list, so a student sees "this topic's fine
 // overall, but here's the specific pocket dragging on it." Sorted ascending
 // by that true aggregate score — weakest topic first.
-export async function getWeakTopicsForGrade(studentId: string, grade: "10" | "11"): Promise<TopicProgress[]> {
+export async function getWeakTopicsForGrade(studentId: string, grade: string): Promise<TopicProgress[]> {
   const gradeModules = await db.query.modules.findMany({
     where: eq(modules.grade, grade),
     orderBy: modules.sortOrder,
@@ -479,7 +479,7 @@ export type TopicStatus = TopicProgress & {
 // subject, including not_started ones (score null), so callers can pick
 // whichever slice they need (the Dashboard selects the top 3 highest-scoring
 // per subject) rather than this function baking in one specific selection.
-export async function getTopicStatusesForGrade(studentId: string, grade: "10" | "11"): Promise<TopicStatus[]> {
+export async function getTopicStatusesForGrade(studentId: string, grade: string): Promise<TopicStatus[]> {
   const gradeModules = await db.query.modules.findMany({
     where: eq(modules.grade, grade),
     orderBy: modules.sortOrder,
@@ -560,7 +560,7 @@ export function gceGradeForScore(score: number): GceGrade {
 // doing on real tests." Also backs each subject switcher card's own grade
 // badge (`averageScore` run through `gceGradeForScore`), so the KPI row's
 // own "Score %" and the badge shown at the top of the page always agree.
-export async function getOverallStats(studentId: string, grade: "10" | "11", subjectId: string): Promise<OverallStats> {
+export async function getOverallStats(studentId: string, grade: string, subjectId: string): Promise<OverallStats> {
   const attempts = await db
     .select({ id: quizAttempts.id })
     .from(quizAttempts)
@@ -622,7 +622,7 @@ export type PaperAccuracyTrend = {
 // bucketed cumulative average the way this chart used to work — so the
 // line (or lone point) reads as "how did each real paper attempt go,
 // in order," not a smoothed trend.
-export async function getPaperAccuracyTrend(studentId: string, grade: "10" | "11"): Promise<PaperAccuracyTrend[]> {
+export async function getPaperAccuracyTrend(studentId: string, grade: string): Promise<PaperAccuracyTrend[]> {
   const paperAttempts = await db
     .select({
       id: quizAttempts.id,

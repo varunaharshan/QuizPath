@@ -44,7 +44,7 @@ export type AdminPaperQuestion = {
 export type AdminPaperSummary = {
   id: string;
   title: string;
-  grade: "10" | "11";
+  grade: string;
   subjectId: string;
   subjectName: string;
 };
