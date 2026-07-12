@@ -9,6 +9,7 @@ import { usePathname } from "next/navigation";
 // minimal (just nav highlighting, no data fetching), the same
 // single-purpose-client-wrapper pattern as ConfirmSubmitButton.
 const ADMIN_NAV_ITEMS = [
+  { href: "/admin/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/admin/topics", label: "Topics", icon: "▤" },
   { href: "/admin/papers", label: "Papers", icon: "📄" },
   { href: "/admin/questions/bulk-upload", label: "Questions", icon: "❓" },

@@ -1110,14 +1110,108 @@ pattern already used for `student_profiles.medium`.
   the guard in a layout means a future `/admin/*` page can't forget it. `<AdminShell>`
   (`src/components/admin-shell.tsx`) is a **completely separate component from
   `<AppShell>`** — no shared imports, no shared nav data, per the explicit requirement not
-  to touch the student sidebar. It's intentionally minimal (one nav item, "Topics") since
-  Topics is the only admin section so far; `src/app/admin/page.tsx` just redirects to
-  `/admin/topics` rather than being a placeholder landing page.
+  to touch the student sidebar. `src/app/admin/page.tsx` redirects to `/admin/dashboard`
+  (previously `/admin/topics`, back when Topics was the only section and there was no
+  landing page worth having — see "Admin Dashboard" below).
 - **Known gap, not fixed by this pass**: an admin who manually navigates to a student URL
   like `/dashboard` isn't blocked — they'd hit the existing `if (!profile) redirect
   ("/onboarding")` check and land in onboarding, which doesn't really make sense for an
   admin. Only the root-page post-login routing and the `/admin/*` guard were in scope;
   guarding every individual student page against an admin wandering in wasn't.
+
+### Admin Dashboard (`/admin/dashboard`)
+
+The admin landing page — a Grade → Subject → Topic → Sub-topic content-coverage
+drill-down, plus site-wide KPIs. Entirely new (there was no admin dashboard/KPI page of any
+kind before this pass); admin-only throughout, with zero coupling to the student-facing
+Dashboard/Progress code (`src/lib/dashboard.ts`, `src/lib/papers.ts`, `src/lib/practice.ts`,
+`<TopicProgressTable>`) despite a similar expand-to-drill-down interaction pattern in one
+place — everything here lives in a new `src/lib/admin-dashboard.ts` and a new
+`<AdminContentCoverageTable>` component, reusing only the already admin-only
+`getTopicsForSubjectGrade`/`getSubjectsForAdmin` (`src/lib/admin-topics.ts`).
+
+- **Two states, driven by `?grade=&subjectId=` (both optional)**: an **unscoped landing
+  view** (the default, nothing selected) shows site-wide KPIs (Total Questions, Total
+  Papers, Pending Review, Active Students) and a flat **Content Coverage by Subject** list —
+  every subject's real total question count, bar length scaled relative to the subject with
+  the highest count (see below for why this isn't a literal target/percentage). Once a
+  **Grade pill row** (`getGradesWithContent()`) and then a **Subject pill row**
+  (`getSubjectsWithContentForGrade(grade)`) are both picked, the page switches to the
+  **scoped view**: a re-scoped KPI row (Total Questions, Topics Covered `X/Y`, Empty
+  Sub-topics, Papers Using This Subject) plus **Content Coverage by Topic** and **Coverage
+  Gaps** side by side. Both pill rows are plain `<Link>`s (real navigation, same
+  "cascading query-string filter" convention as every other admin/student filter in this
+  app), not client state.
+- **Grade/Subject pills deliberately don't reuse the student-facing
+  `getGradesWithPapers`/`getSubjectsForGrade`** (`src/lib/papers.ts`) — both of those are
+  published-only, which would hide a grade/subject that only has draft content from an
+  admin trying to manage exactly that content. `getGradesWithContent()`/
+  `getSubjectsWithContentForGrade()` (`src/lib/admin-dashboard.ts`) are new, admin-only
+  equivalents with the status filter dropped.
+- **Content Coverage by Topic reuses `getTopicsForSubjectGrade()` verbatim** — no new query.
+  That function already returns exactly what this needs: topics (modules) in syllabus
+  order, each with sub-topics in order and a live (published+draft) `questionCount`.
+  `<AdminContentCoverageTable>` (`src/components/admin-content-coverage-table.tsx`) renders
+  one collapsed-by-default row per topic (question count + a bar scaled relative to the
+  subject's highest-count topic), with an expand chevron revealing its sub-topics — a
+  separate component from the student-facing `<TopicProgressTable>` despite the similar
+  interaction pattern, since this one shows raw content-management counts, not a specific
+  student's mastery percentages.
+- **Coverage Gaps needs no query of its own** — `getCoverageGaps()` is a pure function
+  (like `getAdjacentQuestionIds`/`assignSortOrders`) that filters the same
+  already-fetched `getTopicsForSubjectGrade()` result down to every sub-topic with a
+  `questionCount` of `0`, flattened with its parent topic's name for context.
+- **Scoped KPIs are mostly derived from that same result too** — Total Questions, Topics
+  Covered, and Empty Sub-topics are all computed in JS from the topic tree
+  (`getScopedKpis()`); only Papers Using This Subject needs a real query
+  (`count(*) from papers where subjectId = X and grade = Y`), and deliberately counts
+  **every status**, not published-only — an admin managing content cares about draft
+  papers too.
+- **The landing "Content Coverage by Subject" list doesn't use a fictional target
+  denominator.** A student-provided mockup for this page showed each subject's bar as
+  "X / 5,000 questions" — there's no such "content goal" field anywhere in the schema, and
+  inventing one wasn't in scope, so `getAdminContentCoverageBySubject()` shows each
+  subject's real question count with the bar scaled relative to whichever subject has the
+  most questions (a real, derived comparison) instead. A question reaches a subject via one
+  of two paths (its own sub-topic's module, or the paper it's attached to, when it has
+  both); the query resolves each mcq's owning subject via
+  `coalesce(paper.subjectId, module.subjectId)` and groups on that, so a question
+  reachable via both paths at once (a paper question also tagged with a sub-topic) is
+  counted exactly once, never twice. Subjects with zero questions are still listed at `0`,
+  since surfacing "this subject exists but has nothing yet" is the point of a coverage view.
+- **"Active Students"** (unscoped KPI row) is defined as `count(distinct student_id) from
+  quiz_attempts` — has this student taken at least one quiz attempt, ever, of any kind. This
+  is a new definition specific to this KPI; there's no other site-wide "active student"
+  aggregate elsewhere in the app to match (the existing per-student "Active learner" pill on
+  the student Dashboard is a boolean, not something this KPI reuses).
+- **"Pending Review" is now clickable**, linking to a new page,
+  `/admin/dashboard/unverified` (`getUnverifiedQuestions()`), a flat list of every
+  unverified question site-wide with its resolved subject/grade (same coalesce-two-paths
+  resolution as the coverage-by-subject query, just per-row instead of grouped/counted). A
+  paper-attached row links straight into the existing
+  `/admin/papers/[paperId]/questions/[mcqId]/edit` page; a standalone (no-paper) question
+  has no edit route to link to yet (see "What's NOT built yet" — no global question-bank
+  view exists), so it renders as a plain read-only row instead of building that larger,
+  already-deferred feature out here.
+
+Integration coverage: `tests/admin-dashboard.test.ts` — `getAdminContentCoverageBySubject`'s
+no-double-count guarantee (a question reachable via both a sub-topic and a paper of the
+same subject counted exactly once) and its zero-question-subject inclusion;
+`getGradesWithContent`/`getSubjectsWithContentForGrade`'s any-status (draft-inclusive)
+scoping in both directions; `getScopedKpis`'s derivation from a hand-built topic tree plus
+its any-status paper count; `getCoverageGaps`'s pure filtering (only zero-count sub-topics,
+correctly tagged with their parent topic, and its all-covered empty-list case);
+`getUnverifiedQuestions`'s subject/grade resolution via both the paper path and the
+sub-topic/module path, and its exclusion of an already-verified question. `getAdminOverviewStats`
+is tested inside a single `REPEATABLE READ` transaction (`db.transaction(..., {isolationLevel:
+"repeatable read"})`) rather than a plain before/after read against the live shared test
+database — this is a genuinely site-wide, unscoped aggregate with no subject/grade to filter
+the assertion down to, and other test files running concurrently both insert and delete
+(via their own cleanup) rows in these same tables, so even a "did it increase by at least
+our contribution" assertion was flaky (observed swinging in both directions during
+development). Running the whole before-insert-after sequence inside one transaction with a
+fixed snapshot isolation level makes concurrent commits from other connections invisible to
+it, giving an exact, deterministic delta.
 
 ### Topics management (`/admin/topics`)
 
