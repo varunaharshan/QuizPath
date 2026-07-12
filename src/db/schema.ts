@@ -17,7 +17,6 @@ import { relations, sql } from "drizzle-orm";
 
 export const userStatusEnum = pgEnum("user_status", ["active", "suspended"]);
 export const userRoleEnum = pgEnum("user_role", ["student", "admin"]);
-export const gradeEnum = pgEnum("grade", ["10", "11"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published"]);
 export const mcqDifficultyEnum = pgEnum("mcq_difficulty", ["easy", "medium", "hard"]);
 // Separate from contentStatusEnum's draft/published gate — a bulk-imported
@@ -27,13 +26,38 @@ export const mcqVerificationStatusEnum = pgEnum("mcq_verification_status", ["unv
 // Language of instruction. A student's medium is a durable profile attribute;
 // a paper's medium is the paper's own language, independent of who's reading it.
 export const mediumEnum = pgEnum("medium", ["sinhala", "tamil", "english"]);
-export const paperTypeEnum = pgEnum("paper_type", ["provincial", "district", "school"]);
 export const subscriptionStatusEnum = pgEnum("subscription_status", [
   "inactive",
   "active",
   "past_due",
   "canceled",
 ]);
+
+// Grade and Paper Type used to be Postgres enums (grade / paper_type) — fixed
+// at exactly ["10","11"] and ["provincial","district","school"], requiring a
+// schema migration + code change to add a new value. They're real reference
+// tables now so an admin can add a new one (see /admin/reference-data)
+// without either. Deliberately NOT referenced by uuid elsewhere: every
+// existing route/query/searchParam in this app already passes grade/paperType
+// around as the plain string value ("10", "provincial"), never an id, so
+// `value` (not `id`) is what other tables' grade/paperType columns actually
+// reference — a real FK, but keyed on the same string every existing query
+// already uses, so no other file needed to change how it reads/writes grade
+// or paperType. See src/db/migrate-grade-paper-type-to-tables.ts for the
+// one-off migration that converted the two enum-typed columns.
+export const grades = pgTable("grades", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  value: varchar("value", { length: 20 }).notNull().unique(),
+  label: varchar("label", { length: 60 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const paperTypes = pgTable("paper_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  value: varchar("value", { length: 40 }).notNull().unique(),
+  label: varchar("label", { length: 80 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -59,7 +83,9 @@ export const studentProfiles = pgTable("student_profiles", {
   userId: uuid("user_id")
     .primaryKey()
     .references(() => users.id, { onDelete: "cascade" }),
-  grade: gradeEnum("grade").notNull(),
+  grade: varchar("grade", { length: 20 })
+    .notNull()
+    .references(() => grades.value),
   // NOT NULL with a default so existing rows (created before this field
   // existed) backfill to "english" on migration rather than needing a
   // separate "medium not set yet" state threaded through the app.
@@ -80,7 +106,9 @@ export const modules = pgTable("modules", {
   subjectId: uuid("subject_id")
     .notNull()
     .references(() => subjects.id, { onDelete: "cascade" }),
-  grade: gradeEnum("grade").notNull(),
+  grade: varchar("grade", { length: 20 })
+    .notNull()
+    .references(() => grades.value),
   name: varchar("name", { length: 200 }).notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
 });
@@ -114,9 +142,13 @@ export const papers = pgTable("papers", {
   subjectId: uuid("subject_id")
     .notNull()
     .references(() => subjects.id, { onDelete: "cascade" }),
-  grade: gradeEnum("grade").notNull(),
+  grade: varchar("grade", { length: 20 })
+    .notNull()
+    .references(() => grades.value),
   medium: mediumEnum("medium").notNull(),
-  paperType: paperTypeEnum("paper_type").notNull(),
+  paperType: varchar("paper_type", { length: 40 })
+    .notNull()
+    .references(() => paperTypes.value),
   title: varchar("title", { length: 300 }).notNull(),
   year: integer("year"),
   source: varchar("source", { length: 200 }),

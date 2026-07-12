@@ -14,6 +14,7 @@
     "db:backfill-keywords": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/backfill-keywords.ts",
     "db:backfill-question-sort-order": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/backfill-question-sort-order.ts",
     "db:migrate-options-format": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/migrate-options-format.ts",
+    "db:migrate-grade-paper-type-to-tables": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/migrate-grade-paper-type-to-tables.ts",
     "db:unpublish-placeholders": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/unpublish-placeholder-mcqs.ts",
     "db:check-no-published-placeholders": "cross-env NODE_OPTIONS=--conditions=react-server tsx src/db/check-no-published-placeholders.ts",
     "db:studio": "drizzle-kit studio",
