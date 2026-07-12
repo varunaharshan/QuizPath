@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { DashboardTopicTable, type DashboardTopicRow } from "@/components/dashboard-topic-table";
 import { SubjectAccuracyChart } from "@/components/subject-accuracy-chart";
+import { formatShortDate } from "@/lib/format";
 import type { PaperAccuracyTrend } from "@/lib/dashboard";
 
 // Type-only import above — @/lib/dashboard transitively pulls in the
@@ -111,7 +112,7 @@ function RecentAttemptsTable({ quizzes, emptyMessage }: { quizzes: CompletedQuiz
             </td>
             <td className="border-b border-app-border py-2.5 pr-2">{quiz.durationMinutes}m</td>
             <td className="border-b border-app-border py-2.5 text-ink-secondary">
-              {quiz.completedAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              {formatShortDate(quiz.completedAt)}
             </td>
           </tr>
         ))}
