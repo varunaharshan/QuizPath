@@ -212,7 +212,7 @@ export async function saveQuizAnswer(params: {
 // from the source-of-truth answer log. Filtering to completedAt IS NOT NULL
 // means an in-progress attempt's incrementally-saved answers are correctly
 // excluded from mastery until the attempt is actually finalized.
-async function recalculateMasteryForSubTopic(tx: Tx, studentId: string, subTopicId: string): Promise<void> {
+export async function recalculateMasteryForSubTopic(tx: Tx, studentId: string, subTopicId: string): Promise<void> {
   const answers = await tx
     .select({ isCorrect: quizAttemptAnswers.isCorrect })
     .from(quizAttemptAnswers)
@@ -239,6 +239,48 @@ async function recalculateMasteryForSubTopic(tx: Tx, studentId: string, subTopic
       target: [masteryScores.studentId, masteryScores.subTopicId],
       set: { score: scoreStr, questionsAnswered, lastUpdated: now },
     });
+}
+
+export type MasteryPair = { studentId: string; subTopicId: string };
+
+// mastery_scores is a cache, not a live view — it's only ever refreshed by
+// recalculateMasteryForSubTopic above, which runs when a student completes a
+// new attempt. Deleting a paper or a single question (admin/papers/actions.ts
+// deletePaper, admin/papers/[paperId]/questions/actions.ts deleteQuestion)
+// cascades away the underlying mcqs/quiz_attempt_answers rows just fine, but
+// never touched this cache, so a sub-topic's cached score/questionsAnswered
+// could keep referencing answers that no longer exist until the student
+// happened to take another quiz there.
+//
+// Fixing that needs two calls around the delete, not one — the delete
+// itself cascades away the very quiz_attempt_answers rows needed to know
+// which (student, sub-topic) pairs are affected, so those pairs have to be
+// read out BEFORE the delete, and the actual recalculation (which reads
+// from quiz_attempt_answers too, to get the post-delete count) has to run
+// AFTER it:
+//
+//   const pairs = await getMasteryPairsForMcqs(mcqIds); // before deleting
+//   await db.delete(mcqs).where(...);                   // the delete
+//   await recalculateMasteryPairs(pairs);                // after deleting
+export async function getMasteryPairsForMcqs(mcqIds: string[]): Promise<MasteryPair[]> {
+  if (mcqIds.length === 0) return [];
+
+  const rows = await db
+    .selectDistinct({ studentId: quizAttempts.studentId, subTopicId: mcqs.subTopicId })
+    .from(quizAttemptAnswers)
+    .innerJoin(mcqs, eq(mcqs.id, quizAttemptAnswers.mcqId))
+    .innerJoin(quizAttempts, eq(quizAttempts.id, quizAttemptAnswers.quizAttemptId))
+    .where(and(inArray(quizAttemptAnswers.mcqId, mcqIds), isNotNull(mcqs.subTopicId)));
+
+  return rows
+    .filter((row): row is { studentId: string; subTopicId: string } => row.subTopicId !== null)
+    .map((row) => ({ studentId: row.studentId, subTopicId: row.subTopicId }));
+}
+
+export async function recalculateMasteryPairs(pairs: MasteryPair[]): Promise<void> {
+  for (const pair of pairs) {
+    await db.transaction((tx) => recalculateMasteryForSubTopic(tx, pair.studentId, pair.subTopicId));
+  }
 }
 
 // Marks an in-progress attempt complete and computes its score from whatever

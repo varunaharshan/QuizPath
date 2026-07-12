@@ -1656,6 +1656,55 @@ covers `assignSortOrders` directly: sequential-per-paper numbering from a blank 
 continuing after an existing max, independently tracking multiple papers in one mixed batch,
 `0` for a row with no paperId, and the empty-input case.
 
+### Keeping `mastery_scores` in sync when questions are deleted
+
+Fixes a real bug: deleting a paper (or a single question) via Papers/Paper Questions
+Management correctly cascades away its `mcqs` and `quiz_attempt_answers` rows (the existing
+`onDelete: cascade` FKs already handled that), but `mastery_scores` is a **cache**, not a live
+view — it's only ever refreshed by `recalculateMasteryForSubTopic` (`src/lib/quiz.ts`), which
+runs when a student *completes a new attempt*. Deleting content never called it, so a
+sub-topic's cached `score`/`questionsAnswered` could keep reflecting answers that no longer
+exist in `quiz_attempt_answers` at all, until the student happened to take another quiz
+touching that sub-topic — reported in practice as "Topic Performance"/"Weak Areas" showing
+stale numbers after recreating papers. Confirmed by direct reproduction: completed a paper
+(100%, 10 questions), deleted the paper, and `mastery_scores` still showed `100.00` / `10`
+with zero underlying answers left.
+
+- **`getMasteryPairsForMcqs(mcqIds)`** and **`recalculateMasteryPairs(pairs)`**
+  (`src/lib/quiz.ts`, both exported — `recalculateMasteryForSubTopic` itself is now exported
+  too) are the fix, and have to be called in two steps **around** the delete, not one: the
+  delete cascades away the very `quiz_attempt_answers` rows needed to know which
+  `(student, sub-topic)` pairs are affected, so those pairs must be read out *before* deleting;
+  the actual recalculation (which re-reads `quiz_attempt_answers` to get the post-delete count)
+  has to run *after*. `deletePaper` (`src/app/admin/papers/actions.ts`) and `deleteQuestion`
+  (`src/app/admin/papers/[paperId]/questions/actions.ts`) both now follow this sequence.
+  `getMasteryPairsForMcqs` returns an empty list (a safe no-op) for questions nobody has ever
+  answered.
+- **Deleting a sub-topic itself was already fine** — `mastery_scores.subTopicId` has its own
+  `onDelete: cascade`, so the whole cached row disappears with it; no recalculation needed
+  there, and this pass didn't touch `deleteModule`/`deleteSubTopic`.
+- **Not covered by this pass**: reassigning a question's `subTopicId` via the edit form
+  (`updateQuestion`) has the same staleness risk in principle (the old sub-topic's cache goes
+  stale, the new one doesn't reflect it until the next attempt) — left as a follow-up, since it
+  wasn't the reported symptom and touches a different action.
+- **`src/db/recalculate-all-mastery.ts`** (`npm run db:recalculate-all-mastery`) is a one-off,
+  safely re-runnable script that recomputes *every* existing `mastery_scores` row from scratch
+  against current `quiz_attempt_answers` — immediate relief for data that went stale before this
+  fix existed (or any time staleness is suspected), not something that needs to be run routinely
+  now that the delete actions keep the cache in sync going forward.
+- **`tests/global-setup.ts`** needed a matching update once Grade/Paper Type became reference
+  tables (see below) — it now seeds `grades`/`paper_types` between two `drizzle-kit push` runs
+  against the test database, the same two-push dance
+  `src/db/migrate-grade-paper-type-to-tables.ts`'s own comment explains for a real database; the
+  expected first-push failure (adding FK constraints before the reference tables have rows) is
+  caught and swallowed rather than crashing the whole test run.
+
+Integration coverage: `tests/mastery.test.ts`'s own new `describe` block — deleting a paper
+recalculates its sub-topic's mastery down to only what's left (not stuck at the pre-delete
+score), deleting a single non-paper question likewise (a wrong answer's removal correctly
+raises the remaining score to 100%, with no need to retake anything), and
+`getMasteryPairsForMcqs` returns an empty list (safe no-op) for a never-answered question.
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of

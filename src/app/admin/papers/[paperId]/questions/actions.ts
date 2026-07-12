@@ -7,10 +7,13 @@ import { db } from "@/db";
 import { mcqs, subTopics } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
 import { isWellFormedUrl, parseCorrectAnswerPosition, resolveOption } from "@/lib/bulk-upload";
+import { getMasteryPairsForMcqs, recalculateMasteryPairs } from "@/lib/quiz";
 
 // Same "warn, don't block" reasoning as Topics/Papers delete — the warning
 // itself is a client-side window.confirm() via <ConfirmSubmitButton>, not a
-// server-side re-check. Cascades nothing further (mcqs is a leaf table).
+// server-side re-check. Cascades nothing further to other tables (mcqs is a
+// leaf table), but mastery_scores is a cache, not something a cascade
+// touches — see recalculateMasteryForMcqs's own comment in src/lib/quiz.ts.
 export async function deleteQuestion(formData: FormData) {
   await requireAdminUser();
 
@@ -23,7 +26,11 @@ export async function deleteQuestion(formData: FormData) {
     throw new Error("Invalid paper.");
   }
 
+  const affectedPairs = await getMasteryPairsForMcqs([mcqId]);
+
   await db.delete(mcqs).where(eq(mcqs.id, mcqId));
+  await recalculateMasteryPairs(affectedPairs);
+
   revalidatePath(`/admin/papers/${paperId}/questions`);
 }
 

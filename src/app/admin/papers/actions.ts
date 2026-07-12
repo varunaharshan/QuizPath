@@ -4,9 +4,10 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { papers, subjects } from "@/db/schema";
+import { mcqs, papers, subjects } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
 import { isValidGrade, isValidPaperType } from "@/lib/papers";
+import { getMasteryPairsForMcqs, recalculateMasteryPairs } from "@/lib/quiz";
 
 function isValidStatus(value: FormDataEntryValue | null): value is "draft" | "published" {
   return value === "draft" || value === "published";
@@ -123,7 +124,13 @@ export async function updatePaper(formData: FormData) {
 // Same "warn, don't block" reasoning as Topics' deleteModule/deleteSubTopic
 // — the warning (question count) is computed server-side (getPapersForAdmin)
 // and shown client-side via <ConfirmSubmitButton> before this action ever
-// runs. Cascades to mcqs per the existing mcqs.paper_id onDelete: cascade FK.
+// runs. Cascades to mcqs per the existing mcqs.paper_id onDelete: cascade FK,
+// which in turn cascades to quiz_attempt_answers — but mastery_scores is a
+// cache, not something a cascade touches, so any sub-topic a deleted
+// question was tagged with needs an explicit recalculation or its cached
+// score/questionsAnswered keeps referencing answers that no longer exist
+// (see recalculateMasteryForMcqs's own comment in src/lib/quiz.ts for why
+// this has to happen in two steps around the delete).
 export async function deletePaper(formData: FormData) {
   await requireAdminUser();
 
@@ -132,6 +139,11 @@ export async function deletePaper(formData: FormData) {
     throw new Error("Invalid paper.");
   }
 
+  const paperMcqs = await db.select({ id: mcqs.id }).from(mcqs).where(eq(mcqs.paperId, paperId));
+  const affectedPairs = await getMasteryPairsForMcqs(paperMcqs.map((m) => m.id));
+
   await db.delete(papers).where(eq(papers.id, paperId));
+  await recalculateMasteryPairs(affectedPairs);
+
   revalidatePath("/admin/papers");
 }
