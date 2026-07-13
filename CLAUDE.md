@@ -646,10 +646,21 @@ Every paper also carries its own real medium (`papers.medium`, `mediumEnum`, `NO
 a default for browsing `/papers`, not a restriction** — a student can freely switch to another
 medium's papers via a real, overridable filter (below); nothing about medium ever blocks
 *taking* a paper (`getQuizForPaper`/`/quiz/papers/[paperId]` has no medium check at all, and
-never has). The one exception is `subjects.fixedMedium` (e.g. an "English" subject, whose
-papers only ever exist in English) — a fixed-medium subject's papers are **always** visible
-regardless of which medium is currently selected, since the subject itself is inherently
-one-language; see `getPapersForGrade` below for exactly how the two rules combine.
+never has).
+
+**`subjects` has no medium/language column of any kind — a subject is just a name.** An
+earlier pass gave `subjects` a nullable `fixedMedium` column (to make an "English"-as-a-subject
+case always visible regardless of a student's own medium), which was a real design mistake:
+it conflated "this subject is inherently single-language" with the *Medium* concept itself,
+coupling two entities — Subject and Medium — that should be, and now are, fully independent.
+`papers` is the **only** place a subject and a medium ever combine (`subject_id` + `medium`,
+both real columns on the same row) — nothing about a subject itself says anything about
+language. The practical effect: every subject's papers, including a language-subject's, are
+filtered by the *same* rule (see `getPapersForGrade` below) — a Sinhala-medium student wanting
+an English-subject's papers switches to the English medium pill, the same action they'd take
+for an English-medium Science paper. There is deliberately no "always visible regardless of
+medium" special case anywhere anymore; the Medium pill row already gives free access to every
+medium, so no subject needs an automatic exemption from it.
 
 Papers (the sidebar's "Papers" nav item — see "App shell" above) is a two-screen browse-then-
 launch flow: a filterable grid at `/papers`, and a read-only overview at `/papers/[paperId]`
@@ -679,12 +690,11 @@ suggested time, progress) at a glance instead of hiding it behind a fourth selec
   grade **across every subject in one query** — the key structural change from the old function
   it replaced (`getPapersForSubject`, one subject at a time). `medium` here is the page's own
   *chosen* medium (the resolved `?medium=` value, defaulting to the student's profile medium)
-  — a paper is included if `subject.fixedMedium === paper.medium` when the subject has a fixed
-  medium (always that subject's own medium, never affected by which medium is currently
-  selected), or `paper.medium === medium` otherwise (the actual default-with-override: pick a
-  different medium and that medium's own papers show instead, nothing is ever permanently
-  hidden). Each `GradePaperCard` carries a resolved `medium` field plus `questionCount`/
-  `totalMarks` (published-`mcqs` count ×
+  — a paper is included only if `paper.medium === medium`, a flat, uniform filter with no
+  per-subject exception (a subject carries no medium of its own to be exempted by; see above).
+  Pick a different medium and that medium's own papers show instead — nothing is ever
+  permanently hidden. Each `GradePaperCard` carries a resolved `medium` field plus
+  `questionCount`/`totalMarks` (published-`mcqs` count ×
   `MARKS_PER_QUESTION`, reusing the existing quiz-results multiplier — see "Quiz-taking flow"),
   `timeLimitMinutes` (see schema note below), and a `status` (`PaperAttemptStatus`, same
   `not_started | in_progress | completed` values Papers has always used) resolved by a shared
@@ -1344,21 +1354,10 @@ change this pass needed, `mcqs.verification_status`, belongs to Bulk Upload belo
   already made and documented for the student-facing Papers filter form's own Paper Type
   dropdown (see "Medium and papers" above).
 - **Medium is a real form field now** — both forms have a Medium `<select>` (Sinhala/Tamil/
-  English), but it's only ever *actually* honored for a subject with no `fixedMedium`.
-  `resolveMedium()` (`src/app/admin/papers/actions.ts`) fetches the chosen subject's
-  `fixedMedium` and delegates the real decision to **`resolveMediumValue(fixedMedium,
-  submittedMedium)`** (`src/lib/reference-data.ts`, pure/directly-tested) — for a fixed-medium
-  subject (e.g. English) the submitted value is silently overridden with that subject's own
-  medium regardless of what the form sent (server-side enforced, not just a UI nudge, since a
-  subject with a fixed medium can never actually have a paper in another language); otherwise
-  the submitted value is used, after validating it's one of the three real mediums. The form
-  itself can't hide/disable the Medium field reactively based on which Subject is picked (no
-  client JS in this form), so it always renders the select with a short helper line noting
-  it's ignored for a fixed-medium subject. Re-resolved on every edit too, in case the subject
-  itself changes. `resolveMediumValue` (not the `async`, DB-touching `resolveMedium` wrapper)
-  is what's unit-tested — importing anything from a `"use server"` action file into a test
-  drags in Next.js's app-router context and breaks under vitest's plain node environment, the
-  same reason every other admin Server Action in this app is left untested directly.
+  English), a plain, always-honored value with no subject-level override — a subject carries
+  no medium of its own (see "Medium and papers"), so there's nothing to defer to. `resolveMedium()`
+  (`src/app/admin/papers/actions.ts`) is just a flat validation against `isValidMedium()`
+  (`src/lib/reference-data.ts`, pure/directly-tested), no subject lookup at all.
 - **Delete is the same "warn, don't block" `<ConfirmSubmitButton>` pattern as Topics** —
   cascades to `mcqs` per the existing `mcqs.paper_id` `onDelete: cascade` FK; `deletePaper`
   itself doesn't re-check the count, the confirmation message (built from the live
@@ -1372,9 +1371,9 @@ Integration coverage: `tests/admin-papers.test.ts` — `getPapersForAdmin`'s unf
 listing with live counts (including the new `medium` field) and filtering by subject, by
 grade, by search, and by all three at once; `getPaperForAdmin`'s single-paper lookup
 (including `medium`) and its not-found `null` case. As with Topics, the Server Actions
-themselves aren't directly unit-tested (same Clerk-mocking rationale) —
-`resolveMediumValue`'s override/passthrough/validation logic is what's covered directly, in
-`tests/reference-data.test.ts` alongside the rest of `src/lib/reference-data.ts`.
+themselves aren't directly unit-tested (same Clerk-mocking rationale) — `isValidMedium`'s
+membership logic is what's covered directly, in `tests/reference-data.test.ts` alongside
+the rest of `src/lib/reference-data.ts`.
 
 ### Questions Bulk Upload (`/admin/questions/bulk-upload`)
 
@@ -1825,18 +1824,20 @@ plus (as part of the third part) the actual admin screen to manage them:
   for delete) and wasn't part of this pass. Three sections — Grades, Subjects, Paper Types —
   each show the existing rows in a simple list, plus a small form calling `createGrade`/
   `createSubject`/`createPaperType` (`src/app/admin/reference-data/actions.ts`). Grades/Paper
-  Types take Value + Label; Subjects takes Name + an optional Fixed Medium dropdown (mirroring
-  `subjects.fixedMedium`'s existing meaning — see "Medium and papers"). All three reject a blank
-  value/label/name, and reject a case-insensitive duplicate name for that type (`"Science"` can't
-  be added twice, differently-cased or not) via `isDuplicateName` — backed by each table's own
-  real `unique` constraint on `value`/`name` as a hard backstop, same as every other
-  duplicate-rejection check in this app. `sortOrder` for a newly-added Grade/Paper Type is
-  auto-assigned (current max + 1) rather than exposed as a form field, matching the same
-  no-manual-number convention Bulk Upload's `assignSortOrders` already established. Subject
-  create reuses the exact `subjects` insert shape Topics management already expects (just
-  `name`/`fixedMedium`, no grade/subject-level content of its own) — there's still no
-  subject-level *content* CRUD here (that's Topics management's job); this only adds the
-  `subjects` row itself.
+  Types take Value + Label; **Subjects takes only a Name** — no medium field of any kind (see
+  "Medium and papers" for why `subjects.fixedMedium`, an earlier coupling between Subject and
+  Medium, was removed outright rather than kept as a form option here). All three reject a
+  blank value/label/name, and reject a case-insensitive duplicate name for that type
+  (`"Science"` can't be added twice, differently-cased or not) via `isDuplicateName` — backed
+  by each table's own real `unique` constraint on `value`/`name` as a hard backstop, same as
+  every other duplicate-rejection check in this app. `sortOrder` for a newly-added Grade/Paper
+  Type is auto-assigned (current max + 1) rather than exposed as a form field, matching the
+  same no-manual-number convention Bulk Upload's `assignSortOrders` already established.
+  Subject create reuses the exact `subjects` insert shape Topics management already expects
+  (just `name` — there's still no subject-level *content* CRUD here, that's Topics
+  management's job); the Subjects list itself reuses `getPracticeSubjects()`
+  (`src/lib/papers.ts`) rather than a dedicated query, since a plain `{id, name}` list is all
+  either caller ever needed.
 
 Integration coverage: `tests/reference-data.test.ts` — `getGrades`/`getPaperTypes`' `sortOrder`
 ordering (inserted out of order, asserted back in order); `isValidGrade`/`isValidPaperType`'s

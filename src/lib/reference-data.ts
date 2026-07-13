@@ -1,6 +1,6 @@
 import { asc } from "drizzle-orm";
 import { db } from "@/db";
-import { grades, paperTypes, subjects } from "@/db/schema";
+import { grades, paperTypes } from "@/db/schema";
 
 // Grade and Paper Type used to be Postgres enums, which meant three
 // independent, hand-written validators existed across this codebase
@@ -27,20 +27,6 @@ export async function getGrades(): Promise<Grade[]> {
 
 export async function getPaperTypes(): Promise<PaperType[]> {
   return db.select().from(paperTypes).orderBy(asc(paperTypes.sortOrder));
-}
-
-export type SubjectWithMedium = { id: string; name: string; fixedMedium: "sinhala" | "tamil" | "english" | null };
-
-// Every subject, alphabetical, with its fixedMedium — for the reference-data
-// admin page's Subjects list. getSubjectsForAdmin (src/lib/admin-topics.ts)
-// and getPracticeSubjects (src/lib/papers.ts) both already query `subjects`
-// but neither selects fixedMedium (they don't need it), so this is its own
-// small query rather than widening either of theirs for one new caller.
-export async function getSubjectsWithMedium(): Promise<SubjectWithMedium[]> {
-  return db
-    .select({ id: subjects.id, name: subjects.name, fixedMedium: subjects.fixedMedium })
-    .from(subjects)
-    .orderBy(asc(subjects.name));
 }
 
 export function isValidGrade(value: string, list: Grade[]): boolean {
@@ -87,23 +73,13 @@ export function nextSortOrder(existing: { sortOrder: number }[]): number {
   return existing.length ? Math.max(...existing.map((item) => item.sortOrder)) + 1 : 0;
 }
 
+// Medium (Sinhala/Tamil/English) is a plain, independent value — it has no
+// reference table of its own (unlike Grade/Paper Type) since nothing asked
+// for it to be admin-extensible, and no cross-reference to Subject at all
+// (see CLAUDE.md "Medium and papers" for why `subjects.fixedMedium`, an
+// earlier coupling between the two, was removed). This is the one shared
+// validator every medium-collecting form (onboarding, profile, admin papers)
+// checks against.
 export function isValidMedium(value: unknown): value is "sinhala" | "tamil" | "english" {
   return value === "sinhala" || value === "tamil" || value === "english";
-}
-
-// Shared by createPaper/updatePaper (src/app/admin/papers/actions.ts) — pulled
-// out as a pure function (no DB call, no Clerk) so it's directly testable
-// without importing that "use server" file into a test, which drags in
-// Next.js's app-router context and breaks under vitest's plain node
-// environment. A fixed-medium subject (e.g. English) only ever exists in its
-// own one medium, so the admin's submitted value is overridden server-side
-// regardless of what the form sent; otherwise the submitted value is used,
-// after validating it's actually one of the three real values.
-export function resolveMediumValue(
-  fixedMedium: "sinhala" | "tamil" | "english" | null,
-  submittedMedium: unknown,
-): "sinhala" | "tamil" | "english" {
-  if (fixedMedium) return fixedMedium;
-  if (!isValidMedium(submittedMedium)) throw new Error("Invalid medium.");
-  return submittedMedium;
 }

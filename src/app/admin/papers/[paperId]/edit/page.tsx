@@ -84,10 +84,6 @@ export default async function EditPaperPage({ params }: { params: Promise<{ pape
             <option value="tamil">Tamil</option>
             <option value="english">English</option>
           </select>
-          <p className="m-0 mt-1 text-[11.5px] text-ink-secondary">
-            Ignored for a subject with a fixed medium (e.g. English) — those papers always use the
-            subject&apos;s own medium.
-          </p>
         </div>
 
         <div className="mb-3.5">

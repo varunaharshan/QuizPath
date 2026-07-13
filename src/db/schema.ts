@@ -92,13 +92,13 @@ export const studentProfiles = pgTable("student_profiles", {
   medium: mediumEnum("medium").notNull().default("english"),
 });
 
+// Deliberately just a name — no medium/language column. A subject and the
+// medium a paper happens to be written in are independent concepts (see
+// CLAUDE.md "Medium and papers"); the combination lives only on `papers`,
+// which is the one place a subject+medium pairing actually needs to exist.
 export const subjects = pgTable("subjects", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 120 }).notNull().unique(),
-  // Pins a language subject (English/Sinhala/Tamil, not built yet) to its own
-  // language regardless of the student's profile medium. Null for content
-  // subjects like Science, whose papers are filtered by the student's medium.
-  fixedMedium: mediumEnum("fixed_medium"),
 });
 
 export const modules = pgTable("modules", {
@@ -136,7 +136,8 @@ export const contentItems = pgTable("content_items", {
 // A whole past exam paper (provincial/district/school), not tied to a
 // specific module/sub-topic — students take it as one session covering all
 // of its questions. `medium` here is the paper's own language, independent
-// of the student's profile medium (see subjects.fixedMedium).
+// of the student's profile medium — this is the one place a subject and a
+// medium actually combine; `subjects` itself carries no medium at all.
 export const papers = pgTable("papers", {
   id: uuid("id").primaryKey().defaultRandom(),
   subjectId: uuid("subject_id")

@@ -1,13 +1,8 @@
-import { getSubjectsWithMedium, getGrades, getPaperTypes } from "@/lib/reference-data";
+import { getPracticeSubjects } from "@/lib/papers";
+import { getGrades, getPaperTypes } from "@/lib/reference-data";
 import { createGrade, createPaperType, createSubject } from "./actions";
 
 const INPUT_CLASSES = "w-full rounded-md border border-app-border bg-white px-3 py-2 text-[13.5px] text-ink";
-
-const MEDIUM_LABELS: Record<"sinhala" | "tamil" | "english", string> = {
-  sinhala: "Sinhala",
-  tamil: "Tamil",
-  english: "English",
-};
 
 // Grades/Subjects/Paper Types were, until this pass, hardcoded literal
 // arrays/enums scattered across the codebase (see the header comment in
@@ -22,7 +17,7 @@ export default async function ReferenceDataPage() {
   const [gradeList, paperTypeList, subjectList] = await Promise.all([
     getGrades(),
     getPaperTypes(),
-    getSubjectsWithMedium(),
+    getPracticeSubjects(),
   ]);
 
   return (
@@ -81,10 +76,9 @@ export default async function ReferenceDataPage() {
               {subjectList.map((s) => (
                 <li
                   key={s.id}
-                  className="flex items-center justify-between rounded-md border border-app-border bg-app-surface-muted px-3 py-1.5 text-[13px] text-ink"
+                  className="rounded-md border border-app-border bg-app-surface-muted px-3 py-1.5 text-[13px] text-ink"
                 >
                   <span className="font-semibold">{s.name}</span>
-                  {s.fixedMedium && <span className="text-ink-secondary">{MEDIUM_LABELS[s.fixedMedium]}</span>}
                 </li>
               ))}
             </ul>
@@ -94,15 +88,6 @@ export default async function ReferenceDataPage() {
             <div>
               <label className="mb-1 block text-[12px] font-bold text-ink-secondary">Name</label>
               <input type="text" name="name" placeholder="e.g. Mathematics" required className={INPUT_CLASSES} />
-            </div>
-            <div>
-              <label className="mb-1 block text-[12px] font-bold text-ink-secondary">Fixed Medium (optional)</label>
-              <select name="fixedMedium" defaultValue="" className={INPUT_CLASSES}>
-                <option value="">None (follows student&apos;s medium)</option>
-                <option value="sinhala">Sinhala</option>
-                <option value="tamil">Tamil</option>
-                <option value="english">English</option>
-              </select>
             </div>
             <button
               type="submit"

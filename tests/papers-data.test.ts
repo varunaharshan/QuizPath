@@ -12,18 +12,20 @@ import { textOptions } from "./helpers";
 // getPaperOverview. The attempt-status transition matrix itself
 // (not_started -> in_progress -> completed -> retake) is already exercised
 // in depth in paper-flow.test.ts via these same functions; this file focuses
-// on what's actually new here: spanning multiple subjects in one fetch,
-// resolving medium per-subject, live published-only question counts/marks,
-// and the overview's read-only guarantee.
+// on what's actually new here: spanning multiple subjects in one fetch, the
+// medium filter applying the same way to every subject (a subject carries no
+// medium of its own — see CLAUDE.md "Medium and papers"), live
+// published-only question counts/marks, and the overview's read-only
+// guarantee.
 describe("papers grid data layer", () => {
   const runId = randomUUID().slice(0, 8);
   let scienceSubjectId: string;
-  let pinnedSubjectId: string;
+  let secondSubjectId: string;
   let studentId: string;
   let sciencePaperId: string;
   let scienceSinhalaPaperId: string;
-  let pinnedMatchingPaperId: string;
-  let pinnedMismatchPaperId: string;
+  let secondSubjectSinhalaPaperId: string;
+  let secondSubjectEnglishPaperId: string;
   let draftPaperId: string;
   let otherGradePaperId: string;
 
@@ -31,11 +33,8 @@ describe("papers grid data layer", () => {
     const [science] = await db.insert(subjects).values({ name: `Grid Science ${runId}` }).returning();
     scienceSubjectId = science.id;
 
-    const [pinned] = await db
-      .insert(subjects)
-      .values({ name: `Grid Pinned Subject ${runId}`, fixedMedium: "sinhala" })
-      .returning();
-    pinnedSubjectId = pinned.id;
+    const [second] = await db.insert(subjects).values({ name: `Grid Second Subject ${runId}` }).returning();
+    secondSubjectId = second.id;
 
     const [sciencePaper] = await db
       .insert(papers)
@@ -51,10 +50,10 @@ describe("papers grid data layer", () => {
       .returning();
     sciencePaperId = sciencePaper.id;
 
-    // A genuine Sinhala-medium paper for the same, non-fixed-medium Science
-    // subject — proves the medium filter is a real, overridable choice (both
-    // this and the English paper above are reachable, just not at the same
-    // time) rather than the English paper simply being unfiltered.
+    // A genuine Sinhala-medium paper for the same Science subject — proves
+    // the medium filter is a real, overridable choice (both this and the
+    // English paper above are reachable, just not at the same time) rather
+    // than the English paper simply being unfiltered.
     const [scienceSinhalaPaper] = await db
       .insert(papers)
       .values({
@@ -68,36 +67,34 @@ describe("papers grid data layer", () => {
       .returning();
     scienceSinhalaPaperId = scienceSinhalaPaper.id;
 
-    // Matches the subject's own fixed medium ("sinhala") — must be included
-    // regardless of the student's own profile medium.
-    const [pinnedMatching] = await db
+    // A second, unrelated subject with its own Sinhala and English papers —
+    // proves the same medium filter applies uniformly across every subject
+    // in the grade, not just the first one.
+    const [secondSinhala] = await db
       .insert(papers)
       .values({
-        subjectId: pinnedSubjectId,
+        subjectId: secondSubjectId,
         grade: "10",
         medium: "sinhala",
         paperType: "district",
-        title: `Grid Pinned Matching Paper ${runId}`,
+        title: `Grid Second Subject Sinhala Paper ${runId}`,
         status: "published",
       })
       .returning();
-    pinnedMatchingPaperId = pinnedMatching.id;
+    secondSubjectSinhalaPaperId = secondSinhala.id;
 
-    // Same subject, but authored in English — doesn't match the subject's
-    // own fixed medium, so must never show up even though the student's
-    // profile medium in this test is "english".
-    const [pinnedMismatch] = await db
+    const [secondEnglish] = await db
       .insert(papers)
       .values({
-        subjectId: pinnedSubjectId,
+        subjectId: secondSubjectId,
         grade: "10",
         medium: "english",
         paperType: "district",
-        title: `Grid Pinned Mismatch Paper ${runId}`,
+        title: `Grid Second Subject English Paper ${runId}`,
         status: "published",
       })
       .returning();
-    pinnedMismatchPaperId = pinnedMismatch.id;
+    secondSubjectEnglishPaperId = secondEnglish.id;
 
     const [draftPaper] = await db
       .insert(papers)
@@ -159,7 +156,7 @@ describe("papers grid data layer", () => {
   afterAll(async () => {
     // Deleting the subjects cascades papers -> mcqs/quiz_attempts (-> quiz_attempt_answers).
     await db.delete(subjects).where(eq(subjects.id, scienceSubjectId));
-    await db.delete(subjects).where(eq(subjects.id, pinnedSubjectId));
+    await db.delete(subjects).where(eq(subjects.id, secondSubjectId));
     await db.delete(users).where(eq(users.id, studentId));
   });
 
@@ -169,7 +166,7 @@ describe("papers grid data layer", () => {
     expect(grades).toContain("11");
   });
 
-  it("getPapersForGrade spans every subject for the grade, resolving medium per-subject and counting only published questions", async () => {
+  it("getPapersForGrade spans every subject for the grade and counts only published questions", async () => {
     const cards = await getPapersForGrade({ grade: "10", medium: "english", studentId });
 
     const scienceCard = cards.find((c) => c.id === sciencePaperId);
@@ -180,13 +177,12 @@ describe("papers grid data layer", () => {
     expect(scienceCard?.timeLimitMinutes).toBe(45);
     expect(scienceCard?.status).toBe("not_started");
 
-    // The pinned-medium subject's own-medium paper is included even though
-    // "english" was requested here...
-    expect(cards.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
-    // ...but that same subject's English-language paper is excluded, proving
-    // a fixed-medium subject is pinned to its own medium regardless of what's
-    // requested, not just exempted from filtering altogether.
-    expect(cards.some((c) => c.id === pinnedMismatchPaperId)).toBe(false);
+    // The second subject's own English paper is included alongside Science's
+    // — the fetch genuinely spans every subject for the grade, not just one.
+    expect(cards.some((c) => c.id === secondSubjectEnglishPaperId)).toBe(true);
+    // Its Sinhala paper is excluded from this English-medium request — the
+    // filter applies the same way to every subject, no exemptions.
+    expect(cards.some((c) => c.id === secondSubjectSinhalaPaperId)).toBe(false);
 
     // Draft papers and a different grade's paper never show up.
     expect(cards.some((c) => c.id === draftPaperId)).toBe(false);
@@ -195,27 +191,27 @@ describe("papers grid data layer", () => {
 
   // This is the core "default, not a restriction" behavior: requesting a
   // different medium doesn't just fail to find the English paper, it swaps
-  // in whichever paper actually matches — and the fixed-medium subject's
-  // paper stays reachable either way, proving it's exempt from the
-  // requested-medium filter rather than coincidentally matching it.
+  // in whichever paper actually matches — for every subject in the grade,
+  // uniformly, since no subject carries a medium of its own to be exempted
+  // by.
   it("getPapersForGrade is a default, not a restriction — requesting a different medium surfaces that medium's own papers instead of excluding everything", async () => {
     const englishView = await getPapersForGrade({ grade: "10", medium: "english", studentId });
     expect(englishView.some((c) => c.id === sciencePaperId)).toBe(true);
     // The Sinhala Science paper isn't hidden forever — it's just not part of
     // this particular (English) view.
     expect(englishView.some((c) => c.id === scienceSinhalaPaperId)).toBe(false);
-    expect(englishView.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
+    expect(englishView.some((c) => c.id === secondSubjectEnglishPaperId)).toBe(true);
+    expect(englishView.some((c) => c.id === secondSubjectSinhalaPaperId)).toBe(false);
 
     const sinhalaView = await getPapersForGrade({ grade: "10", medium: "sinhala", studentId });
-    // Switching to Sinhala genuinely surfaces the Sinhala Science paper...
+    // Switching to Sinhala genuinely surfaces the Sinhala papers for both
+    // subjects...
     expect(sinhalaView.some((c) => c.id === scienceSinhalaPaperId)).toBe(true);
-    // ...and now excludes the English one instead — proving both are
-    // reachable, just never in the same view.
+    expect(sinhalaView.some((c) => c.id === secondSubjectSinhalaPaperId)).toBe(true);
+    // ...and now excludes the English ones instead — proving both mediums
+    // are reachable for every subject, just never in the same view.
     expect(sinhalaView.some((c) => c.id === sciencePaperId)).toBe(false);
-    // The fixed-medium subject's paper is reachable either way, unaffected
-    // by which medium is currently selected.
-    expect(sinhalaView.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
-    expect(sinhalaView.some((c) => c.id === pinnedMismatchPaperId)).toBe(false);
+    expect(sinhalaView.some((c) => c.id === secondSubjectEnglishPaperId)).toBe(false);
   });
 
   it("getPaperOverview returns the paper's stats/status shape, with a null answeredCount before anything is started", async () => {
@@ -238,13 +234,13 @@ describe("papers grid data layer", () => {
   });
 
   it("getPaperOverview never itself starts an attempt — reading it repeatedly creates no quiz_attempts row", async () => {
-    const before = await db.select().from(quizAttempts).where(eq(quizAttempts.paperId, pinnedMatchingPaperId));
+    const before = await db.select().from(quizAttempts).where(eq(quizAttempts.paperId, secondSubjectSinhalaPaperId));
     expect(before).toHaveLength(0);
 
-    await getPaperOverview({ paperId: pinnedMatchingPaperId, studentId });
-    await getPaperOverview({ paperId: pinnedMatchingPaperId, studentId });
+    await getPaperOverview({ paperId: secondSubjectSinhalaPaperId, studentId });
+    await getPaperOverview({ paperId: secondSubjectSinhalaPaperId, studentId });
 
-    const after = await db.select().from(quizAttempts).where(eq(quizAttempts.paperId, pinnedMatchingPaperId));
+    const after = await db.select().from(quizAttempts).where(eq(quizAttempts.paperId, secondSubjectSinhalaPaperId));
     expect(after).toHaveLength(0);
   });
 

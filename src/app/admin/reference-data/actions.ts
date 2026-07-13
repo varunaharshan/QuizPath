@@ -50,22 +50,21 @@ export async function createPaperType(formData: FormData) {
   revalidatePath("/admin/reference-data");
 }
 
-function parseFixedMedium(value: string): "sinhala" | "tamil" | "english" | null {
-  return value === "sinhala" || value === "tamil" || value === "english" ? value : null;
-}
-
+// A subject is just a name — no medium/language field. See CLAUDE.md
+// "Medium and papers" for why: a subject and the medium a specific paper
+// happens to be written in are independent concepts, and the combination
+// only ever lives on `papers`.
 export async function createSubject(formData: FormData) {
   await requireAdminUser();
 
   const name = requireField(formData, "name");
   if (!name) throw new Error("Name is required.");
-  const fixedMedium = parseFixedMedium(requireField(formData, "fixedMedium"));
 
   const existing = await db.select({ name: subjects.name }).from(subjects);
   if (isDuplicateName(name, existing.map((s) => s.name))) {
     throw new Error(`Subject "${name}" already exists.`);
   }
 
-  await db.insert(subjects).values({ name, fixedMedium });
+  await db.insert(subjects).values({ name });
   revalidatePath("/admin/reference-data");
 }
