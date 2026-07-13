@@ -8,10 +8,12 @@ import {
   getPaperTypes,
   isDuplicateName,
   isValidGrade,
+  isValidMedium,
   isValidPaperType,
   labelForGrade,
   labelForPaperType,
   nextSortOrder,
+  resolveMediumValue,
   type Grade,
   type PaperType,
 } from "@/lib/reference-data";
@@ -143,5 +145,42 @@ describe("nextSortOrder", () => {
 
   it("starts at 0 for an empty list", () => {
     expect(nextSortOrder([])).toBe(0);
+  });
+});
+
+describe("isValidMedium", () => {
+  it("accepts exactly the three real mediums", () => {
+    expect(isValidMedium("sinhala")).toBe(true);
+    expect(isValidMedium("tamil")).toBe(true);
+    expect(isValidMedium("english")).toBe(true);
+  });
+
+  it("rejects anything else, including null and non-string values", () => {
+    expect(isValidMedium("klingon")).toBe(false);
+    expect(isValidMedium("")).toBe(false);
+    expect(isValidMedium(null)).toBe(false);
+    expect(isValidMedium(undefined)).toBe(false);
+  });
+});
+
+// Backs createPaper/updatePaper's medium field (src/app/admin/papers/actions.ts)
+// — a pure decision, no DB/Clerk involved, so it's tested directly here
+// rather than through the "use server" action file itself (importing that
+// into a test drags in Next.js's app-router context, which breaks under
+// vitest's plain node environment).
+describe("resolveMediumValue", () => {
+  it("uses the submitted medium when the subject has no fixedMedium", () => {
+    expect(resolveMediumValue(null, "sinhala")).toBe("sinhala");
+    expect(resolveMediumValue(null, "tamil")).toBe("tamil");
+  });
+
+  it("overrides the submitted medium with the subject's own fixedMedium, regardless of what was submitted", () => {
+    expect(resolveMediumValue("english", "sinhala")).toBe("english");
+    expect(resolveMediumValue("english", "english")).toBe("english");
+  });
+
+  it("rejects an invalid or missing submitted medium when there's no fixedMedium to fall back on", () => {
+    expect(() => resolveMediumValue(null, "klingon")).toThrow();
+    expect(() => resolveMediumValue(null, null)).toThrow();
   });
 });

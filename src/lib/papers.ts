@@ -158,6 +158,7 @@ export type GradePaperCard = {
   title: string;
   subjectId: string;
   subjectName: string;
+  medium: "sinhala" | "tamil" | "english";
   paperType: string;
   year: number | null;
   questionCount: number;
@@ -169,20 +170,24 @@ export type GradePaperCard = {
   answeredCount: number | null;
 };
 
-// Grade-wide, multi-subject fetch for the new Papers grid — one query covers
+// Grade-wide, multi-subject fetch for the Papers grid — one query covers
 // every subject at once so switching the Subject tab is pure client state
 // (mirroring <TopicCardGrid>'s "fetch once, tab-switch client-side" shape)
-// and only a Grade change causes a real navigation/refetch, same as every
-// other cascading filter in this app. Medium is resolved per-paper's own
-// subject (subject.fixedMedium ?? the student's own profile medium) since a
-// grade-wide fetch can span subjects with different fixed mediums, unlike
-// the old single-subject getPapersForSubject which took one resolved medium.
+// and only a Grade or Medium change causes a real navigation/refetch, same
+// as every other cascading filter in this app. `medium` is the page's own
+// *chosen* medium (defaults to the student's profile medium, but is a real
+// overridable ?medium= choice — see CLAUDE.md "Medium and papers") — this is
+// deliberately a default, not a hard restriction: a paper under a subject
+// with no fixedMedium is included only when it matches the chosen medium,
+// but a fixed-medium subject's paper (e.g. English) is always included
+// regardless of which medium is chosen, since that subject only ever exists
+// in its own one medium and every student needs to be able to reach it.
 export async function getPapersForGrade(params: {
   grade: string;
-  studentMedium: "sinhala" | "tamil" | "english";
+  medium: "sinhala" | "tamil" | "english";
   studentId: string;
 }): Promise<GradePaperCard[]> {
-  const { grade, studentMedium, studentId } = params;
+  const { grade, medium, studentId } = params;
 
   const rows = await db
     .select({
@@ -201,7 +206,9 @@ export async function getPapersForGrade(params: {
     .where(and(eq(papers.grade, grade), eq(papers.status, "published")))
     .orderBy(subjects.name, papers.paperType, papers.year, papers.title);
 
-  const matched = rows.filter((row) => row.medium === (row.subjectFixedMedium ?? studentMedium));
+  const matched = rows.filter((row) =>
+    row.subjectFixedMedium !== null ? row.medium === row.subjectFixedMedium : row.medium === medium,
+  );
   if (matched.length === 0) return [];
 
   const paperIds = matched.map((r) => r.id);
@@ -222,6 +229,7 @@ export async function getPapersForGrade(params: {
       title: row.title,
       subjectId: row.subjectId,
       subjectName: row.subjectName,
+      medium: row.medium,
       paperType: row.paperType,
       year: row.year,
       questionCount,
@@ -239,6 +247,7 @@ export type PaperOverview = {
   subjectId: string;
   subjectName: string;
   grade: string;
+  medium: "sinhala" | "tamil" | "english";
   paperType: string;
   year: number | null;
   questionCount: number;
@@ -265,6 +274,7 @@ export async function getPaperOverview(params: {
       subjectId: papers.subjectId,
       subjectName: subjects.name,
       grade: papers.grade,
+      medium: papers.medium,
       paperType: papers.paperType,
       year: papers.year,
       timeLimitMinutes: papers.timeLimitMinutes,
@@ -288,6 +298,7 @@ export async function getPaperOverview(params: {
     subjectId: row.subjectId,
     subjectName: row.subjectName,
     grade: row.grade,
+    medium: row.medium,
     paperType: row.paperType,
     year: row.year,
     questionCount: Number(questionCount),

@@ -21,6 +21,7 @@ describe("papers grid data layer", () => {
   let pinnedSubjectId: string;
   let studentId: string;
   let sciencePaperId: string;
+  let scienceSinhalaPaperId: string;
   let pinnedMatchingPaperId: string;
   let pinnedMismatchPaperId: string;
   let draftPaperId: string;
@@ -49,6 +50,23 @@ describe("papers grid data layer", () => {
       })
       .returning();
     sciencePaperId = sciencePaper.id;
+
+    // A genuine Sinhala-medium paper for the same, non-fixed-medium Science
+    // subject — proves the medium filter is a real, overridable choice (both
+    // this and the English paper above are reachable, just not at the same
+    // time) rather than the English paper simply being unfiltered.
+    const [scienceSinhalaPaper] = await db
+      .insert(papers)
+      .values({
+        subjectId: scienceSubjectId,
+        grade: "10",
+        medium: "sinhala",
+        paperType: "provincial",
+        title: `Grid Science Sinhala Paper ${runId}`,
+        status: "published",
+      })
+      .returning();
+    scienceSinhalaPaperId = scienceSinhalaPaper.id;
 
     // Matches the subject's own fixed medium ("sinhala") — must be included
     // regardless of the student's own profile medium.
@@ -152,7 +170,7 @@ describe("papers grid data layer", () => {
   });
 
   it("getPapersForGrade spans every subject for the grade, resolving medium per-subject and counting only published questions", async () => {
-    const cards = await getPapersForGrade({ grade: "10", studentMedium: "english", studentId });
+    const cards = await getPapersForGrade({ grade: "10", medium: "english", studentId });
 
     const scienceCard = cards.find((c) => c.id === sciencePaperId);
     expect(scienceCard).toBeDefined();
@@ -163,16 +181,41 @@ describe("papers grid data layer", () => {
     expect(scienceCard?.status).toBe("not_started");
 
     // The pinned-medium subject's own-medium paper is included even though
-    // the student's own profile medium ("english") doesn't match it...
+    // "english" was requested here...
     expect(cards.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
     // ...but that same subject's English-language paper is excluded, proving
-    // medium is resolved per-paper's-own-subject, not from the student
-    // globally.
+    // a fixed-medium subject is pinned to its own medium regardless of what's
+    // requested, not just exempted from filtering altogether.
     expect(cards.some((c) => c.id === pinnedMismatchPaperId)).toBe(false);
 
     // Draft papers and a different grade's paper never show up.
     expect(cards.some((c) => c.id === draftPaperId)).toBe(false);
     expect(cards.some((c) => c.id === otherGradePaperId)).toBe(false);
+  });
+
+  // This is the core "default, not a restriction" behavior: requesting a
+  // different medium doesn't just fail to find the English paper, it swaps
+  // in whichever paper actually matches — and the fixed-medium subject's
+  // paper stays reachable either way, proving it's exempt from the
+  // requested-medium filter rather than coincidentally matching it.
+  it("getPapersForGrade is a default, not a restriction — requesting a different medium surfaces that medium's own papers instead of excluding everything", async () => {
+    const englishView = await getPapersForGrade({ grade: "10", medium: "english", studentId });
+    expect(englishView.some((c) => c.id === sciencePaperId)).toBe(true);
+    // The Sinhala Science paper isn't hidden forever — it's just not part of
+    // this particular (English) view.
+    expect(englishView.some((c) => c.id === scienceSinhalaPaperId)).toBe(false);
+    expect(englishView.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
+
+    const sinhalaView = await getPapersForGrade({ grade: "10", medium: "sinhala", studentId });
+    // Switching to Sinhala genuinely surfaces the Sinhala Science paper...
+    expect(sinhalaView.some((c) => c.id === scienceSinhalaPaperId)).toBe(true);
+    // ...and now excludes the English one instead — proving both are
+    // reachable, just never in the same view.
+    expect(sinhalaView.some((c) => c.id === sciencePaperId)).toBe(false);
+    // The fixed-medium subject's paper is reachable either way, unaffected
+    // by which medium is currently selected.
+    expect(sinhalaView.some((c) => c.id === pinnedMatchingPaperId)).toBe(true);
+    expect(sinhalaView.some((c) => c.id === pinnedMismatchPaperId)).toBe(false);
   });
 
   it("getPaperOverview returns the paper's stats/status shape, with a null answeredCount before anything is started", async () => {
@@ -181,6 +224,7 @@ describe("papers grid data layer", () => {
     expect(overview).not.toBeNull();
     expect(overview?.subjectId).toBe(scienceSubjectId);
     expect(overview?.grade).toBe("10");
+    expect(overview?.medium).toBe("english");
     expect(overview?.questionCount).toBe(2);
     expect(overview?.totalMarks).toBe(2 * MARKS_PER_QUESTION);
     expect(overview?.timeLimitMinutes).toBe(45);

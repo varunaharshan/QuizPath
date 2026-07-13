@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { mcqs, papers, subjects } from "@/db/schema";
 import { requireAdminUser } from "@/lib/current-app-user";
 import { getMasteryPairsForMcqs, recalculateMasteryPairs } from "@/lib/quiz";
-import { getGrades, getPaperTypes, isValidGrade, isValidPaperType } from "@/lib/reference-data";
+import { getGrades, getPaperTypes, isValidGrade, isValidPaperType, resolveMediumValue } from "@/lib/reference-data";
 
 function isValidStatus(value: FormDataEntryValue | null): value is "draft" | "published" {
   return value === "draft" || value === "published";
@@ -29,15 +29,18 @@ function parseTimeLimitMinutes(value: FormDataEntryValue | null): number | null 
   return minutes;
 }
 
-// Papers Management's create/edit form doesn't collect medium at all (out
-// of scope per the brief) — resolved the same way the rest of the app
-// already treats a content subject's medium: pinned to subject.fixedMedium
-// when the subject has one, otherwise "english" as the reasonable default
-// (mirroring student_profiles.medium's own migration default).
-async function resolveMedium(subjectId: string): Promise<"sinhala" | "tamil" | "english"> {
+// Papers Management's create/edit form now collects a Medium field; the
+// actual fixed-vs-submitted decision is resolveMediumValue
+// (src/lib/reference-data.ts, directly unit-tested there) — this just fetches
+// the subject's own fixedMedium and delegates to it. See CLAUDE.md "Medium
+// and papers" for the full default-vs-fixed model this backs.
+async function resolveMedium(
+  subjectId: string,
+  submittedMedium: FormDataEntryValue | null,
+): Promise<"sinhala" | "tamil" | "english"> {
   const subject = await db.query.subjects.findFirst({ where: eq(subjects.id, subjectId) });
   if (!subject) throw new Error("Subject not found.");
-  return subject.fixedMedium ?? "english";
+  return resolveMediumValue(subject.fixedMedium, submittedMedium);
 }
 
 export async function createPaper(formData: FormData) {
@@ -63,7 +66,7 @@ export async function createPaper(formData: FormData) {
     throw new Error("Paper name is required.");
   }
 
-  const medium = await resolveMedium(subjectId);
+  const medium = await resolveMedium(subjectId, formData.get("medium"));
 
   await db.insert(papers).values({
     subjectId,
@@ -110,7 +113,7 @@ export async function updatePaper(formData: FormData) {
     throw new Error("Invalid status.");
   }
 
-  const medium = await resolveMedium(subjectId);
+  const medium = await resolveMedium(subjectId, formData.get("medium"));
 
   await db
     .update(papers)

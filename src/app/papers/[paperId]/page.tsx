@@ -12,6 +12,12 @@ const BUTTON_LABEL: Record<"not_started" | "in_progress" | "completed", string> 
   completed: "Retake test →",
 };
 
+const MEDIUM_LABELS: Record<"sinhala" | "tamil" | "english", string> = {
+  sinhala: "Sinhala",
+  tamil: "Tamil",
+  english: "English",
+};
+
 // Read-only overview — deliberately never calls ensurePaperAttemptStarted
 // (that's the quiz-taking route's own job, fired the moment that page
 // loads); viewing this page must never itself mark a paper "in progress".
@@ -46,12 +52,15 @@ export default async function PaperOverviewPage({
   const sp = await searchParams;
   const rawGrade = typeof sp.grade === "string" ? sp.grade : undefined;
   const rawSubjectId = typeof sp.subjectId === "string" ? sp.subjectId : undefined;
+  const rawMedium = typeof sp.medium === "string" ? sp.medium : undefined;
 
-  // Preserves whichever grade/subject the student was browsing when they
-  // opened this paper (the grid's own card links pass these along); falls
-  // back to the paper's own grade/subject for a direct/bookmarked link.
+  // Preserves whichever grade/subject/medium the student was browsing when
+  // they opened this paper (the grid's own card links pass these along);
+  // falls back to the paper's own grade/subject/medium for a
+  // direct/bookmarked link.
   const backGrade = rawGrade ?? overview.grade;
   const backSubjectId = rawSubjectId ?? overview.subjectId;
+  const backMedium = rawMedium ?? overview.medium;
 
   return (
     <AppShell
@@ -61,7 +70,7 @@ export default async function PaperOverviewPage({
       isActiveLearner={completedQuizzes.length > 0}
     >
       <Link
-        href={`/papers?grade=${backGrade}&subjectId=${backSubjectId}`}
+        href={`/papers?grade=${backGrade}&subjectId=${backSubjectId}&medium=${backMedium}`}
         className="text-[13px] text-ink-secondary hover:underline"
       >
         ← Back to Papers
@@ -69,7 +78,8 @@ export default async function PaperOverviewPage({
 
       <h1 className="m-0 mt-2 mb-1 text-lg font-bold text-navy-900">{overview.title}</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
-        Grade {overview.grade} · {overview.subjectName} · {labelForPaperType(overview.paperType, paperTypes)}
+        Grade {overview.grade} · {overview.subjectName} · {MEDIUM_LABELS[overview.medium]} medium ·{" "}
+        {labelForPaperType(overview.paperType, paperTypes)}
         {overview.year ? ` · ${overview.year}` : ""}
       </p>
 

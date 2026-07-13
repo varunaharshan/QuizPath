@@ -86,6 +86,7 @@ describe("getPapersForAdmin", () => {
     const a10 = ours.find((p) => p.id === paperA10Id)!;
     expect(a10.subjectName).toBe(`Test AdminPapers Subject A ${runId}`);
     expect(a10.grade).toBe("10");
+    expect(a10.medium).toBe("english");
     expect(a10.status).toBe("published");
     expect(a10.questionCount).toBe(2); // published + draft both count
 
@@ -139,6 +140,7 @@ describe("getPaperForAdmin", () => {
         title: `Detail Paper ${runId}`,
         subjectId: subject.id,
         grade: "10",
+        medium: "english",
         paperType: "provincial",
         year: 2023,
         status: "draft",

@@ -8,6 +8,7 @@ export type AdminPaper = {
   subjectId: string;
   subjectName: string;
   grade: string;
+  medium: "sinhala" | "tamil" | "english";
   paperType: string;
   year: number | null;
   status: "draft" | "published";
@@ -40,6 +41,7 @@ export async function getPapersForAdmin(filters: AdminPapersFilters): Promise<Ad
       subjectId: papers.subjectId,
       subjectName: subjects.name,
       grade: papers.grade,
+      medium: papers.medium,
       paperType: papers.paperType,
       year: papers.year,
       status: papers.status,
@@ -70,6 +72,7 @@ export type AdminPaperDetail = {
   title: string;
   subjectId: string;
   grade: string;
+  medium: "sinhala" | "tamil" | "english";
   paperType: string;
   year: number | null;
   status: "draft" | "published";
@@ -84,6 +87,7 @@ export async function getPaperForAdmin(paperId: string): Promise<AdminPaperDetai
     title: paper.title,
     subjectId: paper.subjectId,
     grade: paper.grade,
+    medium: paper.medium,
     paperType: paper.paperType,
     year: paper.year,
     status: paper.status,

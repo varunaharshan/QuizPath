@@ -74,6 +74,19 @@ export default async function NewPaperPage() {
           </div>
 
           <div className="mb-3.5">
+            <label className="mb-1.5 block text-[12px] font-bold text-ink-secondary">Medium</label>
+            <select name="medium" required defaultValue="english" className={INPUT_CLASSES}>
+              <option value="sinhala">Sinhala</option>
+              <option value="tamil">Tamil</option>
+              <option value="english">English</option>
+            </select>
+            <p className="m-0 mt-1 text-[11.5px] text-ink-secondary">
+              Ignored for a subject with a fixed medium (e.g. English) — those papers always use the
+              subject&apos;s own medium.
+            </p>
+          </div>
+
+          <div className="mb-3.5">
             <label className="mb-1.5 block text-[12px] font-bold text-ink-secondary">
               Time Limit in Minutes (optional)
             </label>

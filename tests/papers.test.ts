@@ -7,6 +7,7 @@ function paperCard(overrides: Partial<GradePaperCard> = {}): GradePaperCard {
     title: "Test paper",
     subjectId: "s1",
     subjectName: "Science",
+    medium: "english",
     paperType: "provincial",
     year: 2023,
     questionCount: 10,

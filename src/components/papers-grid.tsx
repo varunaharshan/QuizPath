@@ -17,6 +17,12 @@ type PaperStatus = "not_started" | "in_progress" | "completed";
 export type PaperCardData = {
   id: string;
   title: string;
+  // Resolved from the paper's own real medium (papers.medium), not the
+  // student's — a fixed-medium subject's paper (e.g. English) always shows
+  // regardless of which medium the page is currently browsing, so this
+  // badge is what tells them apart from the currently-selected medium's own
+  // papers when both appear in the same subject tab.
+  mediumLabel: string;
   paperTypeLabel: string;
   year: number | null;
   questionCount: number;
@@ -33,7 +39,17 @@ export type SubjectPaperTab = {
   papers: PaperCardData[];
 };
 
-function PaperGridCard({ paper, subjectId, grade }: { paper: PaperCardData; subjectId: string; grade: string }) {
+function PaperGridCard({
+  paper,
+  subjectId,
+  grade,
+  medium,
+}: {
+  paper: PaperCardData;
+  subjectId: string;
+  grade: string;
+  medium: string;
+}) {
   const metaParts = [
     `${paper.questionCount} question${paper.questionCount === 1 ? "" : "s"}`,
     `${paper.totalMarks} marks`,
@@ -42,14 +58,19 @@ function PaperGridCard({ paper, subjectId, grade }: { paper: PaperCardData; subj
 
   return (
     <Link
-      href={`/papers/${paper.id}?grade=${grade}&subjectId=${subjectId}`}
+      href={`/papers/${paper.id}?grade=${grade}&subjectId=${subjectId}&medium=${medium}`}
       className="flex flex-col rounded-[10px] border border-app-border bg-white p-4.5 hover:border-navy-600"
     >
       <div className="mb-1.5 flex items-start justify-between gap-2">
         <p className="m-0 text-sm font-semibold text-ink">{paper.title}</p>
-        <span className="shrink-0 rounded-full bg-app-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">
-          {paper.paperTypeLabel}
-        </span>
+        <div className="flex shrink-0 gap-1.5">
+          <span className="rounded-full bg-app-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">
+            {paper.mediumLabel}
+          </span>
+          <span className="rounded-full bg-app-surface-muted px-2 py-0.5 text-[11px] font-semibold text-ink-secondary">
+            {paper.paperTypeLabel}
+          </span>
+        </div>
       </div>
       {paper.year && <p className="m-0 mb-1.5 text-xs text-ink-secondary">{paper.year}</p>}
       <p className="m-0 mb-3 text-xs text-ink-secondary">{metaParts.join(" · ")}</p>
@@ -97,7 +118,15 @@ function PaperGridCard({ paper, subjectId, grade }: { paper: PaperCardData; subj
 // tab-switch client-side" shape <TopicCardGrid> established for Practice by
 // Topic, so switching subjects (or typing a search term) never round-trips
 // to the server.
-export function PapersGrid({ groups, grade }: { groups: SubjectPaperTab[]; grade: string }) {
+export function PapersGrid({
+  groups,
+  grade,
+  medium,
+}: {
+  groups: SubjectPaperTab[];
+  grade: string;
+  medium: string;
+}) {
   const [activeSubjectId, setActiveSubjectId] = useState(groups[0]?.subjectId ?? "");
   const [search, setSearch] = useState("");
 
@@ -143,7 +172,7 @@ export function PapersGrid({ groups, grade }: { groups: SubjectPaperTab[]; grade
       ) : (
         <div className="grid grid-cols-1 gap-4.5 sm:grid-cols-2">
           {filteredPapers.map((paper) => (
-            <PaperGridCard key={paper.id} paper={paper} subjectId={active.subjectId} grade={grade} />
+            <PaperGridCard key={paper.id} paper={paper} subjectId={active.subjectId} grade={grade} medium={medium} />
           ))}
         </div>
       )}

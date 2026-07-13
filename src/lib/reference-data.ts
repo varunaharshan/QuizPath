@@ -86,3 +86,24 @@ export function isDuplicateName(value: string, existingNames: string[]): boolean
 export function nextSortOrder(existing: { sortOrder: number }[]): number {
   return existing.length ? Math.max(...existing.map((item) => item.sortOrder)) + 1 : 0;
 }
+
+export function isValidMedium(value: unknown): value is "sinhala" | "tamil" | "english" {
+  return value === "sinhala" || value === "tamil" || value === "english";
+}
+
+// Shared by createPaper/updatePaper (src/app/admin/papers/actions.ts) — pulled
+// out as a pure function (no DB call, no Clerk) so it's directly testable
+// without importing that "use server" file into a test, which drags in
+// Next.js's app-router context and breaks under vitest's plain node
+// environment. A fixed-medium subject (e.g. English) only ever exists in its
+// own one medium, so the admin's submitted value is overridden server-side
+// regardless of what the form sent; otherwise the submitted value is used,
+// after validating it's actually one of the three real values.
+export function resolveMediumValue(
+  fixedMedium: "sinhala" | "tamil" | "english" | null,
+  submittedMedium: unknown,
+): "sinhala" | "tamil" | "english" {
+  if (fixedMedium) return fixedMedium;
+  if (!isValidMedium(submittedMedium)) throw new Error("Invalid medium.");
+  return submittedMedium;
+}

@@ -640,6 +640,17 @@ existed were migrated forward with `medium NOT NULL DEFAULT 'english'` — a pla
 default rather than a data-driven backfill, since "English" is a reasonable default and there
 was no real user data to preserve a signal from.
 
+Every paper also carries its own real medium (`papers.medium`, `mediumEnum`, `NOT NULL`) —
+"Science Grade 10 NW Second Term — English medium" and "...— Sinhala medium" are two distinct
+`papers` rows, same grade/subject/term, different `medium`. **The student's profile medium is
+a default for browsing `/papers`, not a restriction** — a student can freely switch to another
+medium's papers via a real, overridable filter (below); nothing about medium ever blocks
+*taking* a paper (`getQuizForPaper`/`/quiz/papers/[paperId]` has no medium check at all, and
+never has). The one exception is `subjects.fixedMedium` (e.g. an "English" subject, whose
+papers only ever exist in English) — a fixed-medium subject's papers are **always** visible
+regardless of which medium is currently selected, since the subject itself is inherently
+one-language; see `getPapersForGrade` below for exactly how the two rules combine.
+
 Papers (the sidebar's "Papers" nav item — see "App shell" above) is a two-screen browse-then-
 launch flow: a filterable grid at `/papers`, and a read-only overview at `/papers/[paperId]`
 that's the actual entry point into taking a paper. This replaced an earlier four-dropdown
@@ -656,12 +667,24 @@ suggested time, progress) at a glance instead of hiding it behind a fourth selec
   causing a real navigation/refetch, not client state. Invalid/missing values fall back to the
   student's own `profile.grade` (a free browsing choice, same rule Papers/Progress have always
   used), even if that grade turns out to have zero papers.
-- **`getPapersForGrade({ grade, studentMedium, studentId })`** fetches every published paper
-  for that grade **across every subject in one query** — the key structural change from the
-  old function it replaced (`getPapersForSubject`, one subject at a time). Medium is resolved
-  **per paper's own subject** (`subject.fixedMedium ?? studentMedium`), not once for the whole
-  page, since a grade-wide fetch can span subjects with different fixed mediums. Each
-  `GradePaperCard` carries `questionCount`/`totalMarks` (published-`mcqs` count ×
+- **A second pill row, Medium (Sinhala/Tamil/English), sits directly below Grade** — a plain,
+  hardcoded 3-item list (`MEDIUM_OPTIONS` in `page.tsx`), not a reference table like Grade/Paper
+  Type (medium wasn't asked to become admin-extensible). Same free-browsing-choice pattern as
+  Grade: a real `?medium=` query param, defaults to `profile.medium`, invalid/missing values
+  fall back rather than 404ing, and switching it is a real navigation (it changes which rows
+  the query below returns, unlike Subject/Search which just reslice already-fetched data).
+  Clicking a Grade pill preserves the current medium and vice versa, so switching one filter
+  never silently resets the other.
+- **`getPapersForGrade({ grade, medium, studentId })`** fetches every published paper for that
+  grade **across every subject in one query** — the key structural change from the old function
+  it replaced (`getPapersForSubject`, one subject at a time). `medium` here is the page's own
+  *chosen* medium (the resolved `?medium=` value, defaulting to the student's profile medium)
+  — a paper is included if `subject.fixedMedium === paper.medium` when the subject has a fixed
+  medium (always that subject's own medium, never affected by which medium is currently
+  selected), or `paper.medium === medium` otherwise (the actual default-with-override: pick a
+  different medium and that medium's own papers show instead, nothing is ever permanently
+  hidden). Each `GradePaperCard` carries a resolved `medium` field plus `questionCount`/
+  `totalMarks` (published-`mcqs` count ×
   `MARKS_PER_QUESTION`, reusing the existing quiz-results multiplier — see "Quiz-taking flow"),
   `timeLimitMinutes` (see schema note below), and a `status` (`PaperAttemptStatus`, same
   `not_started | in_progress | completed` values Papers has always used) resolved by a shared
@@ -679,28 +702,34 @@ suggested time, progress) at a glance instead of hiding it behind a fourth selec
   *active* subject's papers by a case-insensitive title substring match, entirely in the
   browser. `<PapersGrid>` deliberately never imports anything runtime from `@/lib/papers` (it
   transitively imports `@/db`, `server-only`-guarded) — `PaperCardData`/`SubjectPaperTab` are
-  local types, and `PAPER_TYPE_LABELS` is a small local copy, the same "Client Component gets
-  plain precomputed data, not a live import" rule `<TopicCardGrid>` already established.
+  local types; `paperTypeLabel` and `mediumLabel` both arrive already resolved from the Server
+  Component parent (via `labelForPaperType`/a small local medium-label lookup), the same
+  "Client Component gets plain precomputed data, not a live import" rule `<TopicCardGrid>`
+  already established, now that Paper Type is a real, admin-extensible reference table (see
+  "Reference Data" below) rather than a fixed enum with its own local lookup.
 - **Paper Type isn't a filter anymore** — the reference screenshot's fourth dropdown is gone;
-  instead every card shows its own `provincial | district | school` label as a small badge, a
-  deliberate design call (a badge conveys the same information as a filter would, without a
-  fourth control to manage for what's typically a handful of papers per subject+grade).
-  `PAPER_TYPE_LABELS`/`isValidPaperType` (`src/lib/papers.ts`) are otherwise unchanged.
-- **Each card** shows title, the paper-type badge, year (if set), a meta line
-  (question count · total marks · `~N min` from `timeLimitMinutes`, omitted entirely if unset
-  rather than guessed), and a progress indicator: no bar for `not_started` ("Not started" in
-  muted text), a partial `bg-progress` bar + "In progress · X/Y answered" for `in_progress`, or
-  a full `bg-mastered` bar + "✓ Completed" for `completed` — **deliberately no score anywhere
-  on a completed card**. An earlier plan considered a "Best score across all attempts" badge
-  (a `MAX(score)` aggregate over every attempt for that paper); this was explicitly dropped —
-  simpler status-only signal, no new aggregate query. The whole card is a `<Link>` to
-  `/papers/[paperId]?grade=&subjectId=`, passing along the grade/subject the student was
-  browsing so the overview page's own back-link can return to the same context.
+  instead every card shows its own paper-type label as a small badge, a deliberate design call
+  (a badge conveys the same information as a filter would, without a fourth control to manage
+  for what's typically a handful of papers per subject+grade).
+- **Each card** shows title, a Medium badge and a Paper Type badge side by side, year (if set),
+  a meta line (question count · total marks · `~N min` from `timeLimitMinutes`, omitted
+  entirely if unset rather than guessed), and a progress indicator: no bar for `not_started`
+  ("Not started" in muted text), a partial `bg-progress` bar + "In progress · X/Y answered" for
+  `in_progress`, or a full `bg-mastered` bar + "✓ Completed" for `completed` — **deliberately no
+  score anywhere on a completed card**. An earlier plan considered a "Best score across all
+  attempts" badge (a `MAX(score)` aggregate over every attempt for that paper); this was
+  explicitly dropped — simpler status-only signal, no new aggregate query. The Medium badge
+  matters even within one subject tab: a fixed-medium subject's paper always appears regardless
+  of the page's currently-selected medium, so without it that paper could look identical to
+  (and be confused with) the currently-selected medium's own papers. The whole card is a
+  `<Link>` to `/papers/[paperId]?grade=&subjectId=&medium=`, passing along the grade/subject/
+  medium the student was browsing so the overview page's own back-link can return to the same
+  context.
 - **Empty states**: "No papers are available yet" when `getGradesWithPapers()` is empty
-  site-wide; "No papers are available yet for Grade N in your medium" when the selected grade
-  has published papers but none happen to match this student's resolved medium anywhere; "No
-  papers are available yet for this subject" for a subject tab with zero papers; "No papers
-  match your search" when a search term filters a non-empty subject down to zero.
+  site-wide; "No papers are available yet for Grade N in [medium] medium" when the selected
+  grade+medium combination has published papers but none happen to match; "No papers are
+  available yet for this subject" for a subject tab with zero papers; "No papers match your
+  search" when a search term filters a non-empty subject down to zero.
 
 **`/papers/[paperId]` (the overview)** — `src/app/papers/[paperId]/page.tsx`, a **read-only**
 Server Component that is the only way a student launches a paper now (a card click, never a
@@ -712,10 +741,12 @@ direct "Start" button on the grid itself). Backed by **`getPaperOverview({ paper
 `ensurePaperAttemptStarted`** — that side effect (marking the attempt "in progress" the moment
 a student opens a paper) belongs solely to the existing `/quiz/papers/[paperId]` quiz-taking
 route, unchanged; viewing the overview must never itself flip a paper's status. The back link
-reads `?grade=&subjectId=` from the URL (falling back to the paper's own grade/subject for a
-bookmarked/direct link) to return to `/papers` in the same context the student came from. Below
-the title/subtitle: a 3-stat row (question count, suggested time — `timeLimitMinutes` or `—` if
-unset, total marks), a status block matching the grid card's own not-started/in-progress/
+reads `?grade=&subjectId=&medium=` from the URL (falling back to the paper's own grade/subject/
+medium for a bookmarked/direct link) to return to `/papers` in the same context the student
+came from, and the subtitle line now also shows the paper's own medium (e.g. "Grade 10 ·
+Science · Sinhala medium · Provincial"). Below the title/subtitle: a 3-stat row (question
+count, suggested time — `timeLimitMinutes` or `—` if unset, total marks), a status block
+matching the grid card's own not-started/in-progress/
 completed states (again, no score on completed), a "Before you start" checklist listing only
 what's actually true today (free navigation between questions, autosave, resume anytime before
 submitting — **no hints claim**, since no hints system exists anywhere in this app yet — see
@@ -1306,26 +1337,44 @@ change this pass needed, `mcqs.verification_status`, belongs to Bulk Upload belo
   after reviewing it via Edit, not a create-time choice. A real resource lookup by id, so an
   unknown `paperId` 404s (`notFound()`) rather than falling back to a default the way a free
   browsing choice (grade/subjectId in the URL) would.
-- **Paper Type only offers the 3 real `paper_type` enum values** (provincial/district/school,
-  via `PAPER_TYPE_LABELS`/`isValidPaperType` reused as-is from `src/lib/papers.ts`) — a
-  reference mockup's dropdown additionally had a fictional "Past Paper (Year)" option, which
-  doesn't correspond to any real enum value and was dropped, the same call already made and
-  documented for the student-facing Papers filter form's own Paper Type dropdown (see "Medium
-  and papers").
-- **Medium isn't a form field at all** — the create/edit forms don't collect it (out of
-  scope), so it's resolved server-side the same way the rest of the app already treats a
-  content subject's medium: `subject.fixedMedium ?? "english"` (`resolveMedium()` in
-  `src/app/admin/papers/actions.ts`), re-resolved on every edit too in case the subject
-  itself changes.
+- **Paper Type offers whatever `getPaperTypes()` currently has** (`src/lib/reference-data.ts`
+  — a real, admin-extensible reference table now, see "Reference Data" below, not a fixed
+  3-value enum) — a reference mockup's dropdown additionally had a fictional "Past Paper
+  (Year)" option, which doesn't correspond to any real value and was dropped, the same call
+  already made and documented for the student-facing Papers filter form's own Paper Type
+  dropdown (see "Medium and papers" above).
+- **Medium is a real form field now** — both forms have a Medium `<select>` (Sinhala/Tamil/
+  English), but it's only ever *actually* honored for a subject with no `fixedMedium`.
+  `resolveMedium()` (`src/app/admin/papers/actions.ts`) fetches the chosen subject's
+  `fixedMedium` and delegates the real decision to **`resolveMediumValue(fixedMedium,
+  submittedMedium)`** (`src/lib/reference-data.ts`, pure/directly-tested) — for a fixed-medium
+  subject (e.g. English) the submitted value is silently overridden with that subject's own
+  medium regardless of what the form sent (server-side enforced, not just a UI nudge, since a
+  subject with a fixed medium can never actually have a paper in another language); otherwise
+  the submitted value is used, after validating it's one of the three real mediums. The form
+  itself can't hide/disable the Medium field reactively based on which Subject is picked (no
+  client JS in this form), so it always renders the select with a short helper line noting
+  it's ignored for a fixed-medium subject. Re-resolved on every edit too, in case the subject
+  itself changes. `resolveMediumValue` (not the `async`, DB-touching `resolveMedium` wrapper)
+  is what's unit-tested — importing anything from a `"use server"` action file into a test
+  drags in Next.js's app-router context and breaks under vitest's plain node environment, the
+  same reason every other admin Server Action in this app is left untested directly.
 - **Delete is the same "warn, don't block" `<ConfirmSubmitButton>` pattern as Topics** —
   cascades to `mcqs` per the existing `mcqs.paper_id` `onDelete: cascade` FK; `deletePaper`
   itself doesn't re-check the count, the confirmation message (built from the live
   `questionCount`) is the only gate.
+- **The papers list table has its own Medium column** (`AdminPaper`/`AdminPaperDetail` in
+  `src/lib/admin-papers.ts` both select `papers.medium` now) so an admin can actually tell two
+  same-subject, different-medium papers apart at a glance — the whole point of collecting
+  medium per-paper would be moot if the admin UI couldn't distinguish them.
 
 Integration coverage: `tests/admin-papers.test.ts` — `getPapersForAdmin`'s unfiltered
-listing with live counts, and filtering by subject, by grade, by search, and by all three at
-once; `getPaperForAdmin`'s single-paper lookup and its not-found `null` case. As with Topics,
-the Server Actions themselves aren't directly unit-tested (same Clerk-mocking rationale).
+listing with live counts (including the new `medium` field) and filtering by subject, by
+grade, by search, and by all three at once; `getPaperForAdmin`'s single-paper lookup
+(including `medium`) and its not-found `null` case. As with Topics, the Server Actions
+themselves aren't directly unit-tested (same Clerk-mocking rationale) —
+`resolveMediumValue`'s override/passthrough/validation logic is what's covered directly, in
+`tests/reference-data.test.ts` alongside the rest of `src/lib/reference-data.ts`.
 
 ### Questions Bulk Upload (`/admin/questions/bulk-upload`)
 

@@ -11,6 +11,12 @@ const STATUS_PILL_CLASSES: Record<"draft" | "published", string> = {
   published: "bg-mastered-bg text-mastered",
 };
 
+const MEDIUM_LABELS: Record<"sinhala" | "tamil" | "english", string> = {
+  sinhala: "Sinhala",
+  tamil: "Tamil",
+  english: "English",
+};
+
 export default async function AdminPapersPage({
   searchParams,
 }: {
@@ -68,6 +74,7 @@ export default async function AdminPapersPage({
                   <th className="px-3.5 py-2.5">Paper</th>
                   <th className="px-3.5 py-2.5">Subject</th>
                   <th className="px-3.5 py-2.5">Grade</th>
+                  <th className="px-3.5 py-2.5">Medium</th>
                   <th className="px-3.5 py-2.5">Type</th>
                   <th className="px-3.5 py-2.5 text-right">Questions</th>
                   <th className="px-3.5 py-2.5">Status</th>
@@ -83,6 +90,7 @@ export default async function AdminPapersPage({
                     </td>
                     <td className="px-3.5 py-2.5 text-ink-secondary">{paper.subjectName}</td>
                     <td className="px-3.5 py-2.5 text-ink-secondary">Grade {paper.grade}</td>
+                    <td className="px-3.5 py-2.5 text-ink-secondary">{MEDIUM_LABELS[paper.medium]}</td>
                     <td className="px-3.5 py-2.5 text-ink-secondary">{labelForPaperType(paper.paperType, PAPER_TYPES)}</td>
                     <td className="px-3.5 py-2.5 text-right text-ink-secondary">{paper.questionCount}</td>
                     <td className="px-3.5 py-2.5">
