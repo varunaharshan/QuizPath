@@ -34,7 +34,8 @@ export async function setup() {
   await client.query(`
     insert into grades (value, label, sort_order) values
       ('10', 'Grade 10', 0),
-      ('11', 'Grade 11', 1)
+      ('11', 'Grade 11', 1),
+      ('gcse', 'GCSE', 2)
     on conflict (value) do nothing;
   `);
   await client.query(`

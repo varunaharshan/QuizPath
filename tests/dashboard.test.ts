@@ -332,6 +332,117 @@ describe("getMostRecentlyPracticedSubjectId", () => {
   });
 });
 
+// GCSE represents the combined Grade 10 + Grade 11 syllabus (see
+// moduleGradesForQuery) — getCompletedQuizzes and getMostRecentlyPracticedSubjectId
+// share the same "or(modules.grade, papers.grade)" shape as getProgressStats,
+// so the same split applies: the module (sub-topic-practice) side widens to
+// Grade 10 + 11, while the paper side stays an exact match against the
+// literal requested grade — a Grade 10 or 11 PAPER attempt does not count
+// toward "gcse", only a paper genuinely tagged "gcse" does.
+describe("getCompletedQuizzes and getMostRecentlyPracticedSubjectId: GCSE union", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let studentId: string;
+  let subTopic10Id: string;
+  let subTopic11Id: string;
+  let gradedPaperId: string;
+  let gcsePaperId: string;
+
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: `Test GCSE Completed Subject ${runId}` }).returning();
+    subjectId = subject.id;
+
+    const [module10] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `GCSE Completed G10 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    const [module11] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `GCSE Completed G11 Module ${runId}`, sortOrder: 0 })
+      .returning();
+
+    const [subTopic10] = await db
+      .insert(subTopics)
+      .values({ moduleId: module10.id, name: `GCSE Completed G10 Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopic10Id = subTopic10.id;
+    const [subTopic11] = await db
+      .insert(subTopics)
+      .values({ moduleId: module11.id, name: `GCSE Completed G11 Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopic11Id = subTopic11.id;
+
+    const [mcq10] = await db
+      .insert(mcqs)
+      .values({ subTopicId: subTopic10Id, questionText: "G10 Q", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+    const [mcq11] = await db
+      .insert(mcqs)
+      .values({ subTopicId: subTopic11Id, questionText: "G11 Q", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+
+    const [gradedPaper] = await db
+      .insert(papers)
+      .values({ subjectId, grade: "10", medium: "english", paperType: "provincial", title: `GCSE Completed Grade10 Paper ${runId}`, status: "published" })
+      .returning();
+    gradedPaperId = gradedPaper.id;
+    const [gradedMcq] = await db
+      .insert(mcqs)
+      .values({ paperId: gradedPaperId, questionText: "Graded Paper Q", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+
+    const [gcsePaper] = await db
+      .insert(papers)
+      .values({ subjectId, grade: "gcse", medium: "english", paperType: "provincial", title: `GCSE Completed GCSE Paper ${runId}`, status: "published" })
+      .returning();
+    gcsePaperId = gcsePaper.id;
+    const [gcseMcq] = await db
+      .insert(mcqs)
+      .values({ paperId: gcsePaperId, questionText: "GCSE Paper Q", options: textOptions("A", "B"), correctOption: 0, status: "published" })
+      .returning({ id: mcqs.id });
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-gcse-completed-auth-${runId}`, email: `test-gcse-completed-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    await submitFullSubTopicQuiz({ studentId, subTopicId: subTopic10Id, answers: { [mcq10.id]: 0 } });
+    await submitFullSubTopicQuiz({ studentId, subTopicId: subTopic11Id, answers: { [mcq11.id]: 0 } });
+    await submitFullPaperQuiz({ studentId, paperId: gradedPaperId, answers: { [gradedMcq.id]: 0 } });
+    await submitFullPaperQuiz({ studentId, paperId: gcsePaperId, answers: { [gcseMcq.id]: 0 } });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+    await db.delete(users).where(eq(users.id, studentId));
+  });
+
+  it("getCompletedQuizzes({ grade: 'gcse' }) includes both grades' practice attempts and the genuinely-'gcse'-tagged paper, but not the Grade 10-tagged paper", async () => {
+    const completed = await getCompletedQuizzes(studentId, { grade: "gcse", subjectId });
+    const titles = completed.map((c) => c.title);
+
+    expect(titles).toContain(`GCSE Completed G10 Sub-topic ${runId}`);
+    expect(titles).toContain(`GCSE Completed G11 Sub-topic ${runId}`);
+    expect(titles).toContain(`GCSE Completed GCSE Paper ${runId}`);
+    expect(titles).not.toContain(`GCSE Completed Grade10 Paper ${runId}`);
+  });
+
+  it("getCompletedQuizzes({ grade: '10' }) is unaffected — still only Grade 10's own module attempts plus the Grade 10 paper", async () => {
+    const completed = await getCompletedQuizzes(studentId, { grade: "10", subjectId });
+    const titles = completed.map((c) => c.title);
+
+    expect(titles).toContain(`GCSE Completed G10 Sub-topic ${runId}`);
+    expect(titles).toContain(`GCSE Completed Grade10 Paper ${runId}`);
+    expect(titles).not.toContain(`GCSE Completed G11 Sub-topic ${runId}`);
+    expect(titles).not.toContain(`GCSE Completed GCSE Paper ${runId}`);
+  });
+
+  it("getMostRecentlyPracticedSubjectId resolves the subject for 'gcse' via either a Grade 10/11 practice attempt or a genuinely-'gcse' paper attempt", async () => {
+    expect(await getMostRecentlyPracticedSubjectId(studentId, "gcse")).toBe(subjectId);
+  });
+});
+
 // getPaperAccuracyTrend backs the Dashboard's "Subject Performance" chart —
 // one point per completed PAPER attempt (never a practice-session/sub-topic
 // attempt), plotted at its own score, in chronological order — not a
@@ -648,6 +759,16 @@ describe("getTopicStatusesForGrade", () => {
   it("excludes a different grade's topic", async () => {
     const topics = await getTopicStatusesForGrade(studentId, "10");
     expect(topics.some((t) => t.id === moduleGrade11Id)).toBe(false);
+  });
+
+  // GCSE represents the combined Grade 10 + Grade 11 syllabus (see
+  // moduleGradesForQuery) — the Grade 11 topic excluded above is included
+  // once the requested grade is "gcse", alongside every Grade 10 one.
+  it("unions Grade 10 and Grade 11 topics when requested grade is 'gcse'", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "gcse");
+    expect(topics.some((t) => t.id === moduleMixedId)).toBe(true);
+    expect(topics.some((t) => t.id === moduleOtherSubjectId)).toBe(true);
+    expect(topics.some((t) => t.id === moduleGrade11Id)).toBe(true);
   });
 });
 

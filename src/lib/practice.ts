@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, modules, subTopics } from "@/db/schema";
+import { moduleGradesForQuery } from "@/lib/reference-data";
 import type { SubTopicStatus, TopicStatus } from "./dashboard";
 
 // Weak Areas lists topics the student has actually attempted and scored
@@ -136,7 +137,11 @@ export function groupWeakAreasBySubject(topics: SubTopicStatus[], limit = 3): We
 // of matching sub-topic IDs; callers filter their own already-fetched
 // SubTopicStatus[] down to this set rather than this function returning
 // statuses itself, so there's only one place (getSubTopicStatusesForGrade)
-// that computes mastery.
+// that computes mastery. `grade` may be "gcse" — moduleGradesForQuery
+// expands it to Grade 10 + Grade 11's own modules (there's no GCSE-owned
+// taxonomy); searchSubTopicIdsByKeywords/getTopKeywords/getKeywordSuggestions
+// all inherit this for free since they delegate to this function (or share
+// its tallyKeywordsForGrade helper below).
 export async function searchSubTopicIdsByKeyword(
   grade: string,
   query: string,
@@ -155,7 +160,7 @@ export async function searchSubTopicIdsByKeyword(
     .from(subTopics)
     .innerJoin(modules, eq(modules.id, subTopics.moduleId))
     .leftJoin(mcqs, and(eq(mcqs.subTopicId, subTopics.id), eq(mcqs.status, "published")))
-    .where(eq(modules.grade, grade));
+    .where(inArray(modules.grade, moduleGradesForQuery(grade)));
 
   const matches = new Set<string>();
   for (const row of rows) {
@@ -199,7 +204,7 @@ async function tallyKeywordsForGrade(grade: string): Promise<Map<string, number>
     .from(mcqs)
     .innerJoin(subTopics, eq(subTopics.id, mcqs.subTopicId))
     .innerJoin(modules, eq(modules.id, subTopics.moduleId))
-    .where(and(eq(modules.grade, grade), eq(mcqs.status, "published")));
+    .where(and(inArray(modules.grade, moduleGradesForQuery(grade)), eq(mcqs.status, "published")));
 
   const counts = new Map<string, number>();
   for (const row of rows) {

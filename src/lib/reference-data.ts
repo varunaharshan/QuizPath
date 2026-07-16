@@ -83,3 +83,19 @@ export function nextSortOrder(existing: { sortOrder: number }[]): number {
 export function isValidMedium(value: unknown): value is "sinhala" | "tamil" | "english" {
   return value === "sinhala" || value === "tamil" || value === "english";
 }
+
+// GCSE represents the combined Grade 10 + Grade 11 syllabus, not its own
+// taxonomy — there are no GCSE-owned modules/sub-topics (a GCSE paper's
+// questions still point at real Grade 10/11 sub-topics via sub_topic_id,
+// exactly like any other paper). Every topic/mastery query that filters by
+// modules.grade calls this — the ONE place the "gcse" expansion is defined —
+// to turn the requested grade into the real module-grade values to match: an
+// ordinary "10"/"11" request stays a single-element list (no behavior
+// change), "gcse" expands to both. Deliberately not applied to a query
+// checking papers.grade directly (e.g. getScopedKpis' "Papers Using This
+// Subject", or the paper-side of an OR-across-two-paths query) — a paper can
+// genuinely be tagged "gcse" itself, so that check should stay an exact
+// match against the literal requested grade, never widened.
+export function moduleGradesForQuery(grade: string): string[] {
+  return grade === "gcse" ? ["10", "11"] : [grade];
+}

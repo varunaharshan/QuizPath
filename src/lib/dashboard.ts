@@ -11,6 +11,7 @@ import {
   subTopics,
 } from "@/db/schema";
 import { masteryLabelForScore, type MasteryLabel } from "./quiz";
+import { moduleGradesForQuery } from "@/lib/reference-data";
 
 export type SubTopicStatusLabel = MasteryLabel | "not_started";
 
@@ -36,15 +37,20 @@ export type SubTopicStatus = {
 // every existing caller wants "every subject for this grade" (there's only
 // Science today, but the practice-count badge etc. are deliberately
 // grade-wide, not subject-scoped); the Progress tab is the one caller that
-// narrows to a specific subject.
+// narrows to a specific subject. `grade` may be "gcse" — see
+// moduleGradesForQuery; the returned rows are grouped by grade (all of Grade
+// 10's modules in syllabus order, then all of Grade 11's), not interleaved.
 export async function getSubTopicStatusesForGrade(
   studentId: string,
   grade: string,
   subjectId?: string,
 ): Promise<SubTopicStatus[]> {
+  const moduleGrades = moduleGradesForQuery(grade);
   const gradeModules = await db.query.modules.findMany({
-    where: subjectId ? and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)) : eq(modules.grade, grade),
-    orderBy: modules.sortOrder,
+    where: subjectId
+      ? and(inArray(modules.grade, moduleGrades), eq(modules.subjectId, subjectId))
+      : inArray(modules.grade, moduleGrades),
+    orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder }, subject: true },
   });
 
@@ -110,7 +116,13 @@ export type CompletedQuiz = {
 // applies) — the Dashboard's per-subject switcher calls this once per
 // subject to pre-fetch every subject's own Recent Full Tests/Practices up
 // front, so switching the active subject is a client-side read of
-// already-fetched data rather than a new request.
+// already-fetched data rather than a new request. `grade`, when provided,
+// may be "gcse" — the sub-topic-practice half of the OR below widens via
+// moduleGradesForQuery (a practice attempt counts if its module is Grade 10
+// or 11), while the paper half stays an exact match against the literal
+// requested grade (a paper attempt counts only if it's genuinely tagged
+// "gcse" itself, not any Grade 10/11 paper) — same split as
+// getProgressStats' own attempts query, for the same reason.
 export async function getCompletedQuizzes(
   studentId: string,
   options: { grade?: string; limit?: number; type?: "paper" | "topic_practice"; subjectId?: string } = {},
@@ -133,7 +145,7 @@ export async function getCompletedQuizzes(
       and(
         eq(quizAttempts.studentId, studentId),
         isNotNull(quizAttempts.completedAt),
-        grade ? or(eq(modules.grade, grade), eq(papers.grade, grade)) : undefined,
+        grade ? or(inArray(modules.grade, moduleGradesForQuery(grade)), eq(papers.grade, grade)) : undefined,
         type === "paper" ? isNotNull(quizAttempts.paperId) : undefined,
         type === "topic_practice" ? isNotNull(quizAttempts.subTopicId) : undefined,
         subjectId ? or(eq(modules.subjectId, subjectId), eq(papers.subjectId, subjectId)) : undefined,
@@ -197,7 +209,9 @@ export async function getCompletedQuizzes(
 // Mirrors getContinueAttempt's join shape (leftJoin subTopics/modules/papers,
 // or(modules.grade, papers.grade)) since it needs the same "resolve subject
 // regardless of paper vs topic-practice" logic, just for the most recent
-// *completed* attempt instead of the most recent *incomplete* one.
+// *completed* attempt instead of the most recent *incomplete* one. Same
+// "gcse" split as getCompletedQuizzes/getProgressStats: the module side
+// widens via moduleGradesForQuery, the paper side stays an exact match.
 export async function getMostRecentlyPracticedSubjectId(
   studentId: string,
   grade: string,
@@ -212,7 +226,7 @@ export async function getMostRecentlyPracticedSubjectId(
       and(
         eq(quizAttempts.studentId, studentId),
         isNotNull(quizAttempts.completedAt),
-        or(eq(modules.grade, grade), eq(papers.grade, grade)),
+        or(inArray(modules.grade, moduleGradesForQuery(grade)), eq(papers.grade, grade)),
       ),
     )
     .orderBy(desc(quizAttempts.completedAt))
@@ -268,13 +282,28 @@ function scoreAndLabel(counts: { questionsAnswered: number; correctCount: number
 // scoped to one grade *and* one subject at a time — there's no cross-grade
 // "exam readiness" aggregation or blended score here; a student viewing
 // Grade 11 progress sees only Grade 11 numbers, never combined with Grade 10.
+// `grade` may be "gcse" though (see moduleGradesForQuery) — there's no
+// GCSE-owned taxonomy, so a "gcse" request is itself the one deliberate
+// cross-grade view: the combined Grade 10 + Grade 11 syllabus for this
+// subject, grouped by grade (not interleaved) in the returned `topics`.
 //
 // The 4 KPI cards are cumulative counts across every completed attempt that
 // belongs to this grade+subject (via the sub-topic's module, or the paper's
 // own grade/subject) — `averageScore` is total correct ÷ total questions
 // answered, deliberately NOT an average of each attempt's own percentage
 // (that would weight a 2-question attempt the same as a 40-question one,
-// double-counting the smaller sample).
+// double-counting the smaller sample). For "gcse", only the module side of
+// that OR widens to Grade 10/11 (a practice attempt counts if its module is
+// either); the paper side stays an exact match against "gcse" itself (a
+// Grade 10 or 11 PAPER attempt does not count toward "gcse" quizzesCompleted
+// — only a paper genuinely tagged "gcse" does). This is what keeps
+// quizzesCompleted and the topics breakdown below from disagreeing the way
+// they would for an ordinary mixed-grade paper: as long as a "gcse" paper's
+// questions are all tagged with a real Grade 10/11 sub_topic_id (the stated
+// design — no untagged GCSE questions), every answer counted into
+// totalQuestionsAnswered here also has a home in `topics`, because `topics`'
+// own subTopicIds now span both grades those questions could be tagged
+// under.
 //
 // Each sub-topic's questionsAnswered/correctCount is computed live from
 // quiz_attempt_answers (the same source of truth
@@ -291,9 +320,10 @@ export async function getProgressStats(
   grade: string,
   subjectId: string,
 ): Promise<ProgressStats> {
+  const moduleGrades = moduleGradesForQuery(grade);
   const gradeModules = await db.query.modules.findMany({
-    where: and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)),
-    orderBy: modules.sortOrder,
+    where: and(inArray(modules.grade, moduleGrades), eq(modules.subjectId, subjectId)),
+    orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
   const subTopicIds = gradeModules.flatMap((m) => m.subTopics.map((s) => s.id));
@@ -353,7 +383,7 @@ export async function getProgressStats(
         eq(quizAttempts.studentId, studentId),
         isNotNull(quizAttempts.completedAt),
         or(
-          and(eq(modules.grade, grade), eq(modules.subjectId, subjectId)),
+          and(inArray(modules.grade, moduleGrades), eq(modules.subjectId, subjectId)),
           and(eq(papers.grade, grade), eq(papers.subjectId, subjectId)),
         ),
       ),
@@ -411,11 +441,14 @@ export async function getProgressStats(
 // still reflect its TRUE full aggregate across every sub-topic, including
 // the ones hidden from the list, so a student sees "this topic's fine
 // overall, but here's the specific pocket dragging on it." Sorted ascending
-// by that true aggregate score — weakest topic first.
+// by that true aggregate score — weakest topic first. `grade` may be "gcse"
+// (see moduleGradesForQuery) — the combined Grade 10 + 11 topic list is
+// grouped by grade (not interleaved) before this function's own weakest-first
+// sort reorders it by score.
 export async function getWeakTopicsForGrade(studentId: string, grade: string): Promise<TopicProgress[]> {
   const gradeModules = await db.query.modules.findMany({
-    where: eq(modules.grade, grade),
-    orderBy: modules.sortOrder,
+    where: inArray(modules.grade, moduleGradesForQuery(grade)),
+    orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
 
@@ -479,10 +512,12 @@ export type TopicStatus = TopicProgress & {
 // subject, including not_started ones (score null), so callers can pick
 // whichever slice they need (the Dashboard selects the top 3 highest-scoring
 // per subject) rather than this function baking in one specific selection.
+// `grade` may be "gcse" (see moduleGradesForQuery) — grouped by grade, not
+// interleaved, same as every other topic query in this file.
 export async function getTopicStatusesForGrade(studentId: string, grade: string): Promise<TopicStatus[]> {
   const gradeModules = await db.query.modules.findMany({
-    where: eq(modules.grade, grade),
-    orderBy: modules.sortOrder,
+    where: inArray(modules.grade, moduleGradesForQuery(grade)),
+    orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder }, subject: true },
   });
 

@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
-import { mcqs, modules, subjects, subTopics, users } from "@/db/schema";
+import { mcqs, modules, papers, subjects, subTopics, users } from "@/db/schema";
 import { getProgressStats, getSubTopicStatusesForGrade } from "@/lib/dashboard";
-import { submitFullSubTopicQuiz, textOptions } from "./helpers";
+import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 // Confirms the Progress tab's Grade + Subject scoping and the KPI/topic-table
 // math: a student can view progress for their own grade or a different one
@@ -174,7 +174,6 @@ describe("Progress tab: Grade + Subject scoping and KPI math", () => {
     await db.delete(subjects).where(eq(subjects.id, subjectAId));
     await db.delete(subjects).where(eq(subjects.id, subjectBId));
     await db.delete(users).where(eq(users.id, studentId));
-    await pool.end();
   });
 
   it("shows progress for the student's own grade (11), scoped to Subject A only, with one topic row (not a bare sub-topic row)", async () => {
@@ -268,4 +267,152 @@ describe("Progress tab: Grade + Subject scoping and KPI math", () => {
     expect(stats.topics[0].subTopics[0].id).toBe(subTopicB2Id);
     expect(stats.topics[0].subTopics[0].score).toBeNull();
   });
+});
+
+// GCSE represents the combined Grade 10 + Grade 11 syllabus, not its own
+// taxonomy — a "gcse" request unions both grades' own modules (see
+// moduleGradesForQuery). This is also the key reconciliation case: a paper
+// genuinely tagged "gcse" whose questions are split across a Grade 10 and a
+// Grade 11 sub-topic must have quizzesCompleted/totalQuestionsAnswered
+// (paper-grade-based) and the topics breakdown (module-grade-based) agree —
+// previously, for an ordinary single-grade-tagged paper with mixed-grade
+// questions, these two numbers could silently disagree (see CLAUDE.md "GCSE
+// / combined-grade topic queries").
+describe("Progress tab: GCSE (combined Grade 10 + Grade 11) topic queries", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let module10Id: string;
+  let module11Id: string;
+  let subTopic10Id: string;
+  let subTopic11Id: string;
+  let studentId: string;
+
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: `Test GCSE Progress Subject ${runId}` }).returning();
+    subjectId = subject.id;
+
+    const [module10] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `GCSE G10 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    module10Id = module10.id;
+    const [module11] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `GCSE G11 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    module11Id = module11.id;
+
+    const [subTopic10] = await db
+      .insert(subTopics)
+      .values({ moduleId: module10Id, name: `GCSE G10 Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopic10Id = subTopic10.id;
+    const [subTopic11] = await db
+      .insert(subTopics)
+      .values({ moduleId: module11Id, name: `GCSE G11 Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopic11Id = subTopic11.id;
+
+    // A single real paper, tagged grade="gcse" directly — its questions still
+    // point at real Grade 10/Grade 11 sub-topics via sub_topic_id, exactly as
+    // the design calls for (no GCSE-owned taxonomy).
+    const [gcsePaper] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "gcse",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test GCSE Paper ${runId}`,
+        status: "published",
+      })
+      .returning();
+
+    const g10Mcqs = await db
+      .insert(mcqs)
+      .values([
+        { paperId: gcsePaper.id, subTopicId: subTopic10Id, questionText: "G10 Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+        { paperId: gcsePaper.id, subTopicId: subTopic10Id, questionText: "G10 Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      ])
+      .returning({ id: mcqs.id });
+    const g11Mcqs = await db
+      .insert(mcqs)
+      .values([
+        { paperId: gcsePaper.id, subTopicId: subTopic11Id, questionText: "G11 Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+        { paperId: gcsePaper.id, subTopicId: subTopic11Id, questionText: "G11 Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      ])
+      .returning({ id: mcqs.id });
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-gcse-progress-auth-${runId}`, email: `test-gcse-progress-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    // 3 of 4 correct: both G10 questions right, one of two G11 questions right.
+    await submitFullPaperQuiz({
+      studentId,
+      paperId: gcsePaper.id,
+      answers: {
+        [g10Mcqs[0].id]: 0,
+        [g10Mcqs[1].id]: 0,
+        [g11Mcqs[0].id]: 0,
+        [g11Mcqs[1].id]: 1,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+    await db.delete(users).where(eq(users.id, studentId));
+  });
+
+  it("unions Grade 10 and Grade 11 modules into the topics breakdown, grouped by grade", async () => {
+    const stats = await getProgressStats(studentId, "gcse", subjectId);
+
+    expect(stats.topics.map((t) => t.id)).toEqual([module10Id, module11Id]);
+  });
+
+  it("reconciles quizzesCompleted/totalQuestionsAnswered with the topics breakdown for a genuine GCSE paper attempt", async () => {
+    const stats = await getProgressStats(studentId, "gcse", subjectId);
+
+    // The paper attempt itself counts via the exact "gcse" match...
+    expect(stats.quizzesCompleted).toBe(1);
+    expect(stats.totalQuestionsAnswered).toBe(4);
+    expect(stats.totalCorrectAnswers).toBe(3);
+
+    // ...and every one of those 4 answers now has a home in the topics
+    // breakdown too, because the module-side filter spans both grades the
+    // paper's questions are actually tagged under. No silent shortfall.
+    const summedAnswered = stats.topics.reduce((sum, t) => sum + t.questionsAnswered, 0);
+    const summedCorrect = stats.topics.reduce((sum, t) => sum + t.correctCount, 0);
+    expect(summedAnswered).toBe(stats.totalQuestionsAnswered);
+    expect(summedCorrect).toBe(stats.totalCorrectAnswers);
+
+    const g10Topic = stats.topics.find((t) => t.id === module10Id)!;
+    const g11Topic = stats.topics.find((t) => t.id === module11Id)!;
+    expect(g10Topic.questionsAnswered).toBe(2);
+    expect(g10Topic.correctCount).toBe(2);
+    expect(g11Topic.questionsAnswered).toBe(2);
+    expect(g11Topic.correctCount).toBe(1);
+  });
+
+  it("getSubTopicStatusesForGrade also unions both grades for 'gcse'", async () => {
+    const statuses = await getSubTopicStatusesForGrade(studentId, "gcse", subjectId);
+    expect(statuses.map((s) => s.id).sort()).toEqual([subTopic10Id, subTopic11Id].sort());
+  });
+
+  it("an ordinary single-grade request is unaffected — only 'gcse' unions", async () => {
+    const grade10Only = await getProgressStats(studentId, "10", subjectId);
+    expect(grade10Only.topics.map((t) => t.id)).toEqual([module10Id]);
+    expect(grade10Only.quizzesCompleted).toBe(0); // the paper is tagged "gcse", not "10"
+
+    const grade11Only = await getProgressStats(studentId, "11", subjectId);
+    expect(grade11Only.topics.map((t) => t.id)).toEqual([module11Id]);
+    expect(grade11Only.quizzesCompleted).toBe(0);
+  });
+});
+
+afterAll(async () => {
+  await pool.end();
 });

@@ -293,6 +293,15 @@ describe("searchSubTopicIdsByKeyword", () => {
     expect(grade11Ids.has(otherGradeSubTopicId)).toBe(true);
   });
 
+  // GCSE represents the combined Grade 10 + Grade 11 syllabus (see
+  // moduleGradesForQuery) — a "gcse" search matches both grades' own
+  // sub-topics, unlike either single-grade search above.
+  it("matches sub-topics from both Grade 10 and Grade 11 when requested grade is 'gcse'", async () => {
+    const ids = await searchSubTopicIdsByKeyword("gcse", "photosynthesis");
+    expect(ids.has(subTopicByNameId)).toBe(true);
+    expect(ids.has(otherGradeSubTopicId)).toBe(true);
+  });
+
   it("returns an empty set for a blank query, without matching everything", async () => {
     const ids = await searchSubTopicIdsByKeyword("10", "   ");
     expect(ids.size).toBe(0);

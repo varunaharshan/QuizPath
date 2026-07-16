@@ -8,9 +8,8 @@ import {
   getSubjectsWithContentForGrade,
 } from "@/lib/admin-dashboard";
 import { getTopicsForSubjectGrade } from "@/lib/admin-topics";
+import { getGrades, labelForGrade } from "@/lib/reference-data";
 import { AdminContentCoverageTable } from "@/components/admin-content-coverage-table";
-
-const GRADE_LABELS: Record<string, string> = { "10": "Grade 10", "11": "Grade 11" };
 
 function KpiCard({
   icon,
@@ -80,8 +79,17 @@ export default async function AdminDashboardPage({
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
   const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
 
-  const grades = await getGradesWithContent();
-  const grade = rawGrade === "10" || rawGrade === "11" ? rawGrade : undefined;
+  // `grades` is the set that actually has content (modules or papers, any
+  // status — see getGradesWithContent's own comment) and is what the pill
+  // row/selection-validity check is driven by; `allGrades` is only needed to
+  // resolve each shown grade's display label. This list can include "gcse"
+  // once a paper is tagged that way — previously hardcoded to accept only
+  // literal "10"/"11", which silently dropped a "gcse" pill click back to
+  // the unscoped view even though getScopedKpis/getTopicsForSubjectGrade
+  // already handle it correctly (see CLAUDE.md "GCSE / combined-grade topic
+  // queries").
+  const [grades, allGrades] = await Promise.all([getGradesWithContent(), getGrades()]);
+  const grade = rawGrade && grades.includes(rawGrade) ? rawGrade : undefined;
 
   const subjects = grade ? await getSubjectsWithContentForGrade(grade) : [];
   const subjectId = grade && rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : undefined;
@@ -99,7 +107,7 @@ export default async function AdminDashboardPage({
 
       <div className="mb-4.5">
         <PillRow
-          items={grades.map((g) => ({ value: g, label: GRADE_LABELS[g] }))}
+          items={grades.map((g) => ({ value: g, label: labelForGrade(g, allGrades) }))}
           activeValue={grade}
           buildHref={(g) => `/admin/dashboard?grade=${g}`}
         />
@@ -168,7 +176,7 @@ async function UnscopedView() {
   );
 }
 
-async function ScopedView({ grade, subjectId }: { grade: "10" | "11"; subjectId: string }) {
+async function ScopedView({ grade, subjectId }: { grade: string; subjectId: string }) {
   const topics = await getTopicsForSubjectGrade(subjectId, grade);
   const kpis = await getScopedKpis(subjectId, grade, topics);
   const gaps = getCoverageGaps(topics);

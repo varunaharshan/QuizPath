@@ -96,6 +96,23 @@ describe("getTopicsForSubjectGrade", () => {
     expect(grade11Topics.map((t) => t.name)).toContain(`Other Grade Module ${runId}`);
   });
 
+  // GCSE represents the combined Grade 10 + Grade 11 syllabus — there's no
+  // GCSE-owned taxonomy, so a "gcse" request is a real union of both
+  // grades' own modules, not a third independent set.
+  it("unions Grade 10 and Grade 11 topics when requested grade is 'gcse', grouped by grade not interleaved", async () => {
+    const gcseTopics = await getTopicsForSubjectGrade(subjectId, "gcse");
+
+    expect(gcseTopics.map((t) => t.name)).toEqual([
+      `Module A ${runId}`,
+      `Module B ${runId}`,
+      `Other Grade Module ${runId}`,
+    ]);
+    // Every Grade 10 module comes before the Grade 11 one — grouped by
+    // grade, not an sortOrder-only interleave across two syllabuses.
+    const gcseModuleA = gcseTopics.find((t) => t.id === moduleAId)!;
+    expect(gcseModuleA.subTopics.map((s) => s.name)).toEqual([`Sub-topic A1 ${runId}`, `Sub-topic A2 ${runId}`]);
+  });
+
   it("returns an empty list for a subject+grade with no topics", async () => {
     const [emptySubject] = await db.insert(subjects).values({ name: `Test Empty Subject ${runId}` }).returning();
     try {

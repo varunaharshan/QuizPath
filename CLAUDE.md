@@ -1849,6 +1849,126 @@ case. As with every other admin Server Action in this app, `createGrade`/`create
 Topics/Papers/Bulk Upload's own actions) — their duplicate-check and sortOrder-assignment logic
 is what's covered directly, via the pure functions above.
 
+## GCSE / combined-grade topic queries
+
+GCSE papers (O/Level-equivalent past papers covering the combined Grade 10 + Grade 11
+syllabus) are supported as `grades.value = 'gcse'` (added via `/admin/reference-data`, the
+same admin form as any other grade — no migration needed) and `papers.grade = 'gcse'` on the
+paper itself. **There is deliberately no GCSE-owned taxonomy** — a GCSE paper's questions
+still point at real Grade 10 or Grade 11 `sub_topic_id`s, exactly like any other paper; only
+`papers.grade` (and, transitively, every grade-scoped *query*) knows about `'gcse'` as a
+value. This was a deliberate, additive design choice over the alternative of giving GCSE its
+own modules/sub-topics — see below for why.
+
+**The core mechanism: `moduleGradesForQuery(grade)`** (`src/lib/reference-data.ts`) — the
+single, shared place that expands a requested grade into the real `modules.grade` values to
+filter by: an ordinary `"10"`/`"11"` request stays a single-element list (no behavior change
+at all for the existing grades), while `"gcse"` expands to `["10", "11"]`. Every topic/mastery
+query that filters by `modules.grade` calls this rather than reimplementing the check —
+verified directly (no other file has its own inline `grade === "gcse" ? [...] : [...]` copy)
+specifically to avoid recreating the exact kind of "two code paths quietly disagree about how
+to resolve a grade" problem `getUnverifiedQuestions` already has (see below) while fixing a
+different instance of it.
+
+- **Every module-grade-scoped query was updated to call this** — `getTopicsForSubjectGrade`
+  (`src/lib/admin-topics.ts`), `getSubTopicStatusesForGrade`, `getWeakTopicsForGrade`,
+  `getTopicStatusesForGrade`, `getProgressStats` (`src/lib/dashboard.ts`),
+  `searchSubTopicIdsByKeyword`/`tallyKeywordsForGrade` (`src/lib/practice.ts` —
+  `searchSubTopicIdsByKeywords`/`getTopKeywords`/`getKeywordSuggestions` inherit it for free
+  since they delegate). The returned rows are **grouped by grade, not interleaved** — all of
+  Grade 10's modules in syllabus order, then all of Grade 11's (`orderBy: [modules.grade,
+  modules.sortOrder]`) — since a plain `sortOrder`-only order would be meaningless across two
+  different syllabuses (a Grade 10 module's `sortOrder: 0` has no real relationship to a Grade
+  11 module's own `sortOrder: 0`). A known, accepted consequence: a combined view can show two
+  separate, independently-`id`'d topic rows with similar or identical names (e.g. each grade's
+  own version of a same-sounding module) — there's no name-based merging, and this pass didn't
+  add a grade label to distinguish them visually; purely a query-correctness fix, not a display
+  change.
+- **`getCompletedQuizzes` and `getMostRecentlyPracticedSubjectId`** (`src/lib/dashboard.ts`)
+  share a different shape — `or(modules.grade, papers.grade)`, since an attempt can be a
+  sub-topic-practice session (resolved via its module) or a paper attempt (resolved via the
+  paper's own grade) — so only the `modules.grade` half of that OR widens via
+  `moduleGradesForQuery`; the `papers.grade` half stays an exact match against the literal
+  requested grade. A Grade 10 or Grade 11 **paper** attempt does not count toward `"gcse"` —
+  only a paper genuinely tagged `"gcse"` does; a sub-topic **practice** attempt counts if its
+  module is either Grade 10 or Grade 11. Neither function is actually reachable with `"gcse"`
+  through any page today (both are always called with the student's own `profile.grade`,
+  which stays a real `"10"`/`"11"` — no page passes a student-chosen grade into either), but
+  they share `getProgressStats`' exact query shape, so leaving them unfixed would just
+  relocate today's latent inconsistency to whenever a future GCSE-aware surface starts calling
+  them.
+- **`getScopedKpis`'s "Papers Using This Subject" KPI and `getSubjectsWithContentForGrade`**
+  (`src/lib/admin-dashboard.ts`) deliberately do **not** call `moduleGradesForQuery` — both ask
+  "does this row's own grade literally equal the requested value," not "does this row belong
+  to the combined syllabus a GCSE view represents." Widening either would make a subject with
+  merely *some* Grade 10/11 content (but zero actual GCSE papers) look like it has GCSE
+  content, which isn't meaningful. `getCoverageGaps` needs no change at all — it's a pure
+  function over whatever `getTopicsForSubjectGrade` already returned.
+- **`getOverallStats`/`getPaperAccuracyTrend`** (`src/lib/dashboard.ts`, the Dashboard's own
+  stat row and chart) are untouched — both are `papers.grade`-only (no `modules` join at all,
+  by design: paper-attempt-only signals), and both are only ever called with the student's own
+  `profile.grade`, never `"gcse"` — the Dashboard itself has no grade selector at all, unlike
+  By Topic/Weak Areas/the Admin Dashboard.
+
+**Reconciling `getProgressStats`'s two KPI-vs-breakdown queries for the GCSE case
+specifically**: `quizzesCompleted`/`totalQuestionsAnswered`/`totalCorrectAnswers` come from a
+*second*, independent query (`or(modules-side, papers-side)`) that sums every answer in every
+matching attempt — regardless of which module each individual answered question's own
+sub-topic belongs to — while the `topics` breakdown is scoped strictly to `subTopicIds`
+belonging to the requested grade's own modules. For an ordinary mixed-grade paper under a
+single literal grade tag, these two could disagree (a paper-tagged-Grade-11 attempt's answers
+all count toward the KPI total, but only the Grade-11-tagged half of them has a home in a
+Grade-11-scoped `topics` breakdown). Widening *only* the `modules.grade` side of both queries
+(never the `papers.grade` side, which stays an exact `"gcse"` match) closes this specific gap:
+once `topics`' own `subTopicIds` span both grades a GCSE paper's questions could possibly be
+tagged under, every answer the KPI query sums from a genuinely-`"gcse"`-tagged paper attempt
+now also has a home in the breakdown below it — as long as (per the stated design) every GCSE
+paper's questions are tagged with a real Grade 10/11 `sub_topic_id`. This is not a full fix for
+every possible mismatch (an untagged question, `sub_topic_id` null, already existed as a gap
+for *any* paper before GCSE and still counts toward the KPI total with no topic-row home — not
+new, not touched here) — it specifically closes the disagreement for the case this checkpoint
+targets.
+
+**Deliberately deferred to future checkpoints** — a running list, so none gets lost:
+1. **Bulk Upload** (`src/lib/bulk-upload.ts`) has no way to reference `"gcse"` at all — its CSV
+   `Grade` column drives both the Topic/Sub-topic lookup and the Paper Reference lookup off
+   the *same* value, so a paper and its questions' modules can never diverge via this path
+   today (which also means it currently can't express a mixed-grade GCSE import in one file).
+2. **The admin question-edit dropdown** (`/admin/papers/[paperId]/questions/[mcqId]/edit`)
+   scopes its Topic/Sub-topic `<select>` to `getTopicsForSubjectGrade(paper.subjectId,
+   paper.grade)` — for a `"gcse"`-tagged paper (once this UI is touched) that would need to
+   offer *both* grades' modules, and `updateQuestion` (`src/app/admin/papers/[paperId]/
+   questions/actions.ts`) has no server-side check at all that a reassigned `subTopicId`'s
+   module actually matches the paper's own grade (or even subject) — the dropdown's own
+   filtering is the only thing preventing a mismatch today, not the write path itself.
+3. **`getUnverifiedQuestions`** (`src/lib/admin-dashboard.ts`) resolves a question's displayed
+   `grade` as `paperGrade ?? moduleGrade` — **paper-first** — while every query in this section
+   resolves grade **module-first** (and most never look at `papers.grade` at all). This is the
+   existing "two code paths disagree about how to resolve a grade" problem
+   `moduleGradesForQuery` was explicitly kept as the single source of truth to avoid
+   *recreating* elsewhere; it isn't fixed at its original site yet.
+4. **Admin Topics Management's Create Topic form** (`/admin/topics`) sources its Grade pill
+   row from the same `getGrades()` every other admin screen uses — since `"gcse"` is now a
+   real, valid reference-table value, `isValidGrade` would accept it, and an admin browsing
+   with the GCSE pill selected could submit a brand-new `modules` row with `grade: "gcse"`,
+   which directly contradicts "no GCSE-owned taxonomy." Not prevented today; a write-path
+   guard, not a query-logic fix, so it's grouped with the three above rather than fixed here.
+
+Integration coverage: `tests/reference-data.test.ts` (`moduleGradesForQuery`'s expansion and
+pass-through cases); `tests/admin-topics.test.ts` (`getTopicsForSubjectGrade` unions both
+grades' modules, grouped by grade); `tests/progress.test.ts` (`getProgressStats`'s union,
+the grouped ordering, and — the key case — a genuine `"gcse"`-tagged paper attempt whose
+questions span a Grade 10 and a Grade 11 sub-topic, asserting `quizzesCompleted`/
+`totalQuestionsAnswered`/`totalCorrectAnswers` exactly reconcile with the summed `topics`
+breakdown, plus confirming an ordinary single-grade request is unaffected);
+`tests/weak-areas.test.ts` and `tests/dashboard.test.ts` (`getWeakTopicsForGrade`/
+`getTopicStatusesForGrade` unioning both grades, reusing each file's existing off-grade-exclusion
+fixture to prove the previously-excluded Grade 11 row is now included for `"gcse"`);
+`tests/dashboard.test.ts` (`getCompletedQuizzes`/`getMostRecentlyPracticedSubjectId`'s
+module-widens/paper-stays-exact split, including that a Grade 10-tagged paper is excluded from
+a `"gcse"` request while a genuinely-`"gcse"`-tagged one is included); `tests/practice.test.ts`
+(`searchSubTopicIdsByKeyword` matching both grades' sub-topics for `"gcse"`).
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of

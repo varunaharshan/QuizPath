@@ -1,6 +1,7 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { mcqs, modules, subjects, subTopics } from "@/db/schema";
+import { moduleGradesForQuery } from "@/lib/reference-data";
 
 export type AdminSubject = { id: string; name: string };
 
@@ -35,10 +36,18 @@ export type AdminTopic = {
 // with its sub-topics (also in order) and a live question count per
 // sub-topic — used both for display and for the delete-confirmation
 // warning, not derived from any cached count.
+//
+// `grade` may be "gcse" (see moduleGradesForQuery) — there's no GCSE-owned
+// taxonomy, so this returns the union of Grade 10's and Grade 11's own
+// modules, grouped by grade then syllabus sortOrder within each (not
+// interleaved by sortOrder alone, which would produce a meaningless order
+// across two different syllabuses). An ordinary "10"/"11" request is
+// unaffected — moduleGradesForQuery returns a single-element list, and the
+// grade sort key is then constant and a no-op.
 export async function getTopicsForSubjectGrade(subjectId: string, grade: string): Promise<AdminTopic[]> {
   const moduleRows = await db.query.modules.findMany({
-    where: and(eq(modules.subjectId, subjectId), eq(modules.grade, grade)),
-    orderBy: modules.sortOrder,
+    where: and(eq(modules.subjectId, subjectId), inArray(modules.grade, moduleGradesForQuery(grade))),
+    orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
 

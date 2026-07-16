@@ -12,6 +12,7 @@ import {
   isValidPaperType,
   labelForGrade,
   labelForPaperType,
+  moduleGradesForQuery,
   nextSortOrder,
   type Grade,
   type PaperType,
@@ -159,5 +160,16 @@ describe("isValidMedium", () => {
     expect(isValidMedium("")).toBe(false);
     expect(isValidMedium(null)).toBe(false);
     expect(isValidMedium(undefined)).toBe(false);
+  });
+});
+
+describe("moduleGradesForQuery", () => {
+  it("expands 'gcse' to both real grades", () => {
+    expect(moduleGradesForQuery("gcse")).toEqual(["10", "11"]);
+  });
+
+  it("passes an ordinary grade through unchanged, as a single-element list", () => {
+    expect(moduleGradesForQuery("10")).toEqual(["10"]);
+    expect(moduleGradesForQuery("11")).toEqual(["11"]);
   });
 });

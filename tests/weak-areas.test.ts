@@ -230,4 +230,20 @@ describe("getWeakTopicsForGrade", () => {
     const weak = await getWeakTopicsForGrade(randomUUID(), "10");
     expect(weak).toEqual([]);
   });
+
+  // GCSE represents the combined Grade 10 + Grade 11 syllabus (see
+  // moduleGradesForQuery) — reusing this file's own fixture, which already
+  // has a Grade 11 weak topic (moduleGrade11WeakId) that the Grade
+  // 10-scoped test above explicitly confirms is excluded from "10".
+  it("unions Grade 10 and Grade 11 weak topics when requested grade is 'gcse'", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "gcse");
+
+    expect(weak.some((t) => t.id === moduleWeakId)).toBe(true);
+    expect(weak.some((t) => t.id === moduleOtherWeakId)).toBe(true);
+    // Included here, unlike the Grade-10-only view above.
+    expect(weak.some((t) => t.id === moduleGrade11WeakId)).toBe(true);
+    // Still excluded: not individually weak, or never attempted.
+    expect(weak.some((t) => t.id === moduleOkId)).toBe(false);
+    expect(weak.some((t) => t.id === moduleUntouchedId)).toBe(false);
+  });
 });
