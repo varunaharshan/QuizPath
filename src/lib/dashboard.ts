@@ -354,13 +354,27 @@ function scoreAndLabel(counts: { questionsAnswered: number; correctCount: number
 // totalQuestionsAnswered can no longer be assumed to exactly equal the
 // summed `topics` once includeGrade10 is true — by-topic/page.tsx's
 // empty-state check accounts for this directly (see its own comment).
+//
+// The goal of includeGrade10 is "surface Grade 10 topics the student has
+// actually encountered," not "unlock the whole Grade 10 curriculum" — so a
+// Grade 10 topic/sub-topic pulled in purely by the widening is only shown
+// if the student has real attempt data in it (questionsAnswered > 0). This
+// is deliberately NOT traced through mastery_scores' own provenance (there
+// isn't any — it's a cumulative bucket keyed only on sub_topic_id, with no
+// per-paper/per-attempt-source link), just the same live questionsAnswered
+// count already being computed for every other purpose here. A topic
+// belonging to the grade the student actually requested keeps today's
+// unchanged behavior (the full syllabus, untouched topics included at
+// score null/"—") — this filter applies only to the grades added by the
+// toggle, never the native ones.
 export async function getProgressStats(
   studentId: string,
   grade: string,
   subjectId: string,
   includeGrade10 = false,
 ): Promise<ProgressStats> {
-  const moduleGrades = withGrade10Toggle(moduleGradesForQuery(grade), includeGrade10);
+  const nativeModuleGrades = moduleGradesForQuery(grade);
+  const moduleGrades = withGrade10Toggle(nativeModuleGrades, includeGrade10);
   const gradeModules = await db.query.modules.findMany({
     where: and(inArray(modules.grade, moduleGrades), eq(modules.subjectId, subjectId)),
     orderBy: [modules.grade, modules.sortOrder],
@@ -392,26 +406,44 @@ export async function getProgressStats(
     countsBySubTopic.set(row.subTopicId, counts);
   }
 
-  const topics: TopicProgress[] = gradeModules.map((gradeModule) => {
-    const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
-      const counts = countsBySubTopic.get(subTopic.id) ?? { questionsAnswered: 0, correctCount: 0 };
-      return { id: subTopic.id, name: subTopic.name, ...counts, ...scoreAndLabel(counts) };
-    });
+  const topics: TopicProgress[] = gradeModules
+    .map((gradeModule) => {
+      const subTopicRows: SubTopicProgress[] = gradeModule.subTopics.map((subTopic) => {
+        const counts = countsBySubTopic.get(subTopic.id) ?? { questionsAnswered: 0, correctCount: 0 };
+        return { id: subTopic.id, name: subTopic.name, ...counts, ...scoreAndLabel(counts) };
+      });
 
-    const topicCounts = {
-      questionsAnswered: subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0),
-      correctCount: subTopicRows.reduce((sum, s) => sum + s.correctCount, 0),
-    };
+      const topicCounts = {
+        questionsAnswered: subTopicRows.reduce((sum, s) => sum + s.questionsAnswered, 0),
+        correctCount: subTopicRows.reduce((sum, s) => sum + s.correctCount, 0),
+      };
 
-    return {
-      id: gradeModule.id,
-      name: gradeModule.name,
-      grade: gradeModule.grade,
-      ...topicCounts,
-      ...scoreAndLabel(topicCounts),
-      subTopics: subTopicRows,
-    };
-  });
+      return {
+        id: gradeModule.id,
+        name: gradeModule.name,
+        grade: gradeModule.grade,
+        ...topicCounts,
+        ...scoreAndLabel(topicCounts),
+        subTopics: subTopicRows,
+      };
+    })
+    // A topic pulled in purely by includeGrade10 (its own grade isn't one
+    // the student actually requested) is dropped entirely if nothing has
+    // ever been attempted in it — an untouched Grade 10 topic must never
+    // show up at 0% just because it exists in the curriculum.
+    .filter((topic) => nativeModuleGrades.includes(topic.grade) || topic.questionsAnswered > 0)
+    // For a widened-in topic that DOES survive (it has some real attempt
+    // data), the drill-down itself is further narrowed to only its
+    // attempted sub-topics — an untouched sibling sub-topic under an
+    // otherwise-attempted Grade 10 topic still shouldn't appear. A topic
+    // belonging to the requested grade is untouched by this at all: the
+    // full syllabus (including never-attempted sub-topics at score null)
+    // is exactly today's existing, unchanged behavior there.
+    .map((topic) =>
+      nativeModuleGrades.includes(topic.grade)
+        ? topic
+        : { ...topic, subTopics: topic.subTopics.filter((s) => s.questionsAnswered > 0) },
+    );
 
   const attempts = await db
     .select({ id: quizAttempts.id })

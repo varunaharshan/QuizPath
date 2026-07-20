@@ -795,6 +795,25 @@ describe("getTopicStatusesForGrade", () => {
     expect(topics.find((t) => t.id === moduleMixedId)!.grade).toBe("10");
     expect(topics.find((t) => t.id === moduleGrade11Id)!.grade).toBe("11");
   });
+
+  // Unlike getProgressStats, this function deliberately does NOT filter out
+  // an untouched Grade 10 topic once widened — its documented contract is
+  // "return every topic for the grade, including not_started ones, so
+  // callers can pick whichever slice they need" (see this file's own
+  // "still returns a never-attempted topic" test above for the plain-grade
+  // case). The Dashboard's Topic Performance card gets the same
+  // "never show an untouched topic" guarantee anyway, but from its own
+  // caller-side filter (toTopicRows in src/app/dashboard/page.tsx keeps
+  // only `topic.score !== null` before slicing to the top 3) — pre-existing
+  // logic that predates this toggle entirely, since the card was always a
+  // "highest-scoring ATTEMPTED topics" preview, never a full-syllabus list.
+  it("includeGrade10: true still returns an untouched Grade 10 topic raw (score null) — filtering it out of display is the Dashboard page's own job, not this function's", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "11", true);
+    const untouched = topics.find((t) => t.id === moduleUntouchedId);
+    expect(untouched).toBeDefined();
+    expect(untouched!.score).toBeNull();
+    expect(untouched!.questionsAnswered).toBe(0);
+  });
 });
 
 describe("withGrade10Toggle", () => {

@@ -434,7 +434,10 @@ describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
   let moduleC11Id: string;
   let subTopicC10aId: string; // Grade 10, practice-attempted: 1/2
   let subTopicC10bId: string; // Grade 10, paper-attempted (a Grade 10 paper): 1/1
+  let subTopicC10cId: string; // Grade 10, under the SAME module as C10a/C10b, never attempted
   let subTopicC11aId: string; // Grade 11, paper-attempted (a Grade 11 paper): 2/2
+  let moduleC10UntouchedId: string; // a whole separate Grade 10 module, never attempted at all
+  let subTopicC10UntouchedId: string;
   let studentId: string;
   let studentGrade10PaperOnlyId: string;
 
@@ -452,6 +455,14 @@ describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
       .values({ subjectId, grade: "11", name: `Toggle G11 Module ${runId}`, sortOrder: 0 })
       .returning();
     moduleC11Id = moduleC11.id;
+    // A whole separate Grade 10 module nobody has ever touched — proves the
+    // toggle doesn't unlock the entire Grade 10 curriculum, only the parts
+    // the student has real attempt data in.
+    const [moduleC10Untouched] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Toggle G10 Untouched Module ${runId}`, sortOrder: 1 })
+      .returning();
+    moduleC10UntouchedId = moduleC10Untouched.id;
 
     const [subTopicC10a] = await db
       .insert(subTopics)
@@ -463,11 +474,23 @@ describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
       .values({ moduleId: moduleC10Id, name: `Toggle G10b Sub-topic ${runId}`, sortOrder: 1 })
       .returning();
     subTopicC10bId = subTopicC10b.id;
+    // Same module as C10a/C10b, but never attempted — proves the drill-down
+    // itself is narrowed to attempted sub-topics, not just whole topics.
+    const [subTopicC10c] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleC10Id, name: `Toggle G10c Untouched Sub-topic ${runId}`, sortOrder: 2 })
+      .returning();
+    subTopicC10cId = subTopicC10c.id;
     const [subTopicC11a] = await db
       .insert(subTopics)
       .values({ moduleId: moduleC11Id, name: `Toggle G11a Sub-topic ${runId}`, sortOrder: 0 })
       .returning();
     subTopicC11aId = subTopicC11a.id;
+    const [subTopicC10Untouched] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleC10UntouchedId, name: `Toggle G10 Untouched Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopicC10UntouchedId = subTopicC10Untouched.id;
 
     const [paperG10] = await db
       .insert(papers)
@@ -512,6 +535,12 @@ describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
         { paperId: paperG11.id, subTopicId: subTopicC11aId, questionText: "G11 Paper Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" },
       ])
       .returning();
+    // Real, published questions exist for both never-attempted sub-topics —
+    // the point is that the curriculum content is there, just untouched.
+    await db.insert(mcqs).values([
+      { subTopicId: subTopicC10cId, questionText: "C10c Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      { subTopicId: subTopicC10UntouchedId, questionText: "C10 Untouched Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+    ]);
 
     const [student] = await db
       .insert(users)
@@ -612,6 +641,47 @@ describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
     expect(summedAnswered).toBeGreaterThan(stats.totalQuestionsAnswered);
     expect(summedCorrect).toBe(4);
     expect(summedCorrect).toBeGreaterThan(stats.totalCorrectAnswers);
+  });
+
+  // The toggle's goal is "surface Grade 10 topics the student has actually
+  // encountered," not "unlock the whole Grade 10 curriculum" — an untouched
+  // Grade 10 topic (or an untouched sub-topic sitting alongside attempted
+  // ones in an otherwise-real topic) must never appear just because it
+  // exists. mastery_scores has no per-attempt provenance to trace this
+  // through — the filter is just the same live questionsAnswered count
+  // already computed for every other purpose here.
+  it("never surfaces a whole Grade 10 module the student has never attempted, even though it exists in the curriculum", async () => {
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+    expect(stats.topics.some((t) => t.id === moduleC10UntouchedId)).toBe(false);
+  });
+
+  it("narrows a surfaced Grade 10 topic's own drill-down to only its attempted sub-topics", async () => {
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+    const g10Topic = stats.topics.find((t) => t.id === moduleC10Id)!;
+
+    // C10a and C10b were both attempted (directly, and via the Grade 10
+    // paper respectively) and still show up; C10c, under the very same
+    // module, was never attempted and is excluded from the drill-down —
+    // even though the topic itself is surfaced because it has real data.
+    expect(g10Topic.subTopics.map((s) => s.id).sort()).toEqual([subTopicC10aId, subTopicC10bId].sort());
+    expect(g10Topic.subTopics.some((s) => s.id === subTopicC10cId)).toBe(false);
+    // The topic's own rollup is unaffected by the filtering — C10c
+    // contributed 0 questions/0 correct either way, so hiding it from the
+    // drill-down doesn't change the true aggregate.
+    expect(g10Topic.questionsAnswered).toBe(3);
+    expect(g10Topic.correctCount).toBe(2);
+  });
+
+  it("never filters the requested (native) grade's own topics — the full syllabus, untouched topics included, is unchanged", async () => {
+    // Grade 11 is the requested grade here, so moduleC11's own sub-topics
+    // keep today's existing behavior regardless of includeGrade10 — this
+    // fixture only has an attempted Grade 11 sub-topic, but the guarantee
+    // is that the native side of the filter (nativeModuleGrades.includes)
+    // never applies to it, proven indirectly by the earlier "grouped by
+    // grade" test already asserting moduleC11Id is present and unaffected.
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+    const g11Topic = stats.topics.find((t) => t.id === moduleC11Id)!;
+    expect(g11Topic.subTopics.map((s) => s.id)).toEqual([subTopicC11aId]);
   });
 
   it("isProgressStatsEmpty: a student whose only Grade 10 exposure was a Grade 10 paper reads as empty when the toggle is off, but not once it's on", async () => {

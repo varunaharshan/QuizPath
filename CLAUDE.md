@@ -2044,6 +2044,42 @@ untouched — `"11"` still resolves to just `["11"]` everywhere unless a caller 
   guarantee doesn't hold in the other direction here, though it never over-counts a paper that
   doesn't belong (the paper-side exact-match is what keeps a Grade 10 paper from becoming a
   Grade 11 KPI-recognized attempt at all).
+- **The toggle's goal is "surface Grade 10 topics the student has actually encountered," not
+  "unlock the whole Grade 10 curriculum"** — a never-attempted Grade 10 topic must never
+  appear just because it exists in the syllabus. `mastery_scores` has no per-attempt/per-paper
+  provenance to trace this through (it's a cumulative bucket keyed only on `sub_topic_id`),
+  and that's not needed anyway — the same live `questionsAnswered` count each function is
+  already computing is the filter.
+  - **`getWeakTopicsForGrade` already satisfies this by construction**, no code change
+    needed — a topic is only included if at least one of its sub-topics has `label ===
+    "needs_work"`, which requires a real mastery row (`score === null` → always
+    `"not_started"`, never `"needs_work"`). An untouched or all-fine Grade 10 module can
+    never earn a spot in the widened list any more than it could in the plain Grade 10 view.
+  - **`getProgressStats` needed an explicit fix**, since By Topic's whole point is showing the
+    full topic tree including untouched topics at `score: null`/"—" — naively widening would
+    pull in every never-attempted Grade 10 topic alongside the ones with real data. Fixed with
+    a `nativeModuleGrades = moduleGradesForQuery(grade)` (the *unwidened* set) computed
+    alongside the widened `moduleGrades`, then two passes over the built `topics` array: first
+    drop any topic whose own `grade` isn't in `nativeModuleGrades` (i.e., it only exists
+    because of the toggle) *and* has `questionsAnswered === 0`; then, for a widened-in topic
+    that survives (real data somewhere in it), narrow its own `subTopics` drill-down to only
+    the sub-topics that were themselves attempted, so an untouched sibling sub-topic under an
+    otherwise-real Grade 10 topic doesn't leak into the drill-down either. A topic belonging
+    to the grade actually requested is untouched by either pass — the full syllabus, untouched
+    topics included, is exactly today's unchanged behavior there. Filtering the drill-down
+    array doesn't change the topic's own rollup numbers either way, since an excluded
+    sub-topic contributed `(0, 0)` to the sum regardless of whether it's filtered out or left
+    in.
+  - **The Dashboard's Topic Performance card already satisfies this too, but via its own
+    pre-existing display-time filter, not `getTopicStatusesForGrade` itself** —
+    `getTopicStatusesForGrade` deliberately still returns every topic including untouched ones
+    at `score: null` (unchanged; that's its documented "return everything, let the caller
+    decide" contract), but the Dashboard's own `toTopicRows` helper
+    (`src/app/dashboard/page.tsx`) filters to `topic.score !== null` before slicing to the top
+    3 — logic that predates this whole toggle feature, since the card was always a
+    "highest-scoring *attempted* topics" preview, never a full-syllabus list. Confirmed via a
+    dedicated test asserting the raw widened result still includes an untouched Grade 10 topic
+    (at `score: null`), rather than assuming the fix carried over.
 - **`isProgressStatsEmpty(stats: ProgressStats, includeGrade10: boolean): boolean`**
   (`src/lib/dashboard.ts`, exported/directly tested — the same "extract pure display logic
   for testability" pattern `quiz-ui.ts`'s `computeQuizProgress` already established, since
@@ -2087,16 +2123,24 @@ untouched — `"11"` still resolves to just `["11"]` everywhere unless a caller 
 Integration coverage: `tests/dashboard.test.ts` — `withGrade10Toggle` directly (no-op when
 `includeGrade10` is false, adds `"10"` when true and absent, no-op when `"10"` is already
 present); `getTopicStatusesForGrade`'s `includeGrade10` default-false byte-identity and its
-union-with-`grade`-field behavior when true. `tests/weak-areas.test.ts` — the same
-default-false/union-when-true pair for `getWeakTopicsForGrade`, reusing the file's existing
-Grade 11 weak-topic fixture. `tests/progress.test.ts` — a dedicated fixture (a Grade 10
-module with both a standalone practice attempt and a Grade 10 *paper* attempt, plus a Grade
-11 module with its own paper attempt) covering: default-false byte-identity;
-`quizzesCompleted` widening for the Grade 10 practice attempt but never for the Grade 10
-paper attempt; the topics-breakdown-can-exceed-the-KPI-total divergence with exact numbers;
-and `isProgressStatsEmpty`'s fix via a second, isolated student whose only history is the
-Grade 10 paper (empty when the toggle is off, not empty once it's on, with `quizzesCompleted`
-staying `0` in both cases).
+union-with-`grade`-field behavior when true, plus confirming it still returns an untouched
+Grade 10 topic raw (`score: null`) once widened — proving that exclusion is the Dashboard
+page's own `toTopicRows` filter's job, not this function's. `tests/weak-areas.test.ts` — the
+same default-false/union-when-true pair for `getWeakTopicsForGrade`, reusing the file's
+existing Grade 11 weak-topic fixture, plus a dedicated case confirming an untouched Grade 10
+module and an all-fine (attempted-but-nothing-weak) Grade 10 module both still stay excluded
+once widened, proving the "no data ≠ weakness" exclusion holds without any additional filter.
+`tests/progress.test.ts` — a dedicated fixture (a Grade 10 module with a standalone practice
+attempt, a Grade 10 *paper* attempt, and an untouched third sub-topic under that same module,
+plus a wholly separate untouched Grade 10 module, and a Grade 11 module with its own paper
+attempt) covering: default-false byte-identity; `quizzesCompleted` widening for the Grade 10
+practice attempt but never for the Grade 10 paper attempt; the topics-breakdown-can-exceed-
+the-KPI-total divergence with exact numbers; `isProgressStatsEmpty`'s fix via a second,
+isolated student whose only history is the Grade 10 paper (empty when the toggle is off, not
+empty once it's on, with `quizzesCompleted` staying `0` in both cases); the wholly untouched
+Grade 10 module never appearing in the widened `topics` at all; and a surfaced Grade 10
+topic's own drill-down narrowing to only its attempted sub-topics, with the topic's own
+rollup numbers unaffected by the narrowing.
 
 ## What's NOT built yet
 

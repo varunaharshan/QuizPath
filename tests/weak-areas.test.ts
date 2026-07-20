@@ -268,4 +268,21 @@ describe("getWeakTopicsForGrade", () => {
     expect(weak.find((t) => t.id === moduleWeakId)!.grade).toBe("10");
     expect(weak.find((t) => t.id === moduleGrade11WeakId)!.grade).toBe("11");
   });
+
+  // The toggle's goal is "surface Grade 10 topics the student has actually
+  // encountered," not "unlock the whole Grade 10 curriculum" — this already
+  // holds by construction here, since inclusion is driven entirely by a
+  // sub-topic actually being needs_work (which requires a real mastery
+  // row, i.e. questionsAnswered > 0 — never_attempted sub-topics are always
+  // "not_started", never "needs_work"). moduleUntouchedId (nobody has ever
+  // touched it) and moduleOkId (attempted, but nothing in it is weak) both
+  // already stay excluded from the plain Grade 10 view (confirmed above);
+  // this confirms the same holds once they're pulled into a widened Grade
+  // 11 view too, so no separate "has real attempt data" filter is needed
+  // for this function the way getProgressStats needed one.
+  it("includeGrade10: true still never surfaces an untouched or all-fine Grade 10 module, even though widening unions in Grade 10 modules generally", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "11", true);
+    expect(weak.some((t) => t.id === moduleUntouchedId)).toBe(false);
+    expect(weak.some((t) => t.id === moduleOkId)).toBe(false);
+  });
 });
