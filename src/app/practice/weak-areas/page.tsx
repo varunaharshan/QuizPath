@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
 import { getCompletedQuizzes, getWeakTopicsForGrade, type TopicProgress } from "@/lib/dashboard";
 import { AppShell } from "@/components/app-shell";
+import { IncludeGrade10Toggle } from "@/components/include-grade10-toggle";
 import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
 // <TopicProgressTable> is "use client" and deliberately defines its own
@@ -17,6 +18,7 @@ function toTopicProgressData(topic: TopicProgress): TopicProgressData {
     correctCount: topic.correctCount,
     score: topic.score,
     label: topic.label,
+    grade: topic.grade,
     subTopics: topic.subTopics.map((subTopic) => ({
       id: subTopic.id,
       name: subTopic.name,
@@ -37,7 +39,11 @@ function toTopicProgressData(topic: TopicProgress): TopicProgressData {
 // only the weak sub-topics — never-attempted or already-fine ones are
 // omitted there. See src/lib/dashboard.ts's getWeakTopicsForGrade for the
 // rollup/filtering itself.
-export default async function WeakAreasPage() {
+export default async function WeakAreasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const appUser = await getOrCreateAppUser();
   if (!appUser) {
     redirect("/");
@@ -48,8 +54,11 @@ export default async function WeakAreasPage() {
     redirect("/onboarding");
   }
 
+  const params = await searchParams;
+  const includeGrade10 = params.includeGrade10 === "true";
+
   const [weakTopics, completedQuizzes] = await Promise.all([
-    getWeakTopicsForGrade(appUser.id, profile.grade),
+    getWeakTopicsForGrade(appUser.id, profile.grade, includeGrade10),
     getCompletedQuizzes(appUser.id),
   ]);
 
@@ -65,6 +74,11 @@ export default async function WeakAreasPage() {
         Topics with at least one sub-topic below 60% accuracy — practice these first.
       </p>
 
+      <IncludeGrade10Toggle
+        checked={includeGrade10}
+        href={includeGrade10 ? "/practice/weak-areas" : "/practice/weak-areas?includeGrade10=true"}
+      />
+
       {weakTopics.length === 0 ? (
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
           No sub-topics are below 60% right now — nice work! Keep practicing to stay sharp.
@@ -72,7 +86,7 @@ export default async function WeakAreasPage() {
       ) : (
         <div className="overflow-hidden rounded-[10px] border border-app-border bg-white">
           <div className="overflow-x-auto">
-            <TopicProgressTable topics={weakTopics.map(toTopicProgressData)} />
+            <TopicProgressTable topics={weakTopics.map(toTopicProgressData)} primaryGrade={profile.grade} />
           </div>
         </div>
       )}

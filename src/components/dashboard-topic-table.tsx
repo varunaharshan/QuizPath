@@ -9,6 +9,10 @@ export type DashboardTopicRow = {
   icon: string;
   score: number | null;
   questionsAnswered: number;
+  // The owning module's own grade — compared against `primaryGrade` to
+  // decide whether this row needs a "Grade 10" tag (an Include-Grade-10
+  // toggle row) or not (an ordinary same-grade row).
+  grade: string;
 };
 
 // Plain accuracy table for the Dashboard's "Topic Performance" card — no
@@ -20,7 +24,16 @@ export type DashboardTopicRow = {
 // pooled multi-sub-topic quiz mode), the same reason <TopicProgressTable>
 // only ever puts a Practice button on its expanded sub-topic rows — "View
 // all topics →" below this table is the entry point into that drill-down.
-export function DashboardTopicTable({ topics }: { topics: DashboardTopicRow[] }) {
+export function DashboardTopicTable({
+  topics,
+  primaryGrade,
+}: {
+  topics: DashboardTopicRow[];
+  // The student's own grade context — a row only gets a "Grade 10" tag
+  // when its own grade differs from this (see topic-progress-table.tsx's
+  // identical rule).
+  primaryGrade: string;
+}) {
   if (topics.length === 0) {
     return <p className="m-0 text-sm text-ink-secondary">No topics are available yet for this subject.</p>;
   }
@@ -45,6 +58,11 @@ export function DashboardTopicTable({ topics }: { topics: DashboardTopicRow[] })
           <tr key={topic.id}>
             <td className="border-b border-app-border py-2.5 pr-2">
               {topic.icon} {topic.name}
+              {topic.grade !== primaryGrade && (
+                <span className="ml-2 rounded-full bg-app-surface-muted px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-ink-secondary">
+                  Grade {topic.grade}
+                </span>
+              )}
             </td>
             <td className="border-b border-app-border py-2.5 pr-2">
               {topic.score === null ? (

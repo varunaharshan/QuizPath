@@ -46,13 +46,20 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const [subjectList, statuses, topicStatuses, trends, mostRecentSubjectId] = await Promise.all([
-    getSubjectsForGrade(profile.grade),
-    getSubTopicStatusesForGrade(appUser.id, profile.grade),
-    getTopicStatusesForGrade(appUser.id, profile.grade),
-    getPaperAccuracyTrend(appUser.id, profile.grade),
-    getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
-  ]);
+  const [subjectList, statuses, topicStatuses, topicStatusesWithGrade10, trends, mostRecentSubjectId] =
+    await Promise.all([
+      getSubjectsForGrade(profile.grade),
+      getSubTopicStatusesForGrade(appUser.id, profile.grade),
+      getTopicStatusesForGrade(appUser.id, profile.grade),
+      // Pre-fetched alongside the plain call above so the "Include Grade 10
+      // foundational topics" toggle on the Topic Performance card can switch
+      // client-side with no extra request — same reasoning as pre-fetching
+      // every subject's own data up front. One extra grade-wide query per
+      // Dashboard load, not one per subject.
+      getTopicStatusesForGrade(appUser.id, profile.grade, true),
+      getPaperAccuracyTrend(appUser.id, profile.grade),
+      getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
+    ]);
 
   // Your Weak Areas stays exactly as before — cross-subject, unscoped by
   // the new subject switcher (it already surfaces which subjects/topics
@@ -63,7 +70,25 @@ export default async function DashboardPage() {
   const topicsBySubjectId = new Map(
     groupTopicStatusesBySubject(topicStatuses).map((group) => [group.subjectId, group.topics]),
   );
+  const topicsWithGrade10BySubjectId = new Map(
+    groupTopicStatusesBySubject(topicStatusesWithGrade10).map((group) => [group.subjectId, group.topics]),
+  );
   const trendBySubjectId = new Map(trends.map((trend) => [trend.subjectId, trend]));
+
+  function toTopicRows(topics: ReturnType<typeof groupTopicStatusesBySubject>[number]["topics"]) {
+    return topics
+      .filter((topic) => topic.score !== null)
+      .sort((a, b) => b.score! - a.score!)
+      .slice(0, TOPIC_PREVIEW_LIMIT)
+      .map((topic) => ({
+        id: topic.id,
+        name: topic.name,
+        icon: iconForModule(topic.name),
+        score: topic.score,
+        questionsAnswered: topic.questionsAnswered,
+        grade: topic.grade,
+      }));
+  }
 
   const subjects: SubjectBundle[] = await Promise.all(
     subjectList.map(async (subject) => {
@@ -83,17 +108,8 @@ export default async function DashboardPage() {
         }),
       ]);
 
-      const topics = (topicsBySubjectId.get(subject.id) ?? [])
-        .filter((topic) => topic.score !== null)
-        .sort((a, b) => b.score! - a.score!)
-        .slice(0, TOPIC_PREVIEW_LIMIT)
-        .map((topic) => ({
-          id: topic.id,
-          name: topic.name,
-          icon: iconForModule(topic.name),
-          score: topic.score,
-          questionsAnswered: topic.questionsAnswered,
-        }));
+      const topics = toTopicRows(topicsBySubjectId.get(subject.id) ?? []);
+      const topicsWithGrade10 = toTopicRows(topicsWithGrade10BySubjectId.get(subject.id) ?? []);
 
       return {
         subjectId: subject.id,
@@ -102,6 +118,7 @@ export default async function DashboardPage() {
         grade: overallStats.totalQuestionsAnswered === 0 ? null : gceGradeForScore(overallStats.averageScore!),
         overallStats,
         topics,
+        topicsWithGrade10,
         trend: trendBySubjectId.get(subject.id) ?? null,
         recentPapers,
         recentPractices,

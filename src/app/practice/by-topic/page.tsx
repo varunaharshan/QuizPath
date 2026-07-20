@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOrCreateAppUser, getStudentProfile } from "@/lib/current-app-user";
-import { getCompletedQuizzes, getProgressStats, type TopicProgress } from "@/lib/dashboard";
+import { getCompletedQuizzes, getProgressStats, isProgressStatsEmpty, type TopicProgress } from "@/lib/dashboard";
 import { getPracticeSubjects } from "@/lib/papers";
 import { getGrades, isValidGrade } from "@/lib/reference-data";
 import { AppShell } from "@/components/app-shell";
+import { IncludeGrade10Toggle } from "@/components/include-grade10-toggle";
 import { ProgressFilterForm } from "@/components/progress-filter-form";
 import { TopicProgressTable, type TopicProgressData } from "@/components/topic-progress-table";
 
@@ -22,6 +23,7 @@ function toTopicProgressData(topic: TopicProgress): TopicProgressData {
     correctCount: topic.correctCount,
     score: topic.score,
     label: topic.label,
+    grade: topic.grade,
     subTopics: topic.subTopics.map((subTopic) => ({
       id: subTopic.id,
       name: subTopic.name,
@@ -59,6 +61,7 @@ export default async function ByTopicPage({
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
   const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
+  const includeGrade10 = params.includeGrade10 === "true";
 
   const [subjects, completedQuizzes, grades] = await Promise.all([
     getPracticeSubjects(),
@@ -75,7 +78,8 @@ export default async function ByTopicPage({
     rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
   const subject = subjects.find((s) => s.id === subjectId) ?? null;
 
-  const stats = subjectId ? await getProgressStats(appUser.id, grade, subjectId) : null;
+  const stats = subjectId ? await getProgressStats(appUser.id, grade, subjectId, includeGrade10) : null;
+  const isEmpty = stats !== null && isProgressStatsEmpty(stats, includeGrade10);
 
   return (
     <AppShell
@@ -101,7 +105,16 @@ export default async function ByTopicPage({
             selected={{ grade, subjectId }}
           />
 
-          {stats.quizzesCompleted === 0 ? (
+          <IncludeGrade10Toggle
+            checked={includeGrade10}
+            href={`/practice/by-topic?${new URLSearchParams({
+              grade,
+              subjectId,
+              ...(includeGrade10 ? {} : { includeGrade10: "true" }),
+            }).toString()}`}
+          />
+
+          {isEmpty ? (
             <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">
               You haven&apos;t tried any Grade {grade} {subject.name} papers yet —{" "}
               <Link
@@ -118,7 +131,7 @@ export default async function ByTopicPage({
                 Mastery by topic
               </div>
               <div className="overflow-x-auto">
-                <TopicProgressTable topics={stats.topics.map(toTopicProgressData)} />
+                <TopicProgressTable topics={stats.topics.map(toTopicProgressData)} primaryGrade={grade} />
               </div>
             </div>
           )}

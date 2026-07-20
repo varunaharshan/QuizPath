@@ -245,6 +245,12 @@ export type SubTopicProgress = {
 };
 
 export type TopicProgress = SubTopicProgress & {
+  // The owning module's own grade ("10" or "11") — lets a caller widened via
+  // includeGrade10 (see withGrade10Toggle below) tell a foundational Grade
+  // 10 row apart from the page's own primary grade, to render a "Grade 10"
+  // tag. Always just the module's real, literal grade column; never "gcse"
+  // (a gcse request's own topics are each still one real underlying grade).
+  grade: string;
   // Every sub-topic under this topic (module), in syllabus sortOrder — for
   // the Progress tab's expandable per-topic drill-down. A question with no
   // sub_topic_id has no topic association at all in this schema (mcqs has
@@ -254,6 +260,19 @@ export type TopicProgress = SubTopicProgress & {
   // to exactly one of these sub-topics.
   subTopics: SubTopicProgress[];
 };
+
+// Explicit, opt-in widening for the Grade 11 "Include Grade 10 foundational
+// topics" toggle (Weak Areas, By Topic, Dashboard's Topic Performance card
+// only — see each call site). Deliberately NOT folded into
+// moduleGradesForQuery itself: grade "11" must keep resolving to just
+// ["11"] by default everywhere, with no special-casing of "11" the way
+// "gcse" is special-cased. A caller must explicitly pass includeGrade10:
+// true to widen; a "10" or "gcse" request is already a no-op here since
+// both already include "10".
+export function withGrade10Toggle(moduleGrades: string[], includeGrade10: boolean): string[] {
+  if (!includeGrade10 || moduleGrades.includes("10")) return moduleGrades;
+  return [...moduleGrades, "10"];
+}
 
 export type ProgressStats = {
   quizzesCompleted: number;
@@ -315,12 +334,33 @@ function scoreAndLabel(counts: { questionsAnswered: number; correctCount: number
 // sub-topics' already-correct counts — since every sub-topic belongs to
 // exactly one topic, summing them up can't double-count or drop anything
 // relative to the per-sub-topic numbers already being computed.
+//
+// `includeGrade10` is the Grade 11 "Include Grade 10 foundational topics"
+// toggle (see withGrade10Toggle above), off by default — passing it widens
+// moduleGrades for BOTH the `topics` breakdown and the `attempts`/
+// quizzesCompleted query's own module-side condition (reusing the exact
+// same widened `moduleGrades` variable for each, the same mechanism GCSE's
+// own union relies on), so a widened-in Grade 10 sub-topic PRACTICE attempt
+// counts toward quizzesCompleted and has a home in `topics` at the same
+// time. The paper-side condition (`eq(papers.grade, grade)`) is deliberately
+// NEVER widened — a Grade 10 PAPER attempt must not count as a Grade 11
+// "quiz completed" just because the toggle is on. One known, accepted
+// consequence: a Grade 10 paper attempt's answers, if tagged to a
+// (now-included) Grade 10 sub-topic, can still appear in that sub-topic's
+// own `topics` row even though that attempt isn't counted in
+// quizzesCompleted — topic-level mastery is always the true cumulative
+// total for that sub-topic regardless of source, matching how mastery
+// works everywhere else in this app. This means quizzesCompleted/
+// totalQuestionsAnswered can no longer be assumed to exactly equal the
+// summed `topics` once includeGrade10 is true — by-topic/page.tsx's
+// empty-state check accounts for this directly (see its own comment).
 export async function getProgressStats(
   studentId: string,
   grade: string,
   subjectId: string,
+  includeGrade10 = false,
 ): Promise<ProgressStats> {
-  const moduleGrades = moduleGradesForQuery(grade);
+  const moduleGrades = withGrade10Toggle(moduleGradesForQuery(grade), includeGrade10);
   const gradeModules = await db.query.modules.findMany({
     where: and(inArray(modules.grade, moduleGrades), eq(modules.subjectId, subjectId)),
     orderBy: [modules.grade, modules.sortOrder],
@@ -366,6 +406,7 @@ export async function getProgressStats(
     return {
       id: gradeModule.id,
       name: gradeModule.name,
+      grade: gradeModule.grade,
       ...topicCounts,
       ...scoreAndLabel(topicCounts),
       subTopics: subTopicRows,
@@ -411,6 +452,20 @@ export async function getProgressStats(
   return { quizzesCompleted, totalQuestionsAnswered, totalCorrectAnswers, averageScore, topics };
 }
 
+// By Topic's own empty-state gate — pulled out as a pure function (this
+// codebase's established pattern for page-level display logic with no
+// component-rendering test harness, e.g. quiz-ui.ts's computeQuizProgress)
+// rather than left as an inline expression in page.tsx. Plain
+// `quizzesCompleted === 0` is enough when includeGrade10 is false (today's
+// unchanged behavior), but once the toggle widens the `topics` breakdown, a
+// student whose only Grade 10 exposure was via a Grade 10 *paper* (never a
+// standalone Grade 10 practice attempt) would have real widened topic data
+// while quizzesCompleted still reads 0 — see getProgressStats' own comment
+// on why quizzesCompleted/topics can diverge once includeGrade10 is true.
+export function isProgressStatsEmpty(stats: ProgressStats, includeGrade10: boolean): boolean {
+  return stats.quizzesCompleted === 0 && !(includeGrade10 && stats.topics.some((t) => t.questionsAnswered > 0));
+}
+
 // Powers the Weak Areas page's topic-primary list — mirrors getProgressStats's
 // rollup shape (TopicProgress/SubTopicProgress, the shared scoreAndLabel
 // helper) but reads from the mastery_scores cache instead of live
@@ -445,9 +500,20 @@ export async function getProgressStats(
 // (see moduleGradesForQuery) — the combined Grade 10 + 11 topic list is
 // grouped by grade (not interleaved) before this function's own weakest-first
 // sort reorders it by score.
-export async function getWeakTopicsForGrade(studentId: string, grade: string): Promise<TopicProgress[]> {
+// `includeGrade10` is the Grade 11 "Include Grade 10 foundational topics"
+// toggle (see withGrade10Toggle above) — off by default, byte-for-byte
+// identical to today's behavior when omitted. When true, Grade 10's own
+// modules are unioned in the same way a "gcse" request already unions both
+// grades, grouped by grade (not interleaved) same as everywhere else, and
+// each returned topic carries the owning module's real `grade` so the UI
+// can tag a Grade 10 row when it's showing alongside Grade 11's own topics.
+export async function getWeakTopicsForGrade(
+  studentId: string,
+  grade: string,
+  includeGrade10 = false,
+): Promise<TopicProgress[]> {
   const gradeModules = await db.query.modules.findMany({
-    where: inArray(modules.grade, moduleGradesForQuery(grade)),
+    where: inArray(modules.grade, withGrade10Toggle(moduleGradesForQuery(grade), includeGrade10)),
     orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder } },
   });
@@ -484,6 +550,7 @@ export async function getWeakTopicsForGrade(studentId: string, grade: string): P
     topics.push({
       id: gradeModule.id,
       name: gradeModule.name,
+      grade: gradeModule.grade,
       questionsAnswered,
       correctCount,
       score,
@@ -514,9 +581,17 @@ export type TopicStatus = TopicProgress & {
 // per subject) rather than this function baking in one specific selection.
 // `grade` may be "gcse" (see moduleGradesForQuery) — grouped by grade, not
 // interleaved, same as every other topic query in this file.
-export async function getTopicStatusesForGrade(studentId: string, grade: string): Promise<TopicStatus[]> {
+// `includeGrade10` is the Grade 11 "Include Grade 10 foundational topics"
+// toggle (see withGrade10Toggle above) — off by default, byte-for-byte
+// identical to today's behavior when omitted; see getWeakTopicsForGrade's
+// own comment for the shared reasoning.
+export async function getTopicStatusesForGrade(
+  studentId: string,
+  grade: string,
+  includeGrade10 = false,
+): Promise<TopicStatus[]> {
   const gradeModules = await db.query.modules.findMany({
-    where: inArray(modules.grade, moduleGradesForQuery(grade)),
+    where: inArray(modules.grade, withGrade10Toggle(moduleGradesForQuery(grade), includeGrade10)),
     orderBy: [modules.grade, modules.sortOrder],
     with: { subTopics: { orderBy: subTopics.sortOrder }, subject: true },
   });
@@ -550,6 +625,7 @@ export async function getTopicStatusesForGrade(studentId: string, grade: string)
     return {
       id: gradeModule.id,
       name: gradeModule.name,
+      grade: gradeModule.grade,
       subjectId: gradeModule.subject.id,
       subjectName: gradeModule.subject.name,
       ...topicCounts,

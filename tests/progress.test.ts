@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, pool } from "@/db";
 import { mcqs, modules, papers, subjects, subTopics, users } from "@/db/schema";
-import { getProgressStats, getSubTopicStatusesForGrade } from "@/lib/dashboard";
+import { getProgressStats, getSubTopicStatusesForGrade, isProgressStatsEmpty } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
 // Confirms the Progress tab's Grade + Subject scoping and the KPI/topic-table
@@ -410,6 +410,224 @@ describe("Progress tab: GCSE (combined Grade 10 + Grade 11) topic queries", () =
     const grade11Only = await getProgressStats(studentId, "11", subjectId);
     expect(grade11Only.topics.map((t) => t.id)).toEqual([module11Id]);
     expect(grade11Only.quizzesCompleted).toBe(0);
+  });
+});
+
+// The Grade 11 "Include Grade 10 foundational topics" toggle — an explicit,
+// opt-in override (withGrade10Toggle), distinct from "gcse" above:
+// moduleGradesForQuery itself is untouched, so grade "11" still resolves to
+// just ["11"] unless a caller explicitly passes includeGrade10: true. This
+// is also the key reconciliation case instruction #2 asked to be walked
+// through, not assumed: with the toggle on, a Grade 10 module's own topic
+// row folds in a Grade 10 PAPER attempt's answers too (topic-level mastery
+// is always the true cumulative total for that sub-topic, source-agnostic),
+// even though that same paper attempt is deliberately excluded from
+// quizzesCompleted (the paper-side condition never widens — a Grade 10
+// paper must not count as a "Grade 11 quiz completed"). That's a real,
+// accepted divergence from GCSE's tighter reconciliation guarantee: the
+// summed `topics` total can exceed totalQuestionsAnswered once the toggle
+// is on. See CLAUDE.md and getProgressStats' own comment.
+describe("Progress tab: Grade 11 'Include Grade 10' toggle", () => {
+  const runId = randomUUID().slice(0, 8);
+  let subjectId: string;
+  let moduleC10Id: string;
+  let moduleC11Id: string;
+  let subTopicC10aId: string; // Grade 10, practice-attempted: 1/2
+  let subTopicC10bId: string; // Grade 10, paper-attempted (a Grade 10 paper): 1/1
+  let subTopicC11aId: string; // Grade 11, paper-attempted (a Grade 11 paper): 2/2
+  let studentId: string;
+  let studentGrade10PaperOnlyId: string;
+
+  beforeAll(async () => {
+    const [subject] = await db.insert(subjects).values({ name: `Test Grade11Toggle Subject ${runId}` }).returning();
+    subjectId = subject.id;
+
+    const [moduleC10] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "10", name: `Toggle G10 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    moduleC10Id = moduleC10.id;
+    const [moduleC11] = await db
+      .insert(modules)
+      .values({ subjectId, grade: "11", name: `Toggle G11 Module ${runId}`, sortOrder: 0 })
+      .returning();
+    moduleC11Id = moduleC11.id;
+
+    const [subTopicC10a] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleC10Id, name: `Toggle G10a Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopicC10aId = subTopicC10a.id;
+    const [subTopicC10b] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleC10Id, name: `Toggle G10b Sub-topic ${runId}`, sortOrder: 1 })
+      .returning();
+    subTopicC10bId = subTopicC10b.id;
+    const [subTopicC11a] = await db
+      .insert(subTopics)
+      .values({ moduleId: moduleC11Id, name: `Toggle G11a Sub-topic ${runId}`, sortOrder: 0 })
+      .returning();
+    subTopicC11aId = subTopicC11a.id;
+
+    const [paperG10] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "10",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test Toggle Grade10 Paper ${runId}`,
+        status: "published",
+      })
+      .returning();
+    const [paperG11] = await db
+      .insert(papers)
+      .values({
+        subjectId,
+        grade: "11",
+        medium: "english",
+        paperType: "provincial",
+        title: `Test Toggle Grade11 Paper ${runId}`,
+        status: "published",
+      })
+      .returning();
+
+    const [practiceMcq1, practiceMcq2] = await db
+      .insert(mcqs)
+      .values([
+        { subTopicId: subTopicC10aId, questionText: "C10a Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+        { subTopicId: subTopicC10aId, questionText: "C10a Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      ])
+      .returning();
+    const [g10PaperMcq] = await db
+      .insert(mcqs)
+      .values([
+        { paperId: paperG10.id, subTopicId: subTopicC10bId, questionText: "G10 Paper Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      ])
+      .returning();
+    const [g11PaperMcq1, g11PaperMcq2] = await db
+      .insert(mcqs)
+      .values([
+        { paperId: paperG11.id, subTopicId: subTopicC11aId, questionText: "G11 Paper Q1", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+        { paperId: paperG11.id, subTopicId: subTopicC11aId, questionText: "G11 Paper Q2", options: textOptions("A", "B"), correctOption: 0, status: "published" },
+      ])
+      .returning();
+
+    const [student] = await db
+      .insert(users)
+      .values({ authProviderId: `test-g11toggle-auth-${runId}`, email: `test-g11toggle-${runId}@example.com` })
+      .returning();
+    studentId = student.id;
+
+    // C10a: standalone sub-topic practice attempt, 1 of 2 correct.
+    await submitFullSubTopicQuiz({
+      studentId,
+      subTopicId: subTopicC10aId,
+      answers: { [practiceMcq1.id]: 0, [practiceMcq2.id]: 1 },
+    });
+    // The Grade 10 paper: 1 of 1 correct.
+    await submitFullPaperQuiz({ studentId, paperId: paperG10.id, answers: { [g10PaperMcq.id]: 0 } });
+    // The Grade 11 paper: 2 of 2 correct.
+    await submitFullPaperQuiz({
+      studentId,
+      paperId: paperG11.id,
+      answers: { [g11PaperMcq1.id]: 0, [g11PaperMcq2.id]: 0 },
+    });
+
+    // A second student who has ONLY completed the Grade 10 paper — no
+    // standalone Grade 10 practice attempt, no Grade 11 history at all.
+    // Isolates the isProgressStatsEmpty edge case: quizzesCompleted stays 0
+    // for this student even with the toggle on (the paper-side condition
+    // never widens), while the topics breakdown has real data once widened.
+    const [studentGrade10PaperOnly] = await db
+      .insert(users)
+      .values({
+        authProviderId: `test-g11toggle-paperonly-auth-${runId}`,
+        email: `test-g11toggle-paperonly-${runId}@example.com`,
+      })
+      .returning();
+    studentGrade10PaperOnlyId = studentGrade10PaperOnly.id;
+    await submitFullPaperQuiz({
+      studentId: studentGrade10PaperOnlyId,
+      paperId: paperG10.id,
+      answers: { [g10PaperMcq.id]: 0 },
+    });
+  });
+
+  afterAll(async () => {
+    await db.delete(subjects).where(eq(subjects.id, subjectId));
+    await db.delete(users).where(eq(users.id, studentId));
+    await db.delete(users).where(eq(users.id, studentGrade10PaperOnlyId));
+  });
+
+  it("includeGrade10 defaults to false — byte-for-byte the same as omitting it", async () => {
+    const withoutArg = await getProgressStats(studentId, "11", subjectId);
+    const withFalse = await getProgressStats(studentId, "11", subjectId, false);
+    expect(withFalse).toEqual(withoutArg);
+
+    expect(withoutArg.topics.map((t) => t.id)).toEqual([moduleC11Id]);
+    expect(withoutArg.quizzesCompleted).toBe(1); // only the Grade 11 paper attempt
+    expect(withoutArg.totalQuestionsAnswered).toBe(2);
+    expect(withoutArg.totalCorrectAnswers).toBe(2);
+  });
+
+  it("includeGrade10: true unions in the Grade 10 module, grouped by grade, each topic carrying its own grade", async () => {
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+
+    expect(stats.topics.map((t) => t.id)).toEqual([moduleC10Id, moduleC11Id]);
+    expect(stats.topics.find((t) => t.id === moduleC10Id)!.grade).toBe("10");
+    expect(stats.topics.find((t) => t.id === moduleC11Id)!.grade).toBe("11");
+  });
+
+  it("widens quizzesCompleted's module side for a Grade 10 practice attempt, but never the paper side for a Grade 10 paper", async () => {
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+
+    // Counts: the Grade 10 practice attempt (module-side, now widened) and
+    // the Grade 11 paper attempt (paper-side, exact match) — NOT the Grade
+    // 10 paper attempt, which matches neither branch.
+    expect(stats.quizzesCompleted).toBe(2);
+    expect(stats.totalQuestionsAnswered).toBe(4); // 2 (practice) + 2 (Grade 11 paper)
+    expect(stats.totalCorrectAnswers).toBe(3); // 1 (practice) + 2 (Grade 11 paper)
+  });
+
+  it("the topics breakdown can exceed quizzesCompleted's totals once the toggle is on — the Grade 10 paper's answer still has a home in its topic row", async () => {
+    const stats = await getProgressStats(studentId, "11", subjectId, true);
+
+    const g10Topic = stats.topics.find((t) => t.id === moduleC10Id)!;
+    // C10a (practice, 2 answered/1 correct) + C10b (the Grade 10 PAPER, 1
+    // answered/1 correct) both roll up here — topic-level mastery is always
+    // the true cumulative total for a sub-topic, regardless of source.
+    expect(g10Topic.questionsAnswered).toBe(3);
+    expect(g10Topic.correctCount).toBe(2);
+
+    const g11Topic = stats.topics.find((t) => t.id === moduleC11Id)!;
+    expect(g11Topic.questionsAnswered).toBe(2);
+    expect(g11Topic.correctCount).toBe(2);
+
+    const summedAnswered = stats.topics.reduce((sum, t) => sum + t.questionsAnswered, 0);
+    const summedCorrect = stats.topics.reduce((sum, t) => sum + t.correctCount, 0);
+    // 5 summed vs. 4 in totalQuestionsAnswered — the Grade 10 paper's
+    // question is counted here but not in quizzesCompleted's own total.
+    expect(summedAnswered).toBe(5);
+    expect(summedAnswered).toBeGreaterThan(stats.totalQuestionsAnswered);
+    expect(summedCorrect).toBe(4);
+    expect(summedCorrect).toBeGreaterThan(stats.totalCorrectAnswers);
+  });
+
+  it("isProgressStatsEmpty: a student whose only Grade 10 exposure was a Grade 10 paper reads as empty when the toggle is off, but not once it's on", async () => {
+    const statsOff = await getProgressStats(studentGrade10PaperOnlyId, "11", subjectId, false);
+    expect(statsOff.quizzesCompleted).toBe(0);
+    expect(isProgressStatsEmpty(statsOff, false)).toBe(true);
+
+    const statsOn = await getProgressStats(studentGrade10PaperOnlyId, "11", subjectId, true);
+    // quizzesCompleted stays 0 — the Grade 10 paper attempt never matches
+    // either branch of the attempts query, toggle or not.
+    expect(statsOn.quizzesCompleted).toBe(0);
+    // But the widened topics breakdown has real data (the Grade 10 paper's
+    // own question, tagged to subTopicC10b), so the empty-state gate must
+    // not fire once the toggle reveals it.
+    expect(statsOn.topics.find((t) => t.id === moduleC10Id)!.questionsAnswered).toBe(1);
+    expect(isProgressStatsEmpty(statsOn, true)).toBe(false);
   });
 });
 

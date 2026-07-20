@@ -246,4 +246,26 @@ describe("getWeakTopicsForGrade", () => {
     expect(weak.some((t) => t.id === moduleOkId)).toBe(false);
     expect(weak.some((t) => t.id === moduleUntouchedId)).toBe(false);
   });
+
+  // The Grade 11 "Include Grade 10 foundational topics" toggle — an
+  // explicit, opt-in override, distinct from "gcse" above (moduleGradesForQuery
+  // itself is untouched; grade "11" still resolves to just ["11"] unless a
+  // caller explicitly passes includeGrade10: true). Reuses this file's own
+  // Grade 11 weak-topic fixture, which the plain grade-10 tests above already
+  // confirm is excluded from a Grade 10 request.
+  it("includeGrade10 defaults to false — a Grade 11 request is unaffected when omitted", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "11");
+    expect(weak.map((t) => t.id)).toEqual([moduleGrade11WeakId]);
+    expect(weak[0].grade).toBe("11");
+  });
+
+  it("includeGrade10: true unions in Grade 10's own weak topics alongside Grade 11's, grouped by grade", async () => {
+    const weak = await getWeakTopicsForGrade(studentId, "11", true);
+
+    expect(weak.some((t) => t.id === moduleGrade11WeakId)).toBe(true);
+    expect(weak.some((t) => t.id === moduleWeakId)).toBe(true);
+    expect(weak.some((t) => t.id === moduleOtherWeakId)).toBe(true);
+    expect(weak.find((t) => t.id === moduleWeakId)!.grade).toBe("10");
+    expect(weak.find((t) => t.id === moduleGrade11WeakId)!.grade).toBe("11");
+  });
 });

@@ -19,6 +19,10 @@ export type SubTopicProgressData = {
 };
 
 export type TopicProgressData = SubTopicProgressData & {
+  // The owning module's own grade — compared against `primaryGrade` below
+  // to decide whether this row needs a "Grade 10" tag (a row from the
+  // Include-Grade-10 toggle) or not (an ordinary same-grade row).
+  grade: string;
   subTopics: SubTopicProgressData[];
 };
 
@@ -51,7 +55,18 @@ function ProgressBar({ label, score }: { label: SubTopicStatusLabel; score: numb
 // The "Practice" link only ever makes sense at sub-topic granularity (there's
 // no pooled "practice this whole topic" quiz mode in this app), so it lives
 // only on the expanded sub-topic rows, not the topic row itself.
-export function TopicProgressTable({ topics }: { topics: TopicProgressData[] }) {
+export function TopicProgressTable({
+  topics,
+  primaryGrade,
+}: {
+  topics: TopicProgressData[];
+  // The page's own grade context (e.g. the student's profile grade, or
+  // whichever grade a Grade/Subject filter has selected) — a topic row only
+  // gets a "Grade 10" tag when its own grade differs from this, so a native
+  // Grade 10 view (every row's grade already equals primaryGrade) never
+  // shows the tag on its own rows.
+  primaryGrade: string;
+}) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function toggle(topicId: string) {
@@ -92,6 +107,11 @@ export function TopicProgressTable({ topics }: { topics: TopicProgressData[] }) 
                 <td className="px-3.5 py-2.5 min-w-[180px] font-semibold">
                   <span className="mr-1.5 inline-block w-3 text-ink-muted">{isExpanded ? "▾" : "▸"}</span>
                   {topic.name}
+                  {topic.grade !== primaryGrade && (
+                    <span className="ml-2 rounded-full bg-app-surface-muted px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-ink-secondary">
+                      Grade {topic.grade}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3.5 py-2.5">
                   <ProgressBar label={topic.label} score={topic.score} />

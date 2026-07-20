@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { DashboardTopicTable, type DashboardTopicRow } from "@/components/dashboard-topic-table";
+import { IncludeGrade10Toggle } from "@/components/include-grade10-toggle";
 import { SubjectAccuracyChart } from "@/components/subject-accuracy-chart";
 import { formatShortDate } from "@/lib/format";
 import type { PaperAccuracyTrend } from "@/lib/dashboard";
@@ -48,6 +49,12 @@ export type SubjectBundle = {
   grade: GceGrade | null;
   overallStats: SubjectOverallStats;
   topics: DashboardTopicRow[];
+  // The same top-3 preview as `topics`, but with the "Include Grade 10
+  // foundational topics" toggle applied — pre-fetched alongside `topics`
+  // (not on demand) so flipping the toggle client-side never needs a new
+  // request, matching the "fetch once, tab-switch client-side" pattern this
+  // whole subject switcher already uses for `activeSubjectId`.
+  topicsWithGrade10: DashboardTopicRow[];
   trend: PaperAccuracyTrend | null;
   recentPapers: CompletedQuizRow[];
   recentPractices: CompletedQuizRow[];
@@ -142,6 +149,7 @@ export function DashboardSubjectSection({
   weakAreasSlot: ReactNode;
 }) {
   const [activeSubjectId, setActiveSubjectId] = useState(initialActiveSubjectId);
+  const [includeGrade10, setIncludeGrade10] = useState(false);
   const active = subjects.find((s) => s.subjectId === activeSubjectId) ?? subjects[0];
 
   return (
@@ -207,7 +215,11 @@ export function DashboardSubjectSection({
         <div className="flex flex-col gap-4">
           <div className="rounded-[14px] border border-app-border bg-white p-4.5">
             <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Topic Performance</h3>
-            <DashboardTopicTable topics={active.topics} />
+            <IncludeGrade10Toggle checked={includeGrade10} onToggle={setIncludeGrade10} />
+            <DashboardTopicTable
+              topics={includeGrade10 ? active.topicsWithGrade10 : active.topics}
+              primaryGrade={grade}
+            />
             <div className="mt-3 text-center">
               <Link
                 href={`/practice/by-topic?grade=${grade}&subjectId=${active.subjectId}`}

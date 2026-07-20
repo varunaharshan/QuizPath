@@ -34,6 +34,7 @@ function topicStatus(overrides: Partial<TopicStatus>): TopicStatus {
   return {
     id: randomUUID(),
     name: "Topic",
+    grade: "10",
     subjectId: "subject-1",
     subjectName: "Science",
     score: null,

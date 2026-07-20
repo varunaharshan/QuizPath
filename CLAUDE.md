@@ -1969,6 +1969,115 @@ module-widens/paper-stays-exact split, including that a Grade 10-tagged paper is
 a `"gcse"` request while a genuinely-`"gcse"`-tagged one is included); `tests/practice.test.ts`
 (`searchSubTopicIdsByKeyword` matching both grades' sub-topics for `"gcse"`).
 
+## Grade 11 "Include Grade 10 foundational topics" toggle
+
+An explicit, opt-in, off-by-default toggle on three student-facing surfaces — Weak Areas,
+By Topic, and the Dashboard's Topic Performance card — that widens the topic list to also
+show Grade 10's own modules alongside Grade 11's, since Grade 11 papers often re-test Grade
+10 content. **Deliberately not a redefinition of what `grade === "11"` means anywhere** —
+this is the opposite design from GCSE (`moduleGradesForQuery` above): GCSE folds
+`"gcse"` -> `["10", "11"]` into the shared string-matching helper itself, so every caller
+gets the union automatically; this toggle instead adds an explicit `includeGrade10: boolean`
+parameter (default `false`) to the four call sites, and `moduleGradesForQuery` itself is
+untouched — `"11"` still resolves to just `["11"]` everywhere unless a caller opts in.
+
+- **`withGrade10Toggle(moduleGrades: string[], includeGrade10: boolean): string[]`**
+  (`src/lib/dashboard.ts`, exported/directly tested) is the one shared helper: a no-op unless
+  `includeGrade10` is true and `"10"` isn't already in the list (so a `"10"` or `"gcse"`
+  request, which already contains `"10"`, is unaffected either way). `getWeakTopicsForGrade`,
+  `getTopicStatusesForGrade`, and `getProgressStats` each gained a trailing `includeGrade10 =
+  false` parameter and now call `withGrade10Toggle(moduleGradesForQuery(grade),
+  includeGrade10)` instead of `moduleGradesForQuery(grade)` directly. Default (parameter
+  omitted or `false`) is byte-for-byte identical to pre-toggle behavior — verified by the full
+  existing test suite passing unchanged, plus a direct `withFalse === withoutArg` equality
+  assertion in each function's own new toggle test.
+- **`getSubTopicStatusesForGrade` deliberately did NOT get this parameter** — tracing its
+  callers found it's used only by the Dashboard's separate "Your Weak Areas" card (which
+  isn't one of the three toggle surfaces) and the out-of-scope By Keyword page, neither of
+  which the toggle actually wires into. Adding an unused parameter "for consistency" would
+  have been untested, speculative surface area; if that card gets the toggle later, the
+  parameter (and its own test coverage) can be added then, tied to an actual caller.
+- **`TopicProgress`** (the shared type behind all three surfaces' topic rows) gained a
+  `grade: string` field — the owning module's own real grade column, needed so a Grade 10 row
+  showing alongside Grade 11's own rows can be visually tagged. `TopicStatus` (which extends
+  `TopicProgress`, backing the Dashboard's Topic Performance card) inherits it for free.
+- **The "Grade 10" tag is rendered by comparing a row's own `grade` against a `primaryGrade`
+  prop** — `<TopicProgressTable>` (Weak Areas, By Topic) and `<DashboardTopicTable>`
+  (Dashboard) each gained a required `primaryGrade: string` prop (the page's own grade
+  context) and tag a row only when `row.grade !== primaryGrade`. This is why the bare `grade`
+  field alone wasn't sufficient — without `primaryGrade`, a native Grade 10 view (every row's
+  own grade already equals "10") would incorrectly tag every single row.
+- **`getProgressStats`'s reconciliation** (the `quizzesCompleted`/`totalQuestionsAnswered`
+  KPI numbers vs. the summed `topics` breakdown, the same property GCSE's own union
+  established) does **not** carry over unchanged once this toggle is on — this is a real,
+  documented divergence, not an oversight. `withGrade10Toggle` only ever widens the *module*
+  side of both the `topics` breakdown and the `attempts`/`quizzesCompleted` query (reusing the
+  same widened `moduleGrades` variable for each, exactly like GCSE); the *paper* side
+  (`eq(papers.grade, grade)`) is deliberately never widened — a Grade 10 **paper** attempt
+  must never count as a "Grade 11 quiz completed" just because the toggle is on. The
+  consequence: a Grade 10 paper attempt's answers, if tagged to a (now-included) Grade 10
+  sub-topic, still show up in that sub-topic's own `topics` row (topic-level mastery is always
+  the true cumulative total for a sub-topic, source-agnostic, matching how mastery works
+  everywhere else in this app) even though that same attempt is excluded from
+  `quizzesCompleted`. So the summed `topics` total can *exceed* `totalQuestionsAnswered` once
+  `includeGrade10` is true — GCSE's tighter "every KPI answer has a home in `topics`"
+  guarantee doesn't hold in the other direction here, though it never over-counts a paper that
+  doesn't belong (the paper-side exact-match is what keeps a Grade 10 paper from becoming a
+  Grade 11 KPI-recognized attempt at all).
+- **`isProgressStatsEmpty(stats: ProgressStats, includeGrade10: boolean): boolean`**
+  (`src/lib/dashboard.ts`, exported/directly tested — the same "extract pure display logic
+  for testability" pattern `quiz-ui.ts`'s `computeQuizProgress` already established, since
+  this codebase has no component-rendering harness) is By Topic's empty-state gate, pulled
+  out of `page.tsx` rather than left as an inline ternary. Plain `stats.quizzesCompleted ===
+  0` is sufficient when `includeGrade10` is `false` (unchanged), but the reconciliation
+  divergence above means a student whose *only* Grade 10 exposure was via a Grade 10 paper
+  (never a standalone Grade 10 practice attempt) would have real widened topic data while
+  `quizzesCompleted` still reads `0` — this function falls back to `stats.topics.some(t =>
+  t.questionsAnswered > 0)` in that specific case so the empty state doesn't incorrectly fire.
+  Weak Areas and the Dashboard's Topic Performance card have no analogous gate to fix — both
+  are plain array-length checks, not a separate KPI number.
+- **Toggle persistence is per-page, independent, not a shared/global student preference** —
+  there's no existing infrastructure for a student-level UI setting (`student_profiles` only
+  holds `grade`/`medium`, both real curriculum attributes), so a shared preference would need
+  new schema, clearly more work than three independent mechanisms:
+  - **Weak Areas / By Topic**: a real `?includeGrade10=true` query param, consistent with
+    every other Grade/Subject/Medium filter in this app — `<IncludeGrade10Toggle>`
+    (`src/components/include-grade10-toggle.tsx`) in `href` mode calls `router.push` to the
+    toggled URL. By Topic's toggle link preserves the existing `grade`/`subjectId` params.
+  - **Dashboard's Topic Performance card**: plain client component state
+    (`<DashboardSubjectSection>`'s own `includeGrade10` `useState`, independent of
+    `activeSubjectId`), not a URL param — a URL-driven toggle would force a server re-render
+    and reset the subject switcher's own already-selected `activeSubjectId` back to whatever
+    the fresh render recomputes, a real UX regression for what's meant to be a lightweight
+    display toggle. Instead, `src/app/dashboard/page.tsx` fetches `getTopicStatusesForGrade`
+    **twice** — once plain, once with `includeGrade10: true` — bucketed into two parallel
+    arrays per subject bundle (`topics` and `topicsWithGrade10`), and the toggle picks between
+    the two already-fetched arrays client-side with no new request, the same "fetch once per
+    subject, switch client-side" pattern this page's subject switcher already established.
+    This is one extra grade-wide query per Dashboard load (not one per subject), so it scales
+    with the number of *topics*, not the number of subjects a student is in — fine at today's
+    subject counts, worth revisiting only if a student's subject count grows very large.
+- **`<IncludeGrade10Toggle>`** (`src/components/include-grade10-toggle.tsx`) is one shared,
+  dual-mode "use client" component for the toggle row's copy/visual (exact spec: "Include
+  Grade 10 foundational topics" / "Grade 11 papers often re-test Grade 10 content. Off by
+  default — your Grade 11 topics stay exactly as they are today.") — it takes either an
+  `href` (navigates via `router.push`, for the two URL-driven pages) or an `onToggle` callback
+  (for the Dashboard's controlled client state), never both.
+
+Integration coverage: `tests/dashboard.test.ts` — `withGrade10Toggle` directly (no-op when
+`includeGrade10` is false, adds `"10"` when true and absent, no-op when `"10"` is already
+present); `getTopicStatusesForGrade`'s `includeGrade10` default-false byte-identity and its
+union-with-`grade`-field behavior when true. `tests/weak-areas.test.ts` — the same
+default-false/union-when-true pair for `getWeakTopicsForGrade`, reusing the file's existing
+Grade 11 weak-topic fixture. `tests/progress.test.ts` — a dedicated fixture (a Grade 10
+module with both a standalone practice attempt and a Grade 10 *paper* attempt, plus a Grade
+11 module with its own paper attempt) covering: default-false byte-identity;
+`quizzesCompleted` widening for the Grade 10 practice attempt but never for the Grade 10
+paper attempt; the topics-breakdown-can-exceed-the-KPI-total divergence with exact numbers;
+and `isProgressStatsEmpty`'s fix via a second, isolated student whose only history is the
+Grade 10 paper (empty when the toggle is off, not empty once it's on, with `quizzesCompleted`
+staying `0` in both cases).
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of

@@ -11,6 +11,7 @@ import {
   getOverallStats,
   getPaperAccuracyTrend,
   getTopicStatusesForGrade,
+  withGrade10Toggle,
 } from "@/lib/dashboard";
 import { submitFullPaperQuiz, submitFullSubTopicQuiz, textOptions } from "./helpers";
 
@@ -769,6 +770,45 @@ describe("getTopicStatusesForGrade", () => {
     expect(topics.some((t) => t.id === moduleMixedId)).toBe(true);
     expect(topics.some((t) => t.id === moduleOtherSubjectId)).toBe(true);
     expect(topics.some((t) => t.id === moduleGrade11Id)).toBe(true);
+  });
+
+  // The Grade 11 "Include Grade 10 foundational topics" toggle — an
+  // explicit, opt-in override (withGrade10Toggle), distinct from "gcse"
+  // above: moduleGradesForQuery itself is untouched, so grade "11" still
+  // resolves to just ["11"] unless a caller explicitly passes
+  // includeGrade10: true. Reuses this describe's own fixture (moduleGrade11Id
+  // is Grade 11; moduleMixedId/moduleOtherSubjectId are Grade 10).
+  it("includeGrade10 defaults to false — byte-for-byte the same as omitting it", async () => {
+    const withoutArg = await getTopicStatusesForGrade(studentId, "11");
+    const withFalse = await getTopicStatusesForGrade(studentId, "11", false);
+    expect(withFalse).toEqual(withoutArg);
+    expect(withoutArg.map((t) => t.id)).toEqual([moduleGrade11Id]);
+    expect(withoutArg[0].grade).toBe("11");
+  });
+
+  it("includeGrade10: true unions in Grade 10's own topics alongside Grade 11's, grouped by grade, each carrying its own grade", async () => {
+    const topics = await getTopicStatusesForGrade(studentId, "11", true);
+
+    expect(topics.some((t) => t.id === moduleMixedId)).toBe(true);
+    expect(topics.some((t) => t.id === moduleOtherSubjectId)).toBe(true);
+    expect(topics.some((t) => t.id === moduleGrade11Id)).toBe(true);
+    expect(topics.find((t) => t.id === moduleMixedId)!.grade).toBe("10");
+    expect(topics.find((t) => t.id === moduleGrade11Id)!.grade).toBe("11");
+  });
+});
+
+describe("withGrade10Toggle", () => {
+  it("is a no-op when includeGrade10 is false", () => {
+    expect(withGrade10Toggle(["11"], false)).toEqual(["11"]);
+  });
+
+  it("adds '10' when includeGrade10 is true and it's not already present", () => {
+    expect(withGrade10Toggle(["11"], true)).toEqual(["11", "10"]);
+  });
+
+  it("is a no-op when '10' is already present, even if includeGrade10 is true", () => {
+    expect(withGrade10Toggle(["10"], true)).toEqual(["10"]);
+    expect(withGrade10Toggle(["10", "11"], true)).toEqual(["10", "11"]);
   });
 });
 
