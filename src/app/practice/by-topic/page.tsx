@@ -61,7 +61,6 @@ export default async function ByTopicPage({
   const params = await searchParams;
   const rawGrade = typeof params.grade === "string" ? params.grade : undefined;
   const rawSubjectId = typeof params.subjectId === "string" ? params.subjectId : undefined;
-  const includeGrade10 = params.includeGrade10 === "true";
 
   const [subjects, completedQuizzes, grades] = await Promise.all([
     getPracticeSubjects(),
@@ -72,7 +71,17 @@ export default async function ByTopicPage({
   // Both filter values are free query-string choices (a Grade 11 student can
   // browse Grade 10 progress, same free-browsing rule Papers has), so
   // anything invalid just falls back to a sane default rather than 404ing.
+  // Unlike Weak Areas/Dashboard, this page's own grade is a real, freely
+  // browsable choice (via the Grade dropdown, sourced from every reference
+  // grade including "gcse") — not always the student's own profile.grade —
+  // so the toggle's eligibility has to be checked against this resolved
+  // `grade`, not profile.grade. "gcse" already unions both grades
+  // unconditionally (see moduleGradesForQuery), so the toggle would be
+  // redundant there; it's only meaningful when the resolved grade is
+  // literally "11".
   const grade = rawGrade && isValidGrade(rawGrade, grades) ? rawGrade : profile.grade;
+  const canIncludeGrade10 = grade === "11";
+  const includeGrade10 = canIncludeGrade10 && params.includeGrade10 === "true";
 
   const subjectId =
     rawSubjectId && subjects.some((s) => s.id === rawSubjectId) ? rawSubjectId : (subjects[0]?.id ?? null);
@@ -105,14 +114,16 @@ export default async function ByTopicPage({
             selected={{ grade, subjectId }}
           />
 
-          <IncludeGrade10Toggle
-            checked={includeGrade10}
-            href={`/practice/by-topic?${new URLSearchParams({
-              grade,
-              subjectId,
-              ...(includeGrade10 ? {} : { includeGrade10: "true" }),
-            }).toString()}`}
-          />
+          {canIncludeGrade10 && (
+            <IncludeGrade10Toggle
+              checked={includeGrade10}
+              href={`/practice/by-topic?${new URLSearchParams({
+                grade,
+                subjectId,
+                ...(includeGrade10 ? {} : { includeGrade10: "true" }),
+              }).toString()}`}
+            />
+          )}
 
           {isEmpty ? (
             <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">

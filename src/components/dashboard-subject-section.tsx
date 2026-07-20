@@ -141,11 +141,17 @@ export function DashboardSubjectSection({
   subjects,
   initialActiveSubjectId,
   grade,
+  // Whether the "Include Grade 10 foundational topics" toggle applies at
+  // all — only ever true for a Grade 11 student (see dashboard/page.tsx).
+  // Gated here, not just left to whichever data topicsWithGrade10 happens
+  // to hold, so the toggle never renders for a Grade 10 student.
+  canIncludeGrade10,
   weakAreasSlot,
 }: {
   subjects: SubjectBundle[];
   initialActiveSubjectId: string;
   grade: string;
+  canIncludeGrade10: boolean;
   weakAreasSlot: ReactNode;
 }) {
   const [activeSubjectId, setActiveSubjectId] = useState(initialActiveSubjectId);
@@ -215,9 +221,9 @@ export function DashboardSubjectSection({
         <div className="flex flex-col gap-4">
           <div className="rounded-[14px] border border-app-border bg-white p-4.5">
             <h3 className="m-0 mb-3.5 text-[15.5px] font-bold text-ink">Topic Performance</h3>
-            <IncludeGrade10Toggle checked={includeGrade10} onToggle={setIncludeGrade10} />
+            {canIncludeGrade10 && <IncludeGrade10Toggle checked={includeGrade10} onToggle={setIncludeGrade10} />}
             <DashboardTopicTable
-              topics={includeGrade10 ? active.topicsWithGrade10 : active.topics}
+              topics={canIncludeGrade10 && includeGrade10 ? active.topicsWithGrade10 : active.topics}
               primaryGrade={grade}
             />
             <div className="mt-3 text-center">

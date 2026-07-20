@@ -1997,6 +1997,26 @@ untouched — `"11"` still resolves to just `["11"]` everywhere unless a caller 
   which the toggle actually wires into. Adding an unused parameter "for consistency" would
   have been untested, speculative surface area; if that card gets the toggle later, the
   parameter (and its own test coverage) can be added then, tied to an actual caller.
+- **The toggle only ever renders when the surface's own resolved grade is literally `"11"`**
+  — gated at each page/component, not left to whichever default the underlying function
+  happens to apply. Weak Areas and the Dashboard both always use the student's own
+  `profile.grade` (never a filter), and `profile.grade` is only ever `"10"` or `"11"` —
+  `completeOnboarding`/`updateProfile` (`src/app/onboarding/actions.ts`,
+  `src/app/profile/actions.ts`) both throw on anything else, so it can never be `"gcse"` —
+  so each gates on `canIncludeGrade10 = profile.grade === "11"` and conditionally renders (or,
+  for the Dashboard, conditionally fetches the second `getTopicStatusesForGrade` call and
+  passes `canIncludeGrade10` down to `<DashboardSubjectSection>`, which gates the toggle and
+  falls back to `active.topics` instead of `active.topicsWithGrade10` when it's `false`). By
+  Topic is different — its own grade is a real, freely-browsable `?grade=` query param
+  (defaulting to `profile.grade` but overridable to anything `getGrades()` returns, including
+  `"gcse"`), so it gates on the *resolved* `grade` variable instead of `profile.grade`; a
+  Grade 11 student who switches that page's filter to `"gcse"` (which already unions both
+  grades unconditionally) or to `"10"` loses the toggle, since widening further would be
+  either redundant or meaningless there. In every case the gate is enforced twice: the toggle
+  UI itself is conditionally rendered, and the `includeGrade10` value actually passed to the
+  query functions is `canIncludeGrade10 && <raw query param / state>` — so even a hand-crafted
+  URL (e.g. `?grade=10&includeGrade10=true`) can't force the widening outside a genuine Grade
+  11 context.
 - **`TopicProgress`** (the shared type behind all three surfaces' topic rows) gained a
   `grade: string` field — the owning module's own real grade column, needed so a Grade 10 row
   showing alongside Grade 11's own rows can be visually tagged. `TopicStatus` (which extends

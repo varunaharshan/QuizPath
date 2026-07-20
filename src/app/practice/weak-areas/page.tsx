@@ -55,7 +55,15 @@ export default async function WeakAreasPage({
   }
 
   const params = await searchParams;
-  const includeGrade10 = params.includeGrade10 === "true";
+  // The toggle only ever makes sense for a Grade 11 student — there's
+  // nothing below Grade 10 to widen to, and profile.grade is always a real
+  // "10"/"11" value (onboarding/profile only ever accept those two — never
+  // "gcse", which is a browsing-only concept elsewhere in this app). Gating
+  // here, not just leaving the underlying function's default parameter to
+  // do the work, is what keeps the toggle from ever appearing for a Grade
+  // 10 student.
+  const canIncludeGrade10 = profile.grade === "11";
+  const includeGrade10 = canIncludeGrade10 && params.includeGrade10 === "true";
 
   const [weakTopics, completedQuizzes] = await Promise.all([
     getWeakTopicsForGrade(appUser.id, profile.grade, includeGrade10),
@@ -74,10 +82,12 @@ export default async function WeakAreasPage({
         Topics with at least one sub-topic below 60% accuracy — practice these first.
       </p>
 
-      <IncludeGrade10Toggle
-        checked={includeGrade10}
-        href={includeGrade10 ? "/practice/weak-areas" : "/practice/weak-areas?includeGrade10=true"}
-      />
+      {canIncludeGrade10 && (
+        <IncludeGrade10Toggle
+          checked={includeGrade10}
+          href={includeGrade10 ? "/practice/weak-areas" : "/practice/weak-areas?includeGrade10=true"}
+        />
+      )}
 
       {weakTopics.length === 0 ? (
         <div className="rounded-[10px] border border-app-border bg-white p-4 text-sm text-ink-secondary">

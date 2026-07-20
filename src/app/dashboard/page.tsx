@@ -46,6 +46,14 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
+  // The toggle only ever makes sense for a Grade 11 student — there's
+  // nothing below Grade 10 to widen to, and profile.grade is always a real
+  // "10"/"11" value (onboarding/profile only ever accept those two — never
+  // "gcse", which is a browsing-only concept elsewhere in this app). Skipping
+  // the second query entirely for a Grade 10 student avoids paying for a
+  // widened fetch that could never be shown anyway.
+  const canIncludeGrade10 = profile.grade === "11";
+
   const [subjectList, statuses, topicStatuses, topicStatusesWithGrade10, trends, mostRecentSubjectId] =
     await Promise.all([
       getSubjectsForGrade(profile.grade),
@@ -55,8 +63,8 @@ export default async function DashboardPage() {
       // foundational topics" toggle on the Topic Performance card can switch
       // client-side with no extra request — same reasoning as pre-fetching
       // every subject's own data up front. One extra grade-wide query per
-      // Dashboard load, not one per subject.
-      getTopicStatusesForGrade(appUser.id, profile.grade, true),
+      // Dashboard load (Grade 11 students only), not one per subject.
+      canIncludeGrade10 ? getTopicStatusesForGrade(appUser.id, profile.grade, true) : Promise.resolve([]),
       getPaperAccuracyTrend(appUser.id, profile.grade),
       getMostRecentlyPracticedSubjectId(appUser.id, profile.grade),
     ]);
@@ -147,6 +155,7 @@ export default async function DashboardPage() {
           subjects={subjects}
           initialActiveSubjectId={initialActiveSubjectId}
           grade={profile.grade}
+          canIncludeGrade10={canIncludeGrade10}
           weakAreasSlot={
             <div className="rounded-[14px] border border-app-border bg-white p-4.5">
               <div className="mb-3.5 flex items-center justify-between">
