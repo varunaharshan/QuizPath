@@ -22,7 +22,7 @@ export default async function ReferenceDataPage() {
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Reference Data</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Reference Data</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
         Manage the Grades, Subjects, and Paper Types available across the app. New values become
         selectable everywhere immediately — there&apos;s no separate publish step.

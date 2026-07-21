@@ -97,7 +97,7 @@ export default async function ByTopicPage({
       grade={profile.grade}
       isActiveLearner={completedQuizzes.length > 0}
     >
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">By Topic</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">By Topic</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
         See how you&apos;re doing, topic by topic.
       </p>

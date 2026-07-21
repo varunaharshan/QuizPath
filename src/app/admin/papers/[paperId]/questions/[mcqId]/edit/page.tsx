@@ -32,7 +32,7 @@ export default async function EditQuestionPage({
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Edit Question</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Edit Question</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">{paper.title}</p>
 
       {topics.length === 0 ? (

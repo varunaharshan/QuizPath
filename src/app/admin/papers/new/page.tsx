@@ -10,7 +10,7 @@ export default async function NewPaperPage() {
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Create New Paper</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Create New Paper</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">Add a new past exam paper to the question bank.</p>
 
       {subjects.length === 0 ? (

@@ -40,7 +40,7 @@ export default async function AdminTopicsPage({
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Topics</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Topics</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
         Manage the subject → topic → sub-topic hierarchy.
       </p>

@@ -76,7 +76,7 @@ export default async function PaperOverviewPage({
         ← Back to Papers
       </Link>
 
-      <h1 className="m-0 mt-2 mb-1 text-lg font-bold text-navy-900">{overview.title}</h1>
+      <h1 className="m-0 mt-2 mb-1 text-xl font-bold text-navy-900">{overview.title}</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">
         Grade {overview.grade} · {overview.subjectName} · {MEDIUM_LABELS[overview.medium]} medium ·{" "}
         {labelForPaperType(overview.paperType, paperTypes)}

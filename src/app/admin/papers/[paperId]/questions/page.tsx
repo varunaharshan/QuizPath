@@ -25,7 +25,7 @@ export default async function PaperQuestionsPage({ params }: { params: Promise<{
     <>
       <div className="mb-4.5 flex items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">{paper.title} — Questions</h1>
+          <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">{paper.title} — Questions</h1>
           <p className="m-0 text-[13px] text-ink-secondary">
             Grade {paper.grade} · {questions.length} question{questions.length === 1 ? "" : "s"} ·{" "}
             {publishedCount} of {questions.length} published

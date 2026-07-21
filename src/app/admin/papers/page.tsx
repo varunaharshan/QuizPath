@@ -44,7 +44,7 @@ export default async function AdminPapersPage({
     <>
       <div className="mb-4.5 flex items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Papers</h1>
+          <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Papers</h1>
           <p className="m-0 text-[13px] text-ink-secondary">Create and manage past exam papers.</p>
         </div>
         <Link

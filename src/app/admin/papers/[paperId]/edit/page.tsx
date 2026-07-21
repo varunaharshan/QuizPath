@@ -26,7 +26,7 @@ export default async function EditPaperPage({ params }: { params: Promise<{ pape
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Edit Paper</h1>
+      <h1 className="m-0 mb-1 text-xl font-bold text-navy-900">Edit Paper</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">Update this paper&apos;s details.</p>
 
       <form action={updatePaper} className="max-w-[520px] rounded-[10px] border border-app-border bg-white p-5">

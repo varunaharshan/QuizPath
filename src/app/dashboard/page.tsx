@@ -143,7 +143,7 @@ export default async function DashboardPage() {
 
   return (
     <AppShell active="dashboard" studentName={displayName} grade={profile.grade} isActiveLearner={isActiveLearner}>
-      <h1 className="m-0 mb-1 text-lg font-bold text-navy-900">Welcome back, {firstName}</h1>
+      <h1 className="m-0 mb-1 text-[23px] font-bold text-navy-900">Welcome back, {firstName}</h1>
       <p className="m-0 mb-4.5 text-[13px] text-ink-secondary">Grade {profile.grade}</p>
 
       {subjects.length === 0 ? (

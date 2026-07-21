@@ -497,6 +497,44 @@ layout restructuring, new components, or navigation changes:
   hardcoded hex fills too, but those are Google's own brand-mark colors, not this app's
   design system — correctly left hardcoded.
 
+#### Page-header sizing fix (23px/20px scale)
+
+After the font-family swap above, page headers looked smaller than `docs/Solution.html`'s own
+sizing — investigated before changing anything, since the cause mattered for what the correct
+fix was. Confirmed via direct inspection: the font swap itself changed nothing about font-size
+(no `html`/`body` font-size override anywhere, before or after; Tailwind v4's own
+`preflight.css` sets no font-size reset either — only `line-height: 1.5` and a fallback
+`font-family`). The actual, unrelated, pre-existing cause: every page's own `<h1>` across this
+whole app used Tailwind's `text-lg` (18px) — a convention already in place well before this
+pass — while the reference's own page titles are `23px` (`.greeting h1`, the Dashboard's own
+"Good evening, Alex!" line) or `20px` (`.page-head h2`, every other page's title). Only the
+Dashboard's own *inner content* (stat values, card `h3`s, table cells) was ever sized 1:1
+against this reference, in an earlier, separate pass — page-level titles were never in that
+scope. Switching the font family to Segoe UI (which has a measurably smaller x-height than the
+old Arial at the same declared pixel size) made this pre-existing gap more visually obvious,
+which is what surfaced it, but didn't cause it.
+
+- **Every page's own `<h1>` title now matches the reference's scale**: the Dashboard's
+  "Welcome back, {firstName}" greeting — the one page mapping to the reference's own
+  `.greeting h1` — is `text-[23px]` (an arbitrary value; Tailwind has no built-in utility for
+  exactly 23px). Every other page's own title (Weak Areas, By Topic, By Keyword, Past Papers,
+  the paper overview page, and every `/admin/*` page's own `<h1>` — Topics, Papers, Reference
+  Data, Bulk Upload, Admin Dashboard, Pending Review, Create/Edit Paper, Edit Question, a
+  paper's own Questions page) is `text-xl`, which is Tailwind's built-in 20px utility —
+  matching the reference's `.page-head h2` exactly, with no arbitrary value needed. Applied
+  identically to student and admin pages, since this is a shared design-system-level value,
+  not something that should differ between the two surfaces (same reasoning as the color/font
+  pass above).
+- **Not touched**: the admin Dashboard's own KPI stat-card values (`AdminKpiCard`'s `<p
+  className="text-lg ...">{value}</p>` in `src/app/admin/dashboard/page.tsx`) happened to
+  share the exact same `text-lg font-bold text-navy-900` class string as the old page-header
+  convention, purely coincidentally — it's a different UI role (a stat number, not a page
+  title) and was left at `text-lg`, not swept up in the bulk change.
+- **Sub-section headers within a page** (e.g. Reference Data's "Grades"/"Subjects"/"Paper
+  Types" `<h2>`s, Admin Dashboard's "Content Coverage by Subject" `<h2>`s, both already
+  `text-[14-15px]`) are a different heading tier from a page's own title — closer to the
+  reference's `.card h3` (`15.5px`, already matched elsewhere) — and weren't changed here.
+
 - `src/components/app-shell.tsx` is a plain Server Component (no client JS needed) — each
   page passes an `active` nav key and a few precomputed display values (name, grade,
   active-learner flag) as props, rather than the shell fetching its own data or needing
