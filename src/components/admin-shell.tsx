@@ -26,14 +26,14 @@ export function AdminShell({ adminName, children }: { adminName: string; childre
       </header>
 
       <div className="flex flex-1">
-        <nav className="w-[200px] shrink-0 border-r border-app-border bg-white p-2.5">
-          <p className="mx-2.5 mb-1.5 mt-1 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+        <nav className="w-[200px] shrink-0 bg-navy p-2.5">
+          <p className="mx-2.5 mb-1.5 mt-1 text-[11px] font-bold uppercase tracking-wide text-navy-nav-text">
             Content
           </p>
           <AdminNavLinks />
         </nav>
 
-        <main className="max-w-[1100px] flex-1 p-7">{children}</main>
+        <main className="flex-1 p-7">{children}</main>
       </div>
     </div>
   );

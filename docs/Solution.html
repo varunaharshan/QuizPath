@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<!-- saved from url=(0048)file:///C:/Users/dulat/Downloads/gradeboost.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GradeBoost — GCSE Dashboard</title>
+<style>
+  :root{
+    --navy:#121630;
+    --navy-2:#191d3d;
+    --navy-active:#2b3ff0;
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --text:#1b2340;
+    --muted:#8a93a6;
+    --border:#e8ebf3;
+    --blue:#2b5cff;
+    --blue-soft:#e9edff;
+    --green:#1fb579;
+    --green-soft:#e5f8ef;
+    --purple:#7c5cfc;
+    --purple-soft:#efeaff;
+    --amber:#f5a524;
+    --amber-soft:#fef2df;
+    --red:#f0483e;
+    --red-soft:#fde9e7;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    min-height:100vh;
+  }
+  a{text-decoration:none;color:inherit;}
+  button{font-family:inherit;cursor:pointer;}
+
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{
+    width:250px;
+    background:var(--navy);
+    color:#c8cbe8;
+    display:flex;
+    flex-direction:column;
+    flex-shrink:0;
+    height:100vh;
+    position:sticky;
+    top:0;
+    overflow-y:auto;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:22px 20px 18px;
+  }
+  .brand-logo{
+    width:34px;height:34px;border-radius:9px;
+    background:linear-gradient(135deg,#4f6bff,#7c5cfc);
+    display:flex;align-items:center;justify-content:center;
+    font-size:16px;flex-shrink:0;
+  }
+  .brand-name{font-weight:700;font-size:16px;color:#fff;line-height:1.1;}
+  .brand-sub{font-size:11px;color:#8a90c0;letter-spacing:.5px;}
+
+  .nav{padding:6px 12px;flex:1;}
+  .nav-section{margin-top:14px;}
+  .nav-item{
+    display:flex;align-items:center;gap:11px;
+    padding:10px 12px;margin:2px 0;
+    border-radius:10px;font-size:14px;
+    color:#b7bbe0;
+    transition:background .15s,color .15s;
+    position:relative;
+    user-select:none;
+  }
+  .nav-item svg{width:17px;height:17px;flex-shrink:0;opacity:.85;}
+  .nav-item:hover{background:#1e2350;color:#fff;}
+  .nav-item.active{background:var(--navy-active);color:#fff;box-shadow:0 4px 12px rgba(43,63,240,.35);}
+  .nav-item.active svg{opacity:1;}
+  .nav-item .chev{margin-left:auto;width:12px;height:12px;transition:transform .15s;opacity:.6;}
+  .nav-item.expanded .chev{transform:rotate(90deg);}
+  .nav-caret-item{cursor:pointer;}
+
+  .submenu{
+    max-height:0;overflow:hidden;
+    transition:max-height .2s ease;
+    padding-left:14px;
+  }
+  .submenu.open{max-height:300px;}
+  .sub-item{
+    display:flex;align-items:center;gap:9px;
+    padding:8px 12px 8px 20px;margin:1px 0;
+    border-radius:9px;font-size:13px;color:#9ba0cc;
+  }
+  .sub-item:hover{background:#1e2350;color:#fff;}
+  .sub-item.active{background:#242a58;color:#fff;font-weight:600;}
+  .sub-dot{width:5px;height:5px;border-radius:50%;background:#666fa6;flex-shrink:0;}
+  .sub-item.active .sub-dot{background:#7c93ff;}
+
+  .streak-box{
+    margin:14px;padding:14px;border-radius:14px;
+    background:#1a1f45;
+  }
+  .streak-top{display:flex;align-items:center;gap:8px;font-weight:700;color:#fff;font-size:15px;}
+  .streak-sub{font-size:12px;color:#8a90c0;margin:2px 0 10px;}
+  .streak-days{display:flex;gap:5px;}
+  .streak-day{
+    width:24px;height:24px;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:700;
+  }
+  .streak-day.done{background:#1fb579;color:#fff;}
+  .streak-day.pending{background:#2a2f5a;color:#7178a8;}
+
+  /* ---------- MAIN ---------- */
+  .main{flex:1;min-width:0;}
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:24px 32px 10px;
+  }
+  .greeting h1{font-size:23px;margin:0 0 4px;font-weight:700;}
+  .greeting p{margin:0;color:var(--muted);font-size:13.5px;}
+  .topbar-right{display:flex;align-items:center;gap:14px;}
+  .month-pill{
+    display:flex;align-items:center;gap:6px;
+    background:#fff;border:1px solid var(--border);
+    padding:9px 14px;border-radius:10px;font-size:13.5px;font-weight:500;
+  }
+  .bell{
+    width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;position:relative;
+  }
+  .bell .dot{position:absolute;top:6px;right:7px;width:8px;height:8px;background:var(--red);border-radius:50%;border:2px solid #fff;}
+
+  .content{padding:14px 32px 40px;}
+  .view{display:none;animation:fade .25s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+  .page-head{margin-bottom:18px;}
+  .page-head h2{font-size:20px;margin:0 0 4px;font-weight:700;}
+  .page-head p{margin:0;color:var(--muted);font-size:13.5px;}
+
+  /* stat cards */
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;}
+  .stat-card{display:flex;gap:14px;align-items:flex-start;}
+  .icon-badge{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .icon-badge svg{width:20px;height:20px;}
+  .icon-badge.blue{background:var(--blue-soft);color:var(--blue);}
+  .icon-badge.green{background:var(--green-soft);color:var(--green);}
+  .icon-badge.purple{background:var(--purple-soft);color:var(--purple);}
+  .icon-badge.amber{background:var(--amber-soft);color:var(--amber);}
+  .icon-badge.red{background:var(--red-soft);color:var(--red);}
+  .stat-label{font-size:13px;color:var(--muted);margin-bottom:3px;}
+  .stat-value{font-size:24px;font-weight:700;line-height:1.1;}
+  .stat-delta{font-size:12px;color:var(--green);font-weight:600;margin-top:4px;}
+
+  .grid-2{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+
+  .card h3{font-size:15.5px;margin:0 0 14px;font-weight:700;}
+  .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .view-all{font-size:12.5px;color:var(--blue);font-weight:600;}
+
+  .subj-mini{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;}
+  .subj-mini:last-child{margin-bottom:0;}
+  .subj-mini .ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+  .subj-mini .info{flex:1;min-width:0;}
+  .subj-mini .info .t{font-size:13.5px;font-weight:600;}
+  .subj-mini .info .s{font-size:11.5px;color:var(--muted);}
+  .subj-mini .pct{text-align:right;}
+  .subj-mini .pct .n{font-size:15px;font-weight:700;}
+  .subj-mini .pct .d{font-size:11px;color:var(--green);font-weight:600;}
+
+  .weak-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+  .weak-row:last-of-type{border-bottom:none;}
+  .weak-row .ic{width:34px;height:34px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .weak-row .info{flex:1;}
+  .weak-row .info .t{font-size:13.5px;font-weight:600;}
+  .weak-row .info .s{font-size:11.5px;color:var(--muted);}
+  .badge-pct{font-size:12px;font-weight:700;padding:3px 9px;border-radius:20px;}
+  .badge-pct.low{background:var(--red-soft);color:var(--red);}
+  .badge-pct.mid{background:var(--amber-soft);color:var(--amber);}
+
+  .tip-box{margin-top:14px;background:var(--amber-soft);border-radius:12px;padding:12px 14px;font-size:12.5px;display:flex;gap:10px;align-items:flex-start;}
+  .btn{border:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:600;background:var(--blue);color:#fff;}
+  .btn.block{width:100%;margin-top:12px;}
+  .btn.outline{background:#fff;color:var(--blue);border:1px solid var(--blue-soft);}
+  .btn.ghost{background:var(--blue-soft);color:var(--blue);}
+  .btn.sm{padding:6px 12px;font-size:12px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;padding:0 8px 10px 0;border-bottom:1px solid var(--border);}
+  td{padding:11px 8px 11px 0;border-bottom:1px solid var(--border);}
+  tr:last-child td{border-bottom:none;}
+  .progress-bar{height:7px;background:#eef0f7;border-radius:5px;overflow:hidden;width:100px;display:inline-block;vertical-align:middle;margin-right:8px;}
+  .progress-bar span{display:block;height:100%;background:var(--green);border-radius:5px;}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;}
+  .tab{padding:8px 16px;border-radius:9px;font-size:13px;font-weight:600;background:#eef0f7;color:var(--muted);border:none;}
+  .tab.active{background:var(--blue);color:#fff;}
+
+  .keyword-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .keyword-row:last-child{border-bottom:none;}
+  .kw-pct{font-weight:700;font-size:12px;padding:2px 8px;border-radius:20px;}
+
+  .reco-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .reco-row:last-of-type{border-bottom:none;}
+  .reco-row .ic{width:32px;height:32px;border-radius:8px;background:var(--blue-soft);color:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .reco-row .info{flex:1;}
+  .reco-row .info .t{font-size:13px;font-weight:600;}
+  .reco-row .info .s{font-size:11.5px;color:var(--muted);}
+
+  .quick-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+  .quick-btn{border:1px solid var(--border);background:#fff;border-radius:12px;padding:14px 8px;text-align:center;font-size:12px;font-weight:600;color:var(--text);}
+  .quick-btn .ic{width:34px;height:34px;border-radius:9px;margin:0 auto 8px;display:flex;align-items:center;justify-content:center;}
+  .quick-btn:hover{border-color:var(--blue);}
+
+  /* generic pieces used across sub-pages */
+  .empty-note{color:var(--muted);font-size:13px;}
+  .pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .list-card{padding:0;}
+  .list-row{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--border);}
+  .list-row:last-child{border-bottom:none;}
+  .list-row .ic{width:38px;height:38px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .list-row .info{flex:1;min-width:0;}
+  .list-row .info .t{font-size:13.5px;font-weight:600;}
+  .list-row .info .s{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+  .filter-row{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+  select,input[type=text]{
+    border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;background:#fff;color:var(--text);
+  }
+  input[type=text]{flex:1;min-width:220px;}
+
+  .mcq-option{
+    display:flex;align-items:center;gap:12px;padding:14px 16px;border:1.5px solid var(--border);
+    border-radius:12px;margin-bottom:10px;font-size:14px;cursor:pointer;transition:.15s;
+  }
+  .mcq-option:hover{border-color:var(--blue);}
+  .mcq-option.selected{border-color:var(--blue);background:var(--blue-soft);font-weight:600;}
+  .mcq-option.correct{border-color:var(--green);background:var(--green-soft);}
+  .mcq-option.wrong{border-color:var(--red);background:var(--red-soft);}
+  .mcq-letter{width:26px;height:26px;border-radius:50%;background:#eef0f7;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;flex-shrink:0;}
+  .mcq-option.selected .mcq-letter{background:var(--blue);color:#fff;}
+  .mcq-option.correct .mcq-letter{background:var(--green);color:#fff;}
+  .mcq-option.wrong .mcq-letter{background:var(--red);color:#fff;}
+
+  .toast{
+    position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;
+    padding:13px 18px;border-radius:10px;font-size:13.5px;font-weight:600;
+    box-shadow:0 8px 24px rgba(0,0,0,.2);transform:translateY(20px);opacity:0;
+    transition:.25s;z-index:50;pointer-events:none;
+  }
+  .toast.show{transform:none;opacity:1;}
+
+  .profile-card{display:flex;gap:18px;align-items:center;padding:24px;}
+  .avatar{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#4f6bff,#7c5cfc);display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff;font-weight:700;flex-shrink:0;}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;}
+  .form-field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+  .form-field input,.form-field select{width:100%;}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border);}
+  .toggle-row:last-child{border-bottom:none;}
+  .toggle-row .t{font-size:13.5px;font-weight:600;}
+  .toggle-row .s{font-size:12px;color:var(--muted);}
+  .switch{width:42px;height:24px;border-radius:20px;background:#dfe2ee;position:relative;cursor:pointer;flex-shrink:0;transition:.15s;}
+  .switch.on{background:var(--blue);}
+  .switch::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s;}
+  .switch.on::after{left:21px;}
+
+  @media(max-width:1100px){
+    .stat-row{grid-template-columns:repeat(2,1fr);}
+    .grid-2,.grid-3{grid-template-columns:1fr;}
+    .form-grid{grid-template-columns:1fr;}
+    .quick-grid{grid-template-columns:repeat(3,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<!-- ========================= SIDEBAR ========================= -->
+<div class="sidebar">
+  <div class="brand">
+    <div class="brand-logo">🎓</div>
+    <div>
+      <div class="brand-name"></div>
+
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="nav-item active" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg>
+      Dashboard
+    </div>
+
+    <div class="nav-item" data-view="past-papers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 9h6M9 13h6M9 17h4"></path></svg>
+      Past Papers
+    </div>
+
+    <div class="nav-item nav-caret-item expanded" id="practiceToggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"></rect><path d="M8 3v18M3 9h5"></path></svg>
+      Practice
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"></path></svg>
+    </div>
+    <div class="submenu open" id="practiceMenu">
+      <div class="sub-item" data-view="weak-areas"><span class="sub-dot"></span>Weak Areas</div>
+      <div class="sub-item" data-view="by-topic"><span class="sub-dot"></span>By Topic</div>
+      <div class="sub-item" data-view="by-keyword"><span class="sub-dot"></span>By Keyword</div>
+
+
+    </div>
+
+    <div class="nav-section">
+
+
+
+
+      <div class="nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"></path></svg>
+        Progress
+      </div>
+    </div>
+  <div class="nav-section">
+
+
+
+
+      <div class="nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3h0a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5h0a1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9v0a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"></path></svg>
+        Settings
+      </div>
+    </div></div>
+
+
+</div>
+
+<!-- ========================= MAIN ========================= -->
+<div class="main">
+  <div class="topbar">
+    <div class="greeting">
+      <h1 id="greetingTitle">Good evening, Alex! 👋</h1>
+      <p id="greetingSub">Here's your progress across your GCSE subjects</p>
+    </div>
+    <div class="topbar-right">
+      <div class="month-pill">📅 This Month ▾</div>
+      <div class="bell">🔔<span class="dot"></span></div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ============ DASHBOARD ============ -->
+    <div class="view active" id="view-dashboard">
+      <div class="stat-row">
+        <div class="card stat-card">
+          <div class="icon-badge blue">📋</div>
+          <div><div class="stat-label">Tests Completed</div><div class="stat-value">23</div></div>
+        </div>
+        <div class="card stat-card">
+          <div class="icon-badge green">🎯</div>
+          <div><div class="stat-label">Average Score</div><div class="stat-value">72%</div></div>
+        </div>
+        <div class="card stat-card">
+          <div class="icon-badge purple">✅</div>
+          <div><div class="stat-label">Questions Answered</div><div class="stat-value">1,248</div></div>
+        </div>
+        <div class="card stat-card">
+          <div class="icon-badge amber">⏱️</div>
+          <div><div class="stat-label">Study Time</div><div class="stat-value">18h 45m</div></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head"><h3 style="margin:0;">Your Subject Performance</h3></div>
+          <svg viewBox="0 0 560 190" width="100%" height="190">
+            <line x1="0" y1="10" x2="560" y2="10" stroke="#eef0f7"></line>
+            <line x1="0" y1="55" x2="560" y2="55" stroke="#eef0f7"></line>
+            <line x1="0" y1="100" x2="560" y2="100" stroke="#eef0f7"></line>
+            <line x1="0" y1="145" x2="560" y2="145" stroke="#eef0f7"></line>
+            <polyline fill="none" stroke="#2b5cff" stroke-width="2.5" points="0,40 90,36 180,30 270,28 360,20 450,15 540,12"></polyline>
+            <polyline fill="none" stroke="#1fb579" stroke-width="2.5" points="0,95 90,88 180,90 270,80 360,70 450,68 540,60"></polyline>
+            <polyline fill="none" stroke="#7c5cfc" stroke-width="2.5" points="0,140 90,135 180,120 270,118 360,105 450,100 540,95"></polyline>
+          </svg>
+          <div style="display:flex;gap:18px;font-size:12px;color:var(--muted);margin-top:6px;">
+            <span>● <span style="color:#2b5cff;">Combined Science</span></span>
+            <span>● <span style="color:#1fb579;">Business Studies</span></span>
+            <span>● <span style="color:#7c5cfc;">Geography</span></span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="subj-mini"><div class="ic" style="background:var(--blue-soft);">🧪</div><div class="info"><div class="t">Science</div><div class="s">Strongest: Biology</div></div><div class="pct"><div class="n">76%</div></div></div>
+          <div class="subj-mini"><div class="ic" style="background:var(--green-soft);">💼</div><div class="info"><div class="t">Business Studies</div><div class="s">Strongest: Marketing</div></div><div class="pct"><div class="n">68%</div></div></div>
+          <div class="subj-mini"><div class="ic" style="background:var(--purple-soft);">🌍</div><div class="info"><div class="t">Geography</div><div class="s">Strongest: Physical Geography</div></div><div class="pct"><div class="n">65%</div></div></div>
+          <button class="btn outline block" onclick="goView('analytics')">View full analytics</button>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-head"><h3 style="margin:0;">Topic Performance</h3></div>
+          <div class="tabs">
+            <button class="tab active">Science</button>
+            <button class="tab">Business Studies</button>
+            <button class="tab">Geography</button>
+          </div>
+          <table>
+            <tbody><tr><th>Topic</th><th>Accuracy</th><th>Questions</th><th></th></tr>
+            <tr><td>🧬 Respiration</td><td><span class="progress-bar"><span style="width:82%;"></span></span>82%</td><td>245</td><td><button class="btn ghost sm" onclick="goView('by-topic')">Practice</button></td></tr>
+            <tr><td>⚗️ Ohm's Law</td><td><span class="progress-bar"><span style="width:71%;"></span></span>71%</td><td>198</td><td><button class="btn ghost sm" onclick="goView('by-topic')">Practice</button></td></tr>
+            <tr><td>⚙️ Resultant Force</td><td><span class="progress-bar"><span style="width:63%;background:var(--amber);"></span></span>63%</td><td>210</td><td><button class="btn ghost sm" onclick="goView('by-topic')">Practice</button></td></tr>
+          </tbody></table>
+          <div style="text-align:center;margin-top:12px;"><a class="view-all" onclick="goView('by-topic')" style="cursor:pointer;">View all topics →</a></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3 style="margin:0;">Recent Test Activity</h3><a class="view-all" style="cursor:pointer;" onclick="goView('past-papers')">View all</a></div>
+          <table>
+            <tbody><tr><th>Paper</th><th>Score</th><th>Time</th><th>Date</th></tr>
+            <tr><td>2023 Paper 1</td><td>78%</td><td>45m</td><td>28 May</td></tr>
+            <tr><td>2022 Paper 1</td><td>65%</td><td>50m</td><td>26 May</td></tr>
+            <tr><td>2021 Paper 1</td><td>62%</td><td>40m</td><td>24 May</td></tr>
+            <tr><td>2020 Paper 1</td><td>81%</td><td>43m</td><td>20 May</td></tr>
+            <tr><td>2019 Paper 1</td><td>70%</td><td>48m</td><td>18 May</td></tr>
+          </tbody></table>
+          <div style="text-align:center;margin-top:12px;"><a class="view-all" style="cursor:pointer;" onclick="goView('past-papers')">Go to Past Papers →</a></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3 style="margin:0;">Your Weak Areas</h3><a class="view-all" style="cursor:pointer;" onclick="goView('weak-areas')">View all</a></div>
+          <div class="weak-row"><div class="ic" style="background:var(--green-soft);color:var(--green);">💼</div><div class="info"><div class="t">Business Studies</div><div class="s">2 weak topics</div></div><span class="badge-pct low">42%</span></div>
+          <div class="weak-row"><div class="ic" style="background:var(--blue-soft);color:var(--blue);">🧪</div><div class="info"><div class="t">Science</div><div class="s">1 weak topic</div></div><span class="badge-pct mid">58%</span></div>
+          <div class="weak-row"><div class="ic" style="background:var(--purple-soft);color:var(--purple);">🌍</div><div class="info"><div class="t">Geography</div><div class="s">2 weak topics</div></div><span class="badge-pct mid">55%</span></div>
+          <div class="tip-box">💡 <span>Focus on these topics to improve your scores!<br><a class="view-all" style="cursor:pointer;" onclick="goView('weak-areas')">Practice Weak Areas</a></span></div>
+        </div>
+      </div>
+
+      <div class="grid-3">
+
+
+      </div>
+    </div>
+
+    <!-- ============ START TEST ============ -->
+    <div class="view" id="view-start-test">
+      <div class="page-head"><h2>Start a Test</h2><p>Choose a grade, subject and paper to begin practising.</p></div>
+      <div class="card" style="max-width:640px;" id="setupCard">
+        <div class="form-grid">
+          <div class="form-field"><label>Grade</label><select><option>Grade 10</option><option>Grade 11</option></select></div>
+          <div class="form-field"><label>Subject</label><select id="testSubject"><option>Combined Science</option><option>Business Studies</option><option>Geography</option></select></div>
+          <div class="form-field"><label>Paper</label><select><option>2023 Paper 1</option><option>2022 Paper 1</option><option>Random 20 Questions</option><option>Random 50 Questions</option></select></div>
+          <div class="form-field"><label>Mode</label><select><option>Practice (untimed)</option><option>Timed Test</option></select></div>
+        </div>
+        <button class="btn block" onclick="startQuiz()">Start Test →</button>
+      </div>
+
+      <!-- quiz runner (hidden until start) -->
+      <div class="card" style="max-width:640px;display:none;margin-top:16px;" id="quizCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <span class="pill" style="background:var(--blue-soft);color:var(--blue);">Question <span id="qNum">1</span> of 5</span>
+          <span class="pill" style="background:var(--amber-soft);color:var(--amber);">⏱ 04:32</span>
+        </div>
+        <h3 id="qText" style="font-size:16px;margin-bottom:16px;">Which organelle is responsible for producing ATP through respiration?</h3>
+        <div id="qOptions"></div>
+        <div style="display:flex;justify-content:space-between;margin-top:16px;">
+          <button class="btn outline" onclick="saveResume()">Save &amp; Resume Later</button>
+          <button class="btn" onclick="nextQuestion()">Next →</button>
+        </div>
+      </div>
+
+      <!-- results -->
+      <div class="card" style="max-width:640px;display:none;margin-top:16px;text-align:center;" id="resultCard">
+        <div style="font-size:40px;">🎉</div>
+        <h3>Test Complete!</h3>
+        <p style="color:var(--muted);">You scored</p>
+        <div class="stat-value" style="font-size:36px;color:var(--green);">4 / 5 (80%)</div>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
+          <button class="btn outline" onclick="resetQuiz()">Back to Setup</button>
+          <button class="btn" onclick="goView('incorrect')">Review Incorrect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PAST PAPERS ============ -->
+    <div class="view" id="view-past-papers">
+      <div class="page-head"><h2>Past Papers</h2><p>Practice with real past exam papers, organised by year.</p></div>
+      <div class="card" style="max-width:640px;" id="setupCard">
+        <div class="form-grid">
+          <div class="form-field"><label>Grade</label><select><option>Grade 10</option><option>Grade 11</option></select></div>
+          <div class="form-field"><label>Subject</label><select id="testSubject"><option>Science</option><option>Business Studies</option><option>Geography</option></select></div>
+          <div class="form-field"><label>Paper Type</label><select><option>GCSE</option><option>Provincial</option><option>Zonal</option><option>School</option><option>Model</option></select></div>
+          <div class="form-field"><label>Mode</label><select><option>2023 Paper 1 North Central Dec</option><option>2024 Paper 1 Central Province June</option><option>GCSE O/L 2025</option></select></div>
+        </div>
+        <button class="btn block" onclick="startQuiz()">Start Test →</button>
+      </div>
+
+    </div>
+
+    <!-- ============ WEAK AREAS ============ -->
+    <div class="view" id="view-weak-areas">
+      <div class="page-head"><h2>Weak Areas</h2><p>Sub-topics where your accuracy is lowest — practice these first.</p></div>
+      <div class="grid-3">
+        <div class="card">
+          <h3>💼 Business Studies · 42%</h3>
+          <div class="weak-row"><div class="info"><div class="t">Finance</div><div class="s">38% accuracy · 60 questions</div></div><button class="btn ghost sm" onclick="toast('Starting Finance practice…')">Practice</button></div>
+          <div class="weak-row"><div class="info"><div class="t">Human Resources</div><div class="s">45% accuracy · 40 questions</div></div><button class="btn ghost sm" onclick="toast('Starting HR practice…')">Practice</button></div>
+        </div>
+        <div class="card">
+          <h3>🧪 Science · 58%</h3>
+          <div class="weak-row"><div class="info"><div class="t">Physics — Energy</div><div class="s">58% accuracy · 55 questions</div></div><button class="btn ghost sm" onclick="toast('Starting Energy practice…')">Practice</button></div>
+        </div>
+        <div class="card">
+          <h3>🌍 Geography · 55%</h3>
+          <div class="weak-row"><div class="info"><div class="t">Urban Issues</div><div class="s">52% accuracy · 48 questions</div></div><button class="btn ghost sm" onclick="toast('Starting Urban Issues practice…')">Practice</button></div>
+          <div class="weak-row"><div class="info"><div class="t">Population Density</div><div class="s">57% accuracy · 30 questions</div></div><button class="btn ghost sm" onclick="toast('Starting Population Density practice…')">Practice</button></div>
+        </div>
+      </div>
+      <button class="btn block" style="max-width:260px;" onclick="toast('Building a mixed weak-areas test…')">Practice All Weak Areas</button>
+    </div>
+
+    <!-- ============ BY TOPIC ============ -->
+    <div class="view" id="view-by-topic">
+      <div class="page-head"><h2>Practice by Topic</h2><p>Pick a subject and topic to drill specific content.</p></div>
+      <div class="tabs">
+        <button class="tab active">Science</button>
+        <button class="tab">Business Studies</button>
+        <button class="tab">Geography</button>
+      </div>
+      <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
+        <div class="card"><div class="icon-badge blue" style="margin-bottom:10px;">🧬</div><h3 style="margin-bottom:4px;">Respiration</h3><p class="empty-note">245 questions · 82% accuracy</p><button class="btn ghost block" onclick="toast('Starting Biology practice…')">Practice</button></div>
+        <div class="card"><div class="icon-badge purple" style="margin-bottom:10px;">⚗️</div><h3 style="margin-bottom:4px;">Ohm's Law</h3><p class="empty-note">198 questions · 71% accuracy</p><button class="btn ghost block" onclick="toast('Starting Chemistry practice…')">Practice</button></div>
+        <div class="card"><div class="icon-badge amber" style="margin-bottom:10px;">⚙️</div><h3 style="margin-bottom:4px;">Resultant force</h3><p class="empty-note">210 questions · 63% accuracy</p><button class="btn ghost block" onclick="toast('Starting Physics practice…')">Practice</button></div>
+      </div>
+    </div>
+
+    <!-- ============ BY KEYWORD ============ -->
+    <div class="view" id="view-by-keyword">
+      <div class="page-head"><h2>Practice by Keyword</h2><p>Search for a keyword or pick a trending one below.</p></div>
+      <div class="filter-row"><input type="text" placeholder="Search keywords e.g. Photosynthesis, Cash Flow…"><button class="btn" onclick="toast('Searching keyword…')">Search</button></div>
+      <div class="card">
+        <h3>Top Keywords</h3>
+        <div class="keyword-row"><span>🧬 Photosynthesis</span><button class="btn ghost sm" onclick="toast('Practising Photosynthesis…')">Practice · 90%</button></div>
+        <div class="keyword-row"><span>💼 Cash Flow</span><button class="btn ghost sm" onclick="toast('Practising Cash Flow…')">Practice · 82%</button></div>
+        <div class="keyword-row"><span>🌍 Plate Tectonics</span><button class="btn ghost sm" onclick="toast('Practising Plate Tectonics…')">Practice · 65%</button></div>
+        <div class="keyword-row"><span>💼 Market Research</span><button class="btn ghost sm" onclick="toast('Practising Market Research…')">Practice · 58%</button></div>
+        <div class="keyword-row"><span>🌍 Population Density</span><button class="btn ghost sm" onclick="toast('Practising Population Density…')">Practice · 45%</button></div>
+      </div>
+    </div>
+
+    <!-- ============ INCORRECT ============ -->
+    <div class="view" id="view-incorrect">
+      <div class="page-head"><h2>Incorrect Questions</h2><p>380 questions you've previously gotten wrong. Review and retry.</p></div>
+      <div class="card list-card">
+        <div class="list-row"><div class="ic" style="background:var(--red-soft);color:var(--red);">✕</div><div class="info"><div class="t">What is the function of mitochondria?</div><div class="s">Biology · Combined Science · Answered: "Ribosome"</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Retry</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--red-soft);color:var(--red);">✕</div><div class="info"><div class="t">Define fixed costs in a business context</div><div class="s">Finance · Business Studies · Answered: "Variable costs"</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Retry</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--red-soft);color:var(--red);">✕</div><div class="info"><div class="t">What causes plate tectonic movement?</div><div class="s">Geography · Answered: "Ocean currents"</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Retry</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--red-soft);color:var(--red);">✕</div><div class="info"><div class="t">Balance the equation for photosynthesis</div><div class="s">Biology · Combined Science · Answered: "Incomplete"</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Retry</button></div>
+      </div>
+      <button class="btn block" style="max-width:260px;margin-top:14px;" onclick="toast('Building a retry test from 380 questions…')">Retry All Incorrect</button>
+    </div>
+
+    <!-- ============ BOOKMARKED ============ -->
+    <div class="view" id="view-bookmarked">
+      <div class="page-head"><h2>Bookmarked Questions</h2><p>Questions you've saved to revisit later.</p></div>
+      <div class="card list-card">
+        <div class="list-row"><div class="ic" style="background:var(--amber-soft);color:var(--amber);">⭐</div><div class="info"><div class="t">Explain the structure of DNA</div><div class="s">Biology · Combined Science</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Open</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--amber-soft);color:var(--amber);">⭐</div><div class="info"><div class="t">What is a break-even point?</div><div class="s">Finance · Business Studies</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Open</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--amber-soft);color:var(--amber);">⭐</div><div class="info"><div class="t">Describe the water cycle stages</div><div class="s">Geography · Physical Geography</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">Open</button></div>
+      </div>
+    </div>
+
+    <!-- ============ ANALYTICS ============ -->
+    <div class="view" id="view-analytics">
+      <div class="page-head"><h2>Analytics</h2><p>A closer look at how your performance is trending over time.</p></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Score Trend (Last 8 Tests)</h3>
+          <svg viewBox="0 0 560 160" width="100%" height="160">
+            <polyline fill="none" stroke="#2b5cff" stroke-width="3" points="0,110 80,95 160,100 240,80 320,60 400,55 480,40 560,35"></polyline>
+            <circle cx="560" cy="35" r="5" fill="#2b5cff"></circle>
+          </svg>
+        </div>
+        <div class="card">
+          <h3>Time Spent by Subject</h3>
+          <div class="subj-mini"><div class="ic" style="background:var(--blue-soft);">🧪</div><div class="info"><div class="t">Combined Science</div><div class="s">8h 10m this month</div></div></div>
+          <div class="subj-mini"><div class="ic" style="background:var(--green-soft);">💼</div><div class="info"><div class="t">Business Studies</div><div class="s">6h 05m this month</div></div></div>
+          <div class="subj-mini"><div class="ic" style="background:var(--purple-soft);">🌍</div><div class="info"><div class="t">Geography</div><div class="s">4h 30m this month</div></div></div>
+        </div>
+      </div>
+      <div class="grid-3">
+        <div class="card"><h3>Strongest Topic</h3><div class="stat-value" style="color:var(--green);">Biology</div><p class="empty-note">82% accuracy</p></div>
+        <div class="card"><h3>Weakest Topic</h3><div class="stat-value" style="color:var(--red);">Finance</div><p class="empty-note">38% accuracy</p></div>
+        <div class="card"><h3>Avg. Time / Question</h3><div class="stat-value">54s</div><p class="empty-note">↓ 6s vs last month</p></div>
+      </div>
+    </div>
+
+    <!-- ============ SEARCH QUESTIONS ============ -->
+    <div class="view" id="view-search-questions">
+      <div class="page-head"><h2>Search Questions</h2><p>Search the full question bank by keyword, topic or paper.</p></div>
+      <div class="filter-row"><input type="text" id="searchInput" placeholder="Try 'mitosis', 'supply and demand', 'erosion'…"><button class="btn" onclick="runSearch()">Search</button></div>
+      <div class="card list-card" id="searchResults">
+        <div class="list-row"><div class="ic" style="background:var(--blue-soft);">🧪</div><div class="info"><div class="t">What is the process of mitosis used for?</div><div class="s">Biology · Combined Science · 2022 Paper 1</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">View</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--green-soft);">💼</div><div class="info"><div class="t">How does supply and demand affect pricing?</div><div class="s">Economics · Business Studies · 2021 Paper 1</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">View</button></div>
+        <div class="list-row"><div class="ic" style="background:var(--purple-soft);">🌍</div><div class="info"><div class="t">Explain the process of coastal erosion</div><div class="s">Geography · 2023 Paper 1</div></div><button class="btn ghost sm" onclick="toast('Opening question…')">View</button></div>
+      </div>
+    </div>
+
+    <!-- ============ REVISION NOTES ============ -->
+    <div class="view" id="view-revision-notes">
+      <div class="page-head"><h2>Revision Notes</h2><p>Short, exam-focused notes generated from your weak areas.</p></div>
+      <div class="grid-3">
+        <div class="card"><div class="icon-badge blue" style="margin-bottom:10px;">🧬</div><h3>Cell Structure &amp; Function</h3><p class="empty-note">Biology · 4 min read</p><button class="btn ghost block" onclick="toast('Opening notes…')">Read Notes</button></div>
+        <div class="card"><div class="icon-badge green" style="margin-bottom:10px;">💼</div><h3>Break-Even Analysis</h3><p class="empty-note">Finance · 3 min read</p><button class="btn ghost block" onclick="toast('Opening notes…')">Read Notes</button></div>
+        <div class="card"><div class="icon-badge purple" style="margin-bottom:10px;">🌍</div><h3>Urbanisation &amp; Population</h3><p class="empty-note">Geography · 5 min read</p><button class="btn ghost block" onclick="toast('Opening notes…')">Read Notes</button></div>
+      </div>
+    </div>
+
+    <!-- ============ PROFILE ============ -->
+    <div class="view" id="view-profile">
+      <div class="page-head"><h2>Profile</h2><p>Your account details and learning summary.</p></div>
+      <div class="card profile-card" style="max-width:640px;">
+        <div class="avatar">A</div>
+        <div>
+          <h3 style="margin:0 0 4px;font-size:18px;">Alex Morgan</h3>
+          <p class="empty-note" style="margin:0;">Grade 11 · Combined Science, Business Studies, Geography</p>
+          <p class="empty-note" style="margin:4px 0 0;">alex.morgan@school.edu</p>
+        </div>
+      </div>
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card"><div class="stat-label">Member Since</div><div class="stat-value" style="font-size:18px;">Jan 2026</div></div>
+        <div class="card"><div class="stat-label">Total Study Time</div><div class="stat-value" style="font-size:18px;">18h 45m</div></div>
+        <div class="card"><div class="stat-label">Longest Streak</div><div class="stat-value" style="font-size:18px;">14 days</div></div>
+      </div>
+    </div>
+
+    <!-- ============ SETTINGS ============ -->
+    <div class="view" id="view-settings">
+      <div class="page-head"><h2>Settings</h2><p>Manage your account, notifications and preferences.</p></div>
+      <div class="card" style="max-width:640px;">
+        <h3>Account</h3>
+        <div class="form-grid">
+          <div class="form-field"><label>Full Name</label><input type="text" value="Alex Morgan"></div>
+          <div class="form-field"><label>Email</label><input type="text" value="alex.morgan@school.edu"></div>
+          <div class="form-field"><label>Grade</label><select><option>Grade 10</option><option selected="">Grade 11</option></select></div>
+          <div class="form-field"><label>Exam Board</label><select><option>AQA</option><option>Edexcel</option><option>OCR</option></select></div>
+        </div>
+        <button class="btn block" style="max-width:180px;" onclick="toast('Settings saved!')">Save Changes</button>
+      </div>
+      <div class="card" style="max-width:640px;margin-top:16px;">
+        <h3>Notifications</h3>
+
+        <div class="toggle-row"><div><div class="t">Weekly progress email</div><div class="s">A summary of your performance every Monday</div></div><div class="switch on" onclick="this.classList.toggle('on')"></div></div>
+        <div class="toggle-row"><div><div class="t">New past paper alerts</div><div class="s">Notify me when new papers are added</div></div><div class="switch" onclick="this.classList.toggle('on')"></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast">Opening 2023 Paper 1…</div>
+
+<script>
+  // ---------- navigation ----------
+  const navItems = document.querySelectorAll('.nav-item[data-view], .sub-item[data-view]');
+  function goView(name){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    const target = document.getElementById('view-'+name);
+    if(target) target.classList.add('active');
+    navItems.forEach(n=>n.classList.remove('active'));
+    const nav = document.querySelector(`[data-view="${name}"]`);
+    if(nav) nav.classList.add('active');
+    // if a submenu item, keep practice menu open & highlight parent
+    if(['weak-areas','by-topic','by-keyword','incorrect','bookmarked'].includes(name)){
+      document.getElementById('practiceMenu').classList.add('open');
+      document.getElementById('practiceToggle').classList.add('expanded');
+    }
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  navItems.forEach(el=>el.addEventListener('click',()=>goView(el.dataset.view)));
+
+  document.getElementById('practiceToggle').addEventListener('click',()=>{
+    document.getElementById('practiceMenu').classList.toggle('open');
+    document.getElementById('practiceToggle').classList.toggle('expanded');
+  });
+
+  // ---------- toast ----------
+  let toastTimer;
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>t.classList.remove('show'),2200);
+  }
+
+  // ---------- greeting by time of day ----------
+  (function(){
+    const h = new Date().getHours();
+    const word = h<12 ? 'morning' : h<18 ? 'afternoon' : 'evening';
+    document.getElementById('greetingTitle').textContent = `Good ${word}, Alex! 👋`;
+  })();
+
+  // ---------- quiz demo ----------
+  const demoQuestions = [
+    {q:"Which organelle is responsible for producing ATP through respiration?", opts:["Nucleus","Mitochondria","Ribosome","Golgi apparatus"], correct:1},
+    {q:"What is the term for the total revenue minus total costs?", opts:["Gross margin","Break-even point","Profit","Market share"], correct:2},
+    {q:"Which process moves tectonic plates?", opts:["Wind erosion","Mantle convection currents","Ocean tides","Solar radiation"], correct:1},
+    {q:"What gas is released during photosynthesis?", opts:["Carbon dioxide","Nitrogen","Oxygen","Hydrogen"], correct:2},
+    {q:"What is a fixed cost?", opts:["A cost that varies with output","A cost that stays the same regardless of output","Revenue minus profit","A one-off cost"], correct:1},
+  ];
+  let qIndex = 0, selected = null;
+
+  function startQuiz(){
+    qIndex = 0; selected = null;
+    document.getElementById('setupCard').style.display='none';
+    document.getElementById('resultCard').style.display='none';
+    document.getElementById('quizCard').style.display='block';
+    renderQuestion();
+  }
+  function renderQuestion(){
+    const item = demoQuestions[qIndex];
+    document.getElementById('qNum').textContent = qIndex+1;
+    document.getElementById('qText').textContent = item.q;
+    const optsWrap = document.getElementById('qOptions');
+    optsWrap.innerHTML = '';
+    item.opts.forEach((opt,i)=>{
+      const div = document.createElement('div');
+      div.className = 'mcq-option';
+      div.innerHTML = `<span class="mcq-letter">${String.fromCharCode(65+i)}</span><span>${opt}</span>`;
+      div.onclick = ()=>selectOption(i,div);
+      optsWrap.appendChild(div);
+    });
+  }
+  function selectOption(i, el){
+    document.querySelectorAll('.mcq-option').forEach(o=>o.classList.remove('selected','correct','wrong'));
+    selected = i;
+    const item = demoQuestions[qIndex];
+    document.querySelectorAll('.mcq-option').forEach((o,idx)=>{
+      if(idx===i){ o.classList.add(idx===item.correct?'correct':'wrong'); if(idx!==item.correct) o.classList.add('selected'); }
+      if(idx===item.correct) o.classList.add('correct');
+    });
+  }
+  function nextQuestion(){
+    if(qIndex < demoQuestions.length-1){
+      qIndex++;
+      selected = null;
+      renderQuestion();
+    } else {
+      document.getElementById('quizCard').style.display='none';
+      document.getElementById('resultCard').style.display='block';
+    }
+  }
+  function saveResume(){
+    toast('Progress saved — resume anytime from Start Test');
+  }
+  function resetQuiz(){
+    document.getElementById('quizCard').style.display='none';
+    document.getElementById('resultCard').style.display='none';
+    document.getElementById('setupCard').style.display='block';
+  }
+
+  function runSearch(){
+    const val = document.getElementById('searchInput').value.trim();
+    toast(val ? `Searching for "${val}"…` : 'Enter a keyword to search');
+  }
+
+  // tabs (visual only)
+  document.querySelectorAll('.tabs').forEach(group=>{
+    group.querySelectorAll('.tab').forEach(tab=>{
+      tab.addEventListener('click',()=>{
+        group.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+        tab.classList.add('active');
+      });
+    });
+  });
+</script>
+
+
+</body></html>

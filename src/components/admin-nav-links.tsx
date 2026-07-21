@@ -29,8 +29,8 @@ export function AdminNavLinks() {
             href={item.href}
             className={
               isActive
-                ? "mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] border-progress bg-progress-bg px-2.5 py-2 text-[13.5px] font-semibold text-progress"
-                : "mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] border-transparent px-2.5 py-2 text-[13.5px] font-semibold text-ink-secondary hover:bg-app-surface-muted"
+                ? "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-semibold text-white shadow-[0_4px_12px_rgba(43,63,240,0.35)] bg-navy-active"
+                : "mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] font-semibold text-navy-nav-text transition-colors hover:bg-navy-2 hover:text-white"
             }
           >
             <span className="w-[18px] shrink-0 text-center text-[15px]">{item.icon}</span>

@@ -436,6 +436,67 @@ marketing pages — new tokens for it (`--color-app-bg`, `--color-ink*`,
 the brand palette in `globals.css`. Neither theme adapts to OS dark mode; they're both
 intentionally fixed.
 
+### Full-width layout + navy sidebar (`docs/Solution.html`)
+
+A later pass adopted two things from a third reference mockup (`docs/Solution.html`, a
+GradeBoost-style full-app redesign — same design family as `dashboard-restyle-mockup-reference.html`,
+but for the shell generally rather than just the Dashboard's own content area) without any
+layout restructuring, new components, or navigation changes:
+
+- **Full-width content.** `<AppShell>`'s and `<AdminShell>`'s `<main>` elements previously
+  carried `max-w-[900px]`/`max-w-[1100px]` — the sole source of the app only filling a
+  fraction of the screen (no wrapping layout constrains width; these two `<main>` elements
+  were it). Both caps are gone; `<main>` is just `flex-1` now, matching the reference's own
+  plain `body{display:flex}` + sidebar-fixed-width + `main{flex:1}` shape. This also
+  incidentally un-caps the take-quiz pages' width, since their own `-m-7 p-7` wrapper bleeds
+  past `<main>`'s *padding* but never escaped its *max-width*.
+- **Sidebar recolored to navy.** Previously a white `bg-white` `<nav>` using the general
+  `ink-secondary`/`app-surface-muted`/`progress`/`progress-bg` tokens for its nav items (an
+  active item got a left accent border + tinted background, the same device
+  `<AdminNavLinks>` used). Now `bg-navy`, with nav items using new,
+  sidebar-only tokens matching the reference exactly: inactive text
+  `text-navy-nav-text` (`--color-navy-nav-text: #b7bbe0`), hover `hover:bg-navy-2
+  hover:text-white`, and active `bg-navy-active text-white` plus a soft shadow
+  (`shadow-[0_4px_12px_rgba(43,63,240,0.35)]`, the exact rgba the reference's own
+  `.nav-item.active` rule uses, derived from `--navy-active` at fixed opacity — not itself
+  promoted to a reusable token, since it's only ever used at this one opacity). This
+  replaced the border-left-accent device with a solid background fill, matching the
+  reference's actual look, since "match this specifically for our sidebar" was the explicit
+  ask. Applied independently and identically to `<AppShell>`'s own `NavLink` and
+  `<AdminNavLinks>` — no shared code introduced between the two, per this codebase's existing
+  "no admin/student component coupling" rule.
+  `--color-navy`/`--color-navy-2`/`--color-navy-active`/`--color-navy-nav-text` are new,
+  additive tokens in `globals.css`, distinct from the brand palette's `--color-navy-900`
+  (still used, untouched, by both shells' own top header bar and by the landing page — the
+  reference's single-sidebar layout has no equivalent top bar to update).
+- **General surface tokens updated to the reference's exact values**: `--color-app-bg`
+  (`#f4f6fb`), `--color-app-surface-muted` (`#eef0f7` — not one of the reference's own named
+  CSS variables, but the literal value its own `.progress-bar`/`.tab` rules use for the same
+  role), `--color-app-border` (`#e8ebf3`), `--color-ink` (`#1b2340`), and `--color-ink-secondary`
+  (`#8a93a6`). `--color-ink-muted` is intentionally untouched — the reference has only one
+  muted-text tier, and there's no reference value to map our second, lighter tier to.
+  `--color-mastered`/`--color-warn`/`--color-progress`/`--color-teal`, the `--color-quiz-*`
+  screen-specific palette, and the `--color-dash-*` palette (already byte-identical to this
+  same reference's blue/green/purple/amber/red — same design family, no change needed) are
+  all untouched.
+- **Font stack**: `body`'s `font-family` changed from a hardcoded `Arial, Helvetica,
+  sans-serif` to the reference's exact stack (`"Segoe UI", -apple-system,
+  BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif`). This also surfaced dead code:
+  `Geist`/`Geist_Mono` were loaded via `next/font/google` in `src/app/layout.tsx` and exposed
+  as `--font-sans`/`--font-mono` theme tokens, but nothing anywhere in the app ever used the
+  `font-sans`/`font-mono` Tailwind utilities that would apply them — the plain `body` CSS
+  rule (hardcoded Arial stack, not `var(--font-sans)`) is what every element actually
+  inherited. Removed the unused font loading entirely (import, both font consts, the
+  `<html>` className references, and the two now-pointless theme tokens) rather than leave
+  it orphaned.
+- **`src/app/onboarding/page.tsx` was deliberately left out of scope** — it's still raw,
+  untokenized create-next-app scaffold styling (`bg-foreground`, `text-zinc-*`,
+  `border-black/10`, a stray `hover:bg-[#383838] dark:hover:bg-[#ccc]`) that predates this
+  whole app-shell palette and was never restyled to match it. Tracked separately, not
+  touched here. The Google sign-in button's SVG (`google-sign-in-button.tsx`) has its own
+  hardcoded hex fills too, but those are Google's own brand-mark colors, not this app's
+  design system — correctly left hardcoded.
+
 - `src/components/app-shell.tsx` is a plain Server Component (no client JS needed) — each
   page passes an `active` nav key and a few precomputed display values (name, grade,
   active-learner flag) as props, rather than the shell fetching its own data or needing

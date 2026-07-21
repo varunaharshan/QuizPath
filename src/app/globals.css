@@ -8,8 +8,6 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 
   /* Brand palette — navy + gold, used on the landing and sign-in pages. */
   --color-navy-950: #0f1f3d;
@@ -24,14 +22,29 @@
 
   /* App shell palette — the authenticated dashboard/practice/progress/profile
      screens, a fixed light theme (not adaptive to OS dark mode), matching a
-     reference mockup. */
-  --color-app-bg: #f4f5f7;
-  --color-app-surface-muted: #eef0f3;
-  --color-app-border: #dfe2e8;
+     reference mockup. Values below (app-bg/app-surface-muted/app-border/
+     ink/ink-secondary) were updated to match a second reference mockup
+     (docs/Solution.html, a GradeBoost-style full-app redesign) 1:1; ink-muted
+     has no equivalent in that reference (which has only one muted tier) and
+     is intentionally left as-is. */
+  --color-app-bg: #f4f6fb;
+  --color-app-surface-muted: #eef0f7;
+  --color-app-border: #e8ebf3;
 
-  --color-ink: #1a1d23;
-  --color-ink-secondary: #5c6270;
+  --color-ink: #1b2340;
+  --color-ink-secondary: #8a93a6;
   --color-ink-muted: #9aa0ac;
+
+  /* Sidebar-only navy tokens, also from docs/Solution.html — distinct from
+     the brand palette's navy-900 (used by AppShell/AdminShell's top header
+     bar, which has no equivalent in that single-sidebar reference layout,
+     and by the landing page). --color-navy-2 is declared to match the
+     reference's own :root but isn't consumed by any rule yet — the
+     reference itself defines it without ever using it either. */
+  --color-navy: #121630;
+  --color-navy-2: #191d3d;
+  --color-navy-active: #2b3ff0;
+  --color-navy-nav-text: #b7bbe0;
 
   --color-mastered: #1e7e34;
   --color-mastered-bg: #e6f4ea;
@@ -93,5 +106,11 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family:
+    "Segoe UI",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
 }

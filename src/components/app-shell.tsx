@@ -30,10 +30,10 @@ function NavLink({ item, active }: { item: NavItem; active: ActiveNav }) {
   return (
     <Link
       href={item.href}
-      className={`mb-0.5 flex items-center gap-2.5 rounded-md border-l-[3px] px-2.5 py-2 text-[13.5px] ${
+      className={`mb-0.5 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13.5px] transition-colors ${
         isActive
-          ? "border-progress bg-progress-bg font-semibold text-progress"
-          : "border-transparent text-ink-secondary hover:bg-app-surface-muted"
+          ? "bg-navy-active font-semibold text-white shadow-[0_4px_12px_rgba(43,63,240,0.35)]"
+          : "text-navy-nav-text hover:bg-navy-2 hover:text-white"
       }`}
     >
       <span className="w-[18px] shrink-0 text-center text-[15px]">{item.icon}</span>
@@ -110,10 +110,10 @@ export function AppShell({
       </div>
 
       <div className="flex flex-1">
-        <nav className="w-[210px] shrink-0 border-r border-app-border bg-white p-2.5">
+        <nav className="w-[210px] shrink-0 bg-navy p-2.5">
           {SECTIONS.map((section) => (
             <div key={section}>
-              <p className="mx-2.5 mb-1.5 mt-3.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted first:mt-1">
+              <p className="mx-2.5 mb-1.5 mt-3.5 text-[11px] font-bold uppercase tracking-wide text-navy-nav-text first:mt-1">
                 {section}
               </p>
               {section === "Learning" ? (
@@ -127,7 +127,7 @@ export function AppShell({
           ))}
         </nav>
 
-        <main className="min-w-0 max-w-[900px] flex-1 p-7">{children}</main>
+        <main className="min-w-0 flex-1 p-7">{children}</main>
       </div>
     </div>
   );
