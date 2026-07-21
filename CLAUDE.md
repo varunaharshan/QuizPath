@@ -2222,6 +2222,28 @@ rollup numbers unaffected by the narrowing.
   actual schema, for a risk that's already low-severity and dev-only. **Decision: leave as-is,
   revisit once drizzle-kit ships a real stable 1.0.0.** Don't re-suggest the 0.18.1 downgrade or
   re-raise this without checking whether a stable (non-rc) fix has since shipped.
+- **`next@16.2.10` → its own internal, nested `postcss@8.4.31` (GHSA-qx2v-qp2m-jg93, moderate,
+  CVSS 6.1 — XSS via unescaped `</style>` in PostCSS's stringified CSS output, needs
+  `<8.5.10`)**: checked (2026-07) whether the latest stable `next` (`16.2.11`, one patch ahead)
+  fixes this — it doesn't; both versions declare the exact same `postcss: 8.4.31`. Low real-world
+  risk for us specifically: the vulnerable copy is `next/node_modules/postcss`, Next's own
+  internal build-pipeline dependency — **not** the postcss our actual Tailwind setup resolves
+  (`@tailwindcss/postcss` pulls its own separate copy, already `postcss@8.5.16`, past the fixed
+  version). We also never feed untrusted/attacker-controlled CSS through any pipeline, which is
+  what this advisory's XSS actually requires. **Revisit once Next ships `16.3.0` stable** — its
+  internal postcss is already bumped to `8.5.10` (the fixed version) in both the `preview` and
+  `canary` prerelease channels, so this resolves itself on the next routine Next upgrade once
+  that line goes stable; no action needed before then.
+- **`next@16.2.10` → its own optional `sharp@^0.34.5` (GHSA-f88m-g3jw-g9cj, high — inherited
+  libvips CVEs, needs `<0.35.0`)**: same check as above — `next@16.2.11` pins the identical
+  `^0.34.5`, and even the bleeding-edge `16.3.0-canary.92` hasn't bumped it, so no fix exists
+  anywhere upstream yet, stable or prerelease. Low real-world risk for us specifically: `sharp`
+  is only an `optionalDependency` of `next`, used to power `next/image`'s optimization pipeline —
+  grepped `src/` and confirmed **this app never imports `next/image` anywhere**, so the
+  vulnerable code path is never actually invoked, just present in `node_modules`. **No upstream
+  fix to wait for** the way postcss has one in the pipeline — revisit on the next routine
+  `npm audit` pass, or immediately if this app ever adopts `next/image` (at which point re-check
+  whether a fix has shipped before wiring it in).
 
 ## What's NOT built yet
 
