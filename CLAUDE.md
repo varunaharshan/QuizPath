@@ -2203,6 +2203,26 @@ Grade 10 module never appearing in the widened `topics` at all; and a surfaced G
 topic's own drill-down narrowing to only its attempted sub-topics, with the topic's own
 rollup numbers unaffected by the narrowing.
 
+## Known dependency vulnerabilities (accepted, not re-litigated on every `npm audit`)
+
+- **`drizzle-kit@0.31.10` → `@esbuild-kit/esm-loader` → `@esbuild-kit/core-utils` → a bundled
+  vulnerable `esbuild` (GHSA-67mh-4wv8-2f99, moderate, CVSS 5.3)**: a malicious website can
+  make requests to a running local dev server and read the response — applies only while
+  `next dev`-adjacent tooling (here, `drizzle-kit studio`/`drizzle-kit push`) is running
+  locally; doesn't affect `next build` output or anything shipped to production. Checked
+  (2026-07) whether a plain upgrade fixes it before accepting the risk: `0.31.10` **is
+  already `latest`** on the stable npm channel — there's nothing newer to move to.
+  `npm audit fix`'s own suggested remediation is downgrading to `drizzle-kit@0.18.1`, a
+  semver-major regression (~13 minor versions backward) — rejected, that trades a low-severity
+  dev-only issue for losing over a year of Drizzle Kit fixes/features. The actual upstream fix
+  (dropping `@esbuild-kit` for `jiti` + a direct newer `esbuild`) only exists in the `1.0.0-rc.*`
+  prerelease line (`drizzle-kit@1.0.0-rc.4` at time of checking) — Drizzle Kit's 1.0 has been
+  cycling through beta/rc for a long time with no stable release yet, so pinning to it now would
+  mean running a release-candidate build of our schema-push/studio tooling untested against our
+  actual schema, for a risk that's already low-severity and dev-only. **Decision: leave as-is,
+  revisit once drizzle-kit ships a real stable 1.0.0.** Don't re-suggest the 0.18.1 downgrade or
+  re-raise this without checking whether a stable (non-rc) fix has since shipped.
+
 ## What's NOT built yet
 
 Per-question review after a quiz, Stripe/Billing, and Facebook login are still out of
